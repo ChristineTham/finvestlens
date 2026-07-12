@@ -57,6 +57,10 @@ struct QuotesView: View {
             }
             .disabled(isFetching || model.pricableSecurities.isEmpty)
 
+            Toggle("Auto-refresh on open (Yahoo, every 6h)", isOn: Binding(
+                get: { model.autoRefreshQuotes },
+                set: { model.autoRefreshQuotes = $0 }))
+
             statusRow
         }
     }

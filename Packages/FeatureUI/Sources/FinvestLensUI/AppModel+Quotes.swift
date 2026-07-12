@@ -64,6 +64,48 @@ extension AppModel {
         commitKvpCollections()
     }
 
+    // MARK: Auto-refresh (`FR-INV-03`)
+
+    /// Whether quotes refresh on open and periodically (book preference).
+    public var autoRefreshQuotes: Bool {
+        get {
+            if case let .int64(v)? = book?.kvp["finvestlens/autoRefreshQuotes"] { return v != 0 }
+            return false
+        }
+        set {
+            book?.kvp["finvestlens/autoRefreshQuotes"] = .int64(newValue ? 1 : 0)
+            markDirtyAndRefresh()
+            startQuoteAutoRefresh()
+        }
+    }
+
+    /// Fetches the latest prices now, if auto-refresh is on and Yahoo (keyless)
+    /// is available and there are securities to price.
+    public func refreshQuotesNow() async {
+        guard autoRefreshQuotes, !pricableSecurities.isEmpty,
+              availableProviders.contains(.yahoo) else { return }
+        await fetchLatestQuotes(using: .yahoo)
+    }
+
+    /// (Re)starts the periodic refresh loop: refreshes immediately, then every
+    /// six hours while the document is open. Cancelled on close.
+    public func startQuoteAutoRefresh() {
+        quoteRefreshTask?.cancel()
+        guard autoRefreshQuotes else { quoteRefreshTask = nil; return }
+        quoteRefreshTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                await self?.refreshQuotesNow()
+                try? await Task.sleep(for: .seconds(6 * 3600))
+            }
+        }
+    }
+
+    /// Stops the periodic refresh loop.
+    public func stopQuoteAutoRefresh() {
+        quoteRefreshTask?.cancel()
+        quoteRefreshTask = nil
+    }
+
     // MARK: Fetching
 
     private func service() -> QuoteService {

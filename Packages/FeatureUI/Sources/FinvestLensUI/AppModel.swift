@@ -98,6 +98,9 @@ public final class AppModel {
     /// HTTP transport for quote providers (injectable for tests).
     let quoteHTTP: HTTPFetching
 
+    /// The running periodic quote-refresh loop, if any.
+    @ObservationIgnored var quoteRefreshTask: Task<Void, Never>?
+
     /// `true` when a document is open.
     public var isOpen: Bool { document != nil }
     /// `true` when there are unsaved changes.
@@ -179,12 +182,14 @@ public final class AppModel {
         document = try FinvestLensDocument.create(at: url, baseCurrency: baseCurrency)
         reloadKvpCollections()
         refreshAll()
+        startQuoteAutoRefresh()
     }
 
     public func open(at url: URL, breakStaleLock: Bool = false) throws {
         document = try FinvestLensDocument.open(at: url, breakStaleLock: breakStaleLock)
         reloadKvpCollections()
         refreshAll()
+        startQuoteAutoRefresh()
     }
 
     /// Imports a GnuCash file and saves it as a new native document.
@@ -220,6 +225,7 @@ public final class AppModel {
     }
 
     public func close() {
+        stopQuoteAutoRefresh()
         document?.discard()
         document = nil
         accountTree = []
