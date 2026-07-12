@@ -67,6 +67,8 @@ public struct FinvestLensRootView: View {
     @State private var showingExport = false
     @State private var exportDocument: GnuCashFileDocument?
     @State private var showingReports = false
+    @State private var showingBankImport = false
+    @State private var importPayload: ImportPayload?
 
     public init(model: AppModel) {
         self.model = model
@@ -96,6 +98,9 @@ public struct FinvestLensRootView: View {
                 Button("Reports", systemImage: "chart.pie") {
                     showingReports = true
                 }
+                Button("Import Bank File…", systemImage: "square.and.arrow.down.on.square") {
+                    showingBankImport = true
+                }
                 Button("Save", systemImage: "square.and.arrow.down") {
                     try? model.save()
                 }
@@ -117,10 +122,24 @@ public struct FinvestLensRootView: View {
         .sheet(isPresented: $showingReports) {
             ReportsView(model: model)
         }
+        .fileImporter(isPresented: $showingBankImport, allowedContentTypes: [.commaSeparatedText, .text, .data]) { result in
+            if case .success(let url) = result { loadBankFile(url) }
+        }
+        .sheet(item: $importPayload) { payload in
+            ImportView(model: model, payload: payload)
+        }
         .fileExporter(isPresented: $showingExport, document: exportDocument,
                       contentType: GnuCashFileDocument.contentType, defaultFilename: "Book") { _ in
             exportDocument = nil
         }
+    }
+
+    private func loadBankFile(_ url: URL) {
+        guard let format = BankFileFormat.forExtension(url.pathExtension) else { return }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else { return }
+        importPayload = ImportPayload(data: data, format: format)
     }
 }
 
