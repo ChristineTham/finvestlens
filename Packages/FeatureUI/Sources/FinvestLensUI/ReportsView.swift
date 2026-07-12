@@ -176,45 +176,25 @@ private struct PortfolioView: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        if let portfolio = model.portfolio() {
+        if let portfolio = model.advancedPortfolio() {
             List {
-                ForEach(portfolio.holdings) { holding in
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text(holding.accountName).fontWeight(.medium)
-                            Text(holding.symbol).font(.caption).foregroundStyle(.secondary)
-                            Spacer()
-                            if let value = holding.marketValue {
-                                Text(AmountFormat.string(value, code: portfolio.currencyCode))
-                                    .monospacedDigit()
-                            } else {
-                                Text("no price").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                        HStack {
-                            Text("\(holding.shares.formatted()) @ \(holding.price.map { AmountFormat.string($0, code: portfolio.currencyCode) } ?? "—")")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Spacer()
-                            if let gain = holding.gain {
-                                Text(gainText(gain, fraction: holding.gainFraction, code: portfolio.currencyCode))
-                                    .font(.caption)
-                                    .foregroundStyle(gain < 0 ? .red : .green)
-                            }
-                        }
+                if portfolio.totalValue != 0 {
+                    Section("Allocation") {
+                        AllocationChart(portfolio: portfolio)
                     }
-                    .padding(.vertical, 2)
+                }
+                Section("Holdings") {
+                    ForEach(portfolio.holdings) { holding in
+                        HoldingRow(holding: holding, code: portfolio.currencyCode)
+                    }
                 }
                 Section {
                     TotalRow(label: "Cost basis", amount: portfolio.totalCost, code: portfolio.currencyCode)
                     TotalRow(label: "Market value", amount: portfolio.totalValue, code: portfolio.currencyCode, emphasised: true)
-                    HStack {
-                        Text("Total gain").fontWeight(.bold)
-                        Spacer()
-                        Text(AmountFormat.string(portfolio.totalGain, code: portfolio.currencyCode))
-                            .monospacedDigit().fontWeight(.bold)
-                            .foregroundStyle(portfolio.totalGain < 0 ? .red : .green)
-                    }
+                    signedTotal("Unrealized gain", portfolio.totalUnrealized, portfolio.currencyCode)
+                    signedTotal("Realized gain", portfolio.totalRealized, portfolio.currencyCode)
                 }
+                PriceHistorySection(model: model)
             }
         } else {
             ContentUnavailableView("No securities", systemImage: "chart.pie",
@@ -222,10 +202,131 @@ private struct PortfolioView: View {
         }
     }
 
+    private func signedTotal(_ label: String, _ amount: Decimal, _ code: String) -> some View {
+        HStack {
+            Text(label).fontWeight(.bold)
+            Spacer()
+            Text(AmountFormat.string(amount, code: code))
+                .monospacedDigit().fontWeight(.bold)
+                .foregroundStyle(amount < 0 ? .red : (amount > 0 ? .green : .primary))
+        }
+    }
+}
+
+private struct HoldingRow: View {
+    let holding: AdvancedHolding
+    let code: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(holding.symbol).fontWeight(.medium)
+                if let allocation = holding.allocation {
+                    Text(allocation.formatted(.percent.precision(.fractionLength(0))))
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .padding(.horizontal, 4).background(.secondary.opacity(0.15)).clipShape(Capsule())
+                }
+                Spacer()
+                if let value = holding.marketValue {
+                    Text(AmountFormat.string(value, code: code)).monospacedDigit()
+                } else {
+                    Text("no price").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            HStack {
+                Text("\(holding.shares.formatted()) @ \(holding.averageCost.map { AmountFormat.string($0, code: code) } ?? "—") avg")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if let gain = holding.unrealizedGain {
+                    Text(gainText(gain, fraction: holding.unrealizedFraction, code: code))
+                        .font(.caption).foregroundStyle(gain < 0 ? .red : .green)
+                }
+            }
+            if holding.realizedGain != 0 {
+                HStack {
+                    Text("Realized").font(.caption2).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(AmountFormat.string(holding.realizedGain, code: code))
+                        .font(.caption2).monospacedDigit()
+                        .foregroundStyle(holding.realizedGain < 0 ? .red : .green)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
     private func gainText(_ gain: Decimal, fraction: Double?, code: String) -> String {
         let amount = AmountFormat.string(gain, code: code)
         if let fraction { return "\(amount) (\(fraction.formatted(.percent.precision(.fractionLength(1)))))" }
         return amount
+    }
+}
+
+private struct AllocationChart: View {
+    let portfolio: AdvancedPortfolio
+
+    private var slices: [(symbol: String, value: Double)] {
+        portfolio.holdings.compactMap { h in
+            guard let v = h.marketValue, v != 0 else { return nil }
+            return (h.symbol, NSDecimalNumber(decimal: v).doubleValue)
+        }
+    }
+
+    var body: some View {
+        Chart(slices, id: \.symbol) { slice in
+            SectorMark(angle: .value("Value", slice.value), innerRadius: .ratio(0.6), angularInset: 1.5)
+                .foregroundStyle(by: .value("Security", slice.symbol))
+                .cornerRadius(3)
+        }
+        .frame(height: 180)
+        .padding(.vertical, 4)
+    }
+}
+
+private struct PriceHistorySection: View {
+    @Bindable var model: AppModel
+    @State private var selected: String = ""
+
+    private var securities: [Commodity] { model.securitiesWithPriceHistory }
+
+    /// Default to a security that actually has a chartable trend (≥2 prices),
+    /// falling back to the first one; never leaves the picker blank.
+    private var defaultCode: String {
+        securities.first { model.priceHistory(for: $0).count >= 2 }?.mnemonic
+            ?? securities.first?.mnemonic ?? ""
+    }
+    private var chosen: Commodity? {
+        securities.first { $0.mnemonic == selected }
+            ?? securities.first { $0.mnemonic == defaultCode }
+    }
+
+    var body: some View {
+        if !securities.isEmpty, let commodity = chosen {
+            Section("Price History") {
+                if securities.count > 1 {
+                    Picker("Security", selection: Binding(
+                        get: { chosen?.mnemonic ?? defaultCode },
+                        set: { selected = $0 })) {
+                        ForEach(securities, id: \.mnemonic) { Text($0.mnemonic).tag($0.mnemonic) }
+                    }
+                    .pickerStyle(.menu)
+                }
+                let points = model.priceHistory(for: commodity)
+                if points.count < 2 {
+                    Text("Add more prices to chart a trend.").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Chart(points) { point in
+                        LineMark(x: .value("Date", point.date),
+                                 y: .value("Price", NSDecimalNumber(decimal: point.value).doubleValue))
+                        PointMark(x: .value("Date", point.date),
+                                  y: .value("Price", NSDecimalNumber(decimal: point.value).doubleValue))
+                            .symbolSize(20)
+                    }
+                    .frame(height: 160)
+                    .padding(.vertical, 4)
+                }
+            }
+        }
     }
 }
 
