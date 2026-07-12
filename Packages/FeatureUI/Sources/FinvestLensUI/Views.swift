@@ -7,7 +7,23 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 import FinvestLensEngine
+
+/// A GnuCash XML file for `.fileExporter` (export only).
+struct GnuCashFileDocument: FileDocument {
+    static let contentType = UTType(filenameExtension: "gnucash") ?? .xml
+    static var readableContentTypes: [UTType] { [contentType, .xml] }
+
+    var data: Data
+    init(data: Data) { self.data = data }
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
 
 // MARK: - Formatting
 
@@ -48,6 +64,8 @@ public struct FinvestLensRootView: View {
     @Bindable var model: AppModel
     @State private var showingNewAccount = false
     @State private var showingNewTransaction = false
+    @State private var showingExport = false
+    @State private var exportDocument: GnuCashFileDocument?
 
     public init(model: AppModel) {
         self.model = model
@@ -78,6 +96,12 @@ public struct FinvestLensRootView: View {
                     try? model.save()
                 }
                 .disabled(!model.hasUnsavedChanges)
+                Button("Export GnuCash…", systemImage: "arrow.up.doc") {
+                    if let data = model.gnuCashExportData() {
+                        exportDocument = GnuCashFileDocument(data: data)
+                        showingExport = true
+                    }
+                }
             }
         }
         .sheet(isPresented: $showingNewAccount) {
@@ -85,6 +109,10 @@ public struct FinvestLensRootView: View {
         }
         .sheet(isPresented: $showingNewTransaction) {
             TransactionEditorSheet(model: model)
+        }
+        .fileExporter(isPresented: $showingExport, document: exportDocument,
+                      contentType: GnuCashFileDocument.contentType, defaultFilename: "Book") { _ in
+            exportDocument = nil
         }
     }
 }

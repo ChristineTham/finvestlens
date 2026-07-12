@@ -30,6 +30,12 @@ enum GnuCashDate {
         return formatter
     }()
 
+    /// Formats a date as a GnuCash `ts:date` string
+    /// (e.g. `2026-01-15 00:00:00 +0000`).
+    static func format(_ date: Date) -> String {
+        dateTimeFormatter.string(from: date)
+    }
+
     /// Parses a `ts:date` / `gdate` string, tolerating both forms.
     static func parse(_ raw: String) -> Date? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)

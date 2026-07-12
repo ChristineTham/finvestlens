@@ -75,6 +75,48 @@ public enum Gzip {
         return try inflate(payload, sizeHint: isize)
     }
 
+    /// Compresses `data` into the gzip (RFC 1952) container: a 10-byte header,
+    /// raw DEFLATE payload, then CRC32 + ISIZE trailer.
+    public static func compress(_ data: Data) -> Data {
+        var out = Data([0x1f, 0x8b, 0x08, 0x00, 0, 0, 0, 0, 0x00, 0xff]) // header (mtime=0, xfl=0, os=unknown)
+        out.append(deflate(data))
+        var crc = crc32(data).littleEndian
+        withUnsafeBytes(of: &crc) { out.append(contentsOf: $0) }
+        var isize = UInt32(truncatingIfNeeded: data.count).littleEndian
+        withUnsafeBytes(of: &isize) { out.append(contentsOf: $0) }
+        return out
+    }
+
+    private static func deflate(_ source: Data) -> Data {
+        if source.isEmpty {
+            // Empty DEFLATE stream (final stored block, length 0).
+            return Data([0x03, 0x00])
+        }
+        let capacity = source.count + (source.count / 2) + 64
+        let destination = UnsafeMutablePointer<UInt8>.allocate(capacity: capacity)
+        defer { destination.deallocate() }
+        let written = source.withUnsafeBytes { raw -> Int in
+            guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return 0 }
+            return compression_encode_buffer(destination, capacity, base, source.count, nil, COMPRESSION_ZLIB)
+        }
+        return Data(bytes: destination, count: written)
+    }
+
+    // Standard CRC-32 (IEEE 802.3), computed on demand.
+    private static let crcTable: [UInt32] = (0..<256).map { i -> UInt32 in
+        var c = UInt32(i)
+        for _ in 0..<8 { c = (c & 1 != 0) ? (0xEDB88320 ^ (c >> 1)) : (c >> 1) }
+        return c
+    }
+
+    private static func crc32(_ data: Data) -> UInt32 {
+        var crc: UInt32 = 0xFFFFFFFF
+        for byte in data {
+            crc = crcTable[Int((crc ^ UInt32(byte)) & 0xFF)] ^ (crc >> 8)
+        }
+        return crc ^ 0xFFFFFFFF
+    }
+
     private static func inflate(_ source: Data, sizeHint: Int) throws -> Data {
         var capacity = max(sizeHint, 64 * 1024)
         let ceiling = 1 << 30 // 1 GiB guard

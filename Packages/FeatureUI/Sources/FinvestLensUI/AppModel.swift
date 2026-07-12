@@ -95,6 +95,13 @@ public final class AppModel {
         return result.summary
     }
 
+    /// Serialises the current book to GnuCash XML (`FR-EXP-01`), optionally
+    /// gzip-compressed. Returns `nil` if no document is open.
+    public func gnuCashExportData(compressed: Bool = false) -> Data? {
+        guard let book else { return nil }
+        return GnuCashXMLExporter.export(book, compressed: compressed)
+    }
+
     public func save() throws {
         try document?.save()
         refreshAll()
