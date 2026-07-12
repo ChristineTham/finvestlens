@@ -58,7 +58,9 @@ public extension FinancialReports {
             }
             guard shares != 0 || cost != 0 else { continue }
 
-            let price = book.latestPrice(of: account.commodity, in: currency, on: asOf)?.value
+            // Value at the security's unit price in the report currency —
+            // directly, or via its quote currency and an FX hop (`FR-CUR-04`).
+            let price = book.securityUnitValue(account.commodity, in: currency, on: asOf)
             let marketValue = price.map { currency.round(shares * $0) }
             let roundedCost = currency.round(cost)
             let gain = marketValue.map { $0 - roundedCost }

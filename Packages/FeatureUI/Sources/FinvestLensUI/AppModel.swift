@@ -53,6 +53,7 @@ public final class AppModel {
     public private(set) var accountTree: [AccountNode] = []
     public private(set) var registerRows: [RegisterRow] = []
     public private(set) var priceRows: [PriceRow] = []
+    public private(set) var rateRows: [RateRow] = []
 
     public var selectedAccountID: GncGUID? {
         didSet { refreshRegister() }
@@ -276,11 +277,16 @@ public final class AppModel {
     }
 
     private func rebuildPrices() {
-        guard let book else { priceRows = []; return }
-        priceRows = book.prices
-            .sorted { $0.date > $1.date }
+        guard let book else { priceRows = []; rateRows = []; return }
+        let sorted = book.prices.sorted { $0.date > $1.date }
+        priceRows = sorted
+            .filter { $0.commodity.namespace != .currency }
             .map { PriceRow(id: $0.guid, symbol: $0.commodity.mnemonic,
                             currencyCode: $0.currency.mnemonic, date: $0.date, value: $0.value) }
+        rateRows = sorted
+            .filter { $0.commodity.namespace == .currency }
+            .map { RateRow(id: $0.guid, from: $0.commodity.mnemonic,
+                           to: $0.currency.mnemonic, date: $0.date, value: $0.value) }
     }
 
     func markDirtyAndRefresh() {

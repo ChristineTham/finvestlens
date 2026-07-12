@@ -74,6 +74,7 @@ public struct FinvestLensRootView: View {
     @State private var showingBudget = false
     @State private var showingPrices = false
     @State private var showingStockTxn = false
+    @State private var showingCurrencyTransfer = false
 
     public init(model: AppModel) {
         self.model = model
@@ -104,6 +105,10 @@ public struct FinvestLensRootView: View {
                     showingStockTxn = true
                 }
                 .disabled(model.securityAccountNodes.isEmpty)
+                Button("Currency Transfer", systemImage: "dollarsign.arrow.circlepath") {
+                    showingCurrencyTransfer = true
+                }
+                .disabled(model.currencyCommodities.count < 2)
                 Button("Reports", systemImage: "chart.pie") {
                     showingReports = true
                 }
@@ -163,6 +168,9 @@ public struct FinvestLensRootView: View {
         }
         .sheet(isPresented: $showingStockTxn) {
             StockTransactionSheet(model: model)
+        }
+        .sheet(isPresented: $showingCurrencyTransfer) {
+            CurrencyTransferSheet(model: model)
         }
         .fileExporter(isPresented: $showingExport, document: exportDocument,
                       contentType: GnuCashFileDocument.contentType, defaultFilename: "Book") { _ in
