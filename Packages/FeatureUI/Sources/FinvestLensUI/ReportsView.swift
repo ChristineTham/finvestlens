@@ -30,11 +30,16 @@ struct ReportsView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Picker("Report", selection: $selection) {
-                    ForEach(ReportKind.allCases) { Text($0.rawValue).tag($0) }
+                // A menu picker keeps a small, fixed width; a segmented control
+                // grows with the number of reports and clips inside the sheet.
+                HStack {
+                    Picker("Report", selection: $selection) {
+                        ForEach(ReportKind.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                    Spacer()
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
                 .padding()
                 Divider()
                 switch selection {
