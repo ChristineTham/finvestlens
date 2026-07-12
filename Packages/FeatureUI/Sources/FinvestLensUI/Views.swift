@@ -66,6 +66,7 @@ public struct FinvestLensRootView: View {
     @State private var showingNewTransaction = false
     @State private var showingExport = false
     @State private var exportDocument: GnuCashFileDocument?
+    @State private var showingReports = false
 
     public init(model: AppModel) {
         self.model = model
@@ -92,6 +93,9 @@ public struct FinvestLensRootView: View {
                     showingNewTransaction = true
                 }
                 .disabled(model.postableAccounts.count < 2)
+                Button("Reports", systemImage: "chart.pie") {
+                    showingReports = true
+                }
                 Button("Save", systemImage: "square.and.arrow.down") {
                     try? model.save()
                 }
@@ -109,6 +113,9 @@ public struct FinvestLensRootView: View {
         }
         .sheet(isPresented: $showingNewTransaction) {
             TransactionEditorSheet(model: model)
+        }
+        .sheet(isPresented: $showingReports) {
+            ReportsView(model: model)
         }
         .fileExporter(isPresented: $showingExport, document: exportDocument,
                       contentType: GnuCashFileDocument.contentType, defaultFilename: "Book") { _ in
