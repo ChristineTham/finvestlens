@@ -77,6 +77,9 @@ public final class AppModel {
     public internal(set) var budgets: [Budget] = []
     public internal(set) var savedSearches: [SavedSearch] = []
 
+    /// Securities tracked but not held (watch list, `FR-PLAN-07`).
+    public internal(set) var watchlist: [Commodity] = []
+
     /// Per-security ticker overrides for quote lookups, keyed by
     /// `"namespace|mnemonic"` (e.g. maps `CBA` → `CBA.AX` for Yahoo).
     public internal(set) var quoteSymbols: [String: String] = [:]
@@ -115,6 +118,7 @@ public final class AppModel {
         static let budgets = "finvestlens/budgets"
         static let quoteSymbols = "finvestlens/quoteSymbols"
         static let savedSearches = "finvestlens/savedSearches"
+        static let watchlist = "finvestlens/watchlist"
     }
 
     /// Loads the KVP-backed collections from the current book.
@@ -128,6 +132,7 @@ public final class AppModel {
         budgets = Self.decodeSlot([Budget].self, book.kvp[KvpKey.budgets]) ?? []
         quoteSymbols = Self.decodeSlot([String: String].self, book.kvp[KvpKey.quoteSymbols]) ?? [:]
         savedSearches = Self.decodeSlot([SavedSearch].self, book.kvp[KvpKey.savedSearches]) ?? []
+        watchlist = Self.decodeSlot([Commodity].self, book.kvp[KvpKey.watchlist]) ?? []
     }
 
     /// Writes the KVP-backed collections into the current book's slots.
@@ -138,6 +143,7 @@ public final class AppModel {
         book.kvp[KvpKey.budgets] = Self.encodeSlot(budgets)
         book.kvp[KvpKey.quoteSymbols] = Self.encodeMap(quoteSymbols)
         book.kvp[KvpKey.savedSearches] = Self.encodeSlot(savedSearches)
+        book.kvp[KvpKey.watchlist] = Self.encodeSlot(watchlist)
     }
 
     /// Persists the collections and refreshes derived UI state.
@@ -223,6 +229,7 @@ public final class AppModel {
         scheduledTransactions = []
         budgets = []
         savedSearches = []
+        watchlist = []
         quoteSymbols = [:]
         quoteStatus = .idle
         whatIfEvents = []

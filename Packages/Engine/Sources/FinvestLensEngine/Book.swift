@@ -90,6 +90,19 @@ public final class Book {
 
     // MARK: Prices
 
+    /// Updates a commodity's display metadata (name / fraction) across every
+    /// account, price and the commodity table. Identity (namespace + mnemonic)
+    /// is unchanged, so prices and quotes stay linked (`FR-INV-07`).
+    public func updateCommodityMetadata(_ commodity: Commodity, fullName: String?, smallestFraction: Int?) {
+        func apply(_ c: inout Commodity) {
+            if let fullName, !fullName.isEmpty { c.fullName = fullName }
+            if let smallestFraction, smallestFraction >= 1 { c.smallestFraction = smallestFraction }
+        }
+        for account in accounts where account.commodity == commodity { apply(&account.commodity) }
+        for index in prices.indices where prices[index].commodity == commodity { apply(&prices[index].commodity) }
+        for index in commodities.indices where commodities[index] == commodity { apply(&commodities[index]) }
+    }
+
     /// Adds a price to the database (and registers its commodities).
     @discardableResult
     public func addPrice(_ price: Price) -> Price {

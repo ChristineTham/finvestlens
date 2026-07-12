@@ -16,6 +16,7 @@ struct PricesView: View {
     @State private var showingAdd = false
     @State private var showingQuotes = false
     @State private var showingAddRate = false
+    @State private var showingSecurities = false
 
     var body: some View {
         NavigationStack {
@@ -68,8 +69,11 @@ struct PricesView: View {
                     Button("Done") { dismiss() }
                 }
                 ToolbarItem {
+                    Button("Securities", systemImage: "building.2") { showingSecurities = true }
+                }
+                ToolbarItem {
                     Button("Get Quotes", systemImage: "arrow.down.circle") { showingQuotes = true }
-                        .disabled(model.securityCommodities.isEmpty)
+                        .disabled(model.pricableSecurities.isEmpty)
                 }
                 ToolbarItem {
                     Button("Add Rate", systemImage: "dollarsign.arrow.circlepath") { showingAddRate = true }
@@ -77,12 +81,13 @@ struct PricesView: View {
                 }
                 ToolbarItem {
                     Button("Add Price", systemImage: "plus") { showingAdd = true }
-                        .disabled(model.securityCommodities.isEmpty)
+                        .disabled(model.pricableSecurities.isEmpty)
                 }
             }
             .sheet(isPresented: $showingAdd) { AddPriceSheet(model: model) }
             .sheet(isPresented: $showingQuotes) { QuotesView(model: model) }
             .sheet(isPresented: $showingAddRate) { AddRateSheet(model: model) }
+            .sheet(isPresented: $showingSecurities) { SecuritiesView(model: model) }
         }
         .frame(minWidth: 460, minHeight: 380)
     }
@@ -97,7 +102,7 @@ struct AddPriceSheet: View {
     @State private var date = Date()
     @State private var valueText = ""
 
-    private var commodities: [Commodity] { model.securityCommodities }
+    private var commodities: [Commodity] { model.pricableSecurities }
     private func key(_ c: Commodity) -> String { "\(c.namespace)|\(c.mnemonic)" }
 
     var body: some View {

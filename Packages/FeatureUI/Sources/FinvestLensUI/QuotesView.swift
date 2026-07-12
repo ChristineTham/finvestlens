@@ -55,7 +55,7 @@ struct QuotesView: View {
                     Label("Fetch Latest Prices", systemImage: "arrow.down.circle")
                 }
             }
-            .disabled(isFetching || model.securityCommodities.isEmpty)
+            .disabled(isFetching || model.pricableSecurities.isEmpty)
 
             statusRow
         }
@@ -128,10 +128,10 @@ struct QuotesView: View {
 
     private var securitiesSection: some View {
         Section {
-            if model.securityCommodities.isEmpty {
+            if model.pricableSecurities.isEmpty {
                 Text("No securities held yet.").foregroundStyle(.secondary)
             } else {
-                ForEach(model.securityCommodities, id: \.self) { commodity in
+                ForEach(model.pricableSecurities, id: \.self) { commodity in
                     HStack {
                         VStack(alignment: .leading) {
                             Text(commodity.mnemonic).fontWeight(.medium)

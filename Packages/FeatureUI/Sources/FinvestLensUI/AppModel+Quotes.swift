@@ -74,7 +74,7 @@ extension AppModel {
     /// price for each success. Failures for individual symbols are collected but
     /// do not abort the run (`FR-INV-03`).
     public func fetchLatestQuotes(using kind: QuoteProviderKind) async {
-        let commodities = securityCommodities
+        let commodities = pricableSecurities
         guard !commodities.isEmpty else {
             quoteStatus = .failure("No securities to price.")
             return
