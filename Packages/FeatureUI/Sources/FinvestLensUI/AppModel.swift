@@ -61,6 +61,9 @@ public final class AppModel {
     }
     public internal(set) var searchResults: [TransactionSummary] = []
 
+    /// The active reconciliation session, or `nil` when not reconciling.
+    public internal(set) var reconcileSession: ReconcileSessionState?
+
     /// `true` when a document is open.
     public var isOpen: Bool { document != nil }
     /// `true` when there are unsaved changes.

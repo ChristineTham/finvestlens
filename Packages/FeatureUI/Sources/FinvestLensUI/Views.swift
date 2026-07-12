@@ -126,9 +126,22 @@ public struct FinvestLensRootView: View {
 
 // MARK: - Accounts sidebar
 
+/// Which modal a sidebar account row is presenting.
+enum AccountSheet: Identifiable {
+    case edit(GncGUID)
+    case reconcile(GncGUID)
+
+    var id: String {
+        switch self {
+        case .edit(let guid): return "edit-\(guid.hexString)"
+        case .reconcile(let guid): return "rec-\(guid.hexString)"
+        }
+    }
+}
+
 struct AccountsSidebar: View {
     @Bindable var model: AppModel
-    @State private var editingAccountID: GncGUID?
+    @State private var sheet: AccountSheet?
 
     var body: some View {
         List(selection: $model.selectedAccountID) {
@@ -143,15 +156,19 @@ struct AccountsSidebar: View {
                 }
                 .tag(node.id)
                 .contextMenu {
-                    Button("Edit…") { editingAccountID = node.id }
+                    Button("Edit…") { sheet = .edit(node.id) }
+                    Button("Reconcile…") { sheet = .reconcile(node.id) }
                     if model.canDeleteAccount(node.id) {
                         Button("Delete", role: .destructive) { model.deleteAccount(node.id) }
                     }
                 }
             }
         }
-        .sheet(item: $editingAccountID) { id in
-            EditAccountSheet(model: model, accountID: id)
+        .sheet(item: $sheet) { sheet in
+            switch sheet {
+            case .edit(let id): EditAccountSheet(model: model, accountID: id)
+            case .reconcile(let id): ReconcileView(model: model, accountID: id)
+            }
         }
     }
 }
