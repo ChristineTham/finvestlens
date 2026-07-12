@@ -23,6 +23,8 @@ struct ReportsView: View {
         case netWorth = "Net Worth"
         case cashFlow = "Cash Flow"
         case portfolio = "Portfolio"
+        case investmentLots = "Investment Lots"
+        case priceScatter = "Price Scatter"
         case capitalGains = "Capital Gains"
         var id: String { rawValue }
     }
@@ -48,6 +50,8 @@ struct ReportsView: View {
                 case .netWorth: NetWorthChartView(model: model)
                 case .cashFlow: CashFlowView(model: model)
                 case .portfolio: PortfolioView(model: model)
+                case .investmentLots: InvestmentLotsView(model: model)
+                case .priceScatter: PriceScatterView(model: model)
                 case .capitalGains: CapitalGainsView(model: model)
                 }
             }
@@ -193,6 +197,15 @@ private struct PortfolioView: View {
                     TotalRow(label: "Market value", amount: portfolio.totalValue, code: portfolio.currencyCode, emphasised: true)
                     signedTotal("Unrealized gain", portfolio.totalUnrealized, portfolio.currencyCode)
                     signedTotal("Realized gain", portfolio.totalRealized, portfolio.currencyCode)
+                    if let ror = portfolio.totalReturnFraction {
+                        HStack {
+                            Text("Total return").fontWeight(.bold)
+                            Spacer()
+                            Text(ror.formatted(.percent.precision(.fractionLength(1))))
+                                .monospacedDigit().fontWeight(.bold)
+                                .foregroundStyle(ror < 0 ? .red : (ror > 0 ? .green : .primary))
+                        }
+                    }
                 }
                 PriceHistorySection(model: model)
             }
@@ -325,6 +338,91 @@ private struct PriceHistorySection: View {
                     .frame(height: 160)
                     .padding(.vertical, 4)
                 }
+            }
+        }
+    }
+}
+
+private struct InvestmentLotsView: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        let lots = model.investmentLots()
+        if lots.isEmpty {
+            ContentUnavailableView("No open lots", systemImage: "square.stack.3d.up",
+                                   description: Text("Buy a security to see its tax lots."))
+        } else {
+            List {
+                Section {
+                    Picker("Method", selection: $model.costBasisMethod) {
+                        ForEach(CostBasisMethod.allCases) { Text($0.displayName).tag($0) }
+                    }
+                }
+                Section("Open Lots") {
+                    ForEach(lots) { lot in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(lot.symbol).fontWeight(.medium)
+                                if let date = lot.acquisitionDate {
+                                    Text(date, format: .dateTime.year().month().day())
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(lot.marketValue.map { AmountFormat.string($0, code: model.reportCurrency.mnemonic) } ?? "no price")
+                                    .monospacedDigit()
+                            }
+                            HStack {
+                                Text("\(lot.quantity.formatted()) · cost \(AmountFormat.string(lot.costBasis, code: model.reportCurrency.mnemonic))")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                if let gain = lot.unrealizedGain {
+                                    Text(AmountFormat.string(gain, code: model.reportCurrency.mnemonic))
+                                        .font(.caption).monospacedDigit()
+                                        .foregroundStyle(gain < 0 ? .red : .green)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct PriceScatterView: View {
+    @Bindable var model: AppModel
+
+    private struct Point: Identifiable {
+        let id = UUID()
+        let symbol: String
+        let date: Date
+        let price: Double
+    }
+
+    private var points: [Point] {
+        model.securitiesWithPriceHistory.flatMap { commodity in
+            model.priceHistory(for: commodity).map {
+                Point(symbol: commodity.mnemonic, date: $0.date,
+                      price: NSDecimalNumber(decimal: $0.value).doubleValue)
+            }
+        }
+    }
+
+    var body: some View {
+        let data = points
+        if data.isEmpty {
+            ContentUnavailableView("No prices", systemImage: "chart.dots.scatter",
+                                   description: Text("Record security prices to plot them over time."))
+        } else {
+            VStack(alignment: .leading) {
+                Chart(data) { point in
+                    PointMark(x: .value("Date", point.date),
+                              y: .value("Price", point.price))
+                        .foregroundStyle(by: .value("Security", point.symbol))
+                }
+                .frame(minHeight: 260)
+                .padding()
             }
         }
     }

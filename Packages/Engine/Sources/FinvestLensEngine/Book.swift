@@ -139,7 +139,8 @@ public final class Book {
             for split in transaction.splits
             where split.account === account && split.reconcileState != .voided && split.quantity != 0 {
                 events.append(LotEvent(date: transaction.datePosted,
-                                       quantity: split.quantity, value: split.value))
+                                       quantity: split.quantity, value: split.value,
+                                       isSplit: split.action == "Split"))
             }
         }
         return events

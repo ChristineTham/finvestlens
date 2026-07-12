@@ -35,15 +35,22 @@ public enum CostBasisMethod: String, Codable, Sendable, CaseIterable, Identifiab
 /// a disposal. `value` is the signed cash amount in the transaction currency:
 /// positive cost for a buy, negative proceeds for a sell (matching the security
 /// split's sign convention).
+///
+/// When ``isSplit`` is set the event is a stock split: `quantity` is the number
+/// of shares *added* by the split (negative for a reverse split) and `value` is
+/// ignored. A split rescales the open lots — multiplying share counts and
+/// dividing per-share cost — so total cost basis is preserved.
 public struct LotEvent: Hashable, Sendable {
     public var date: Date
     public var quantity: Decimal
     public var value: Decimal
+    public var isSplit: Bool
 
-    public init(date: Date, quantity: Decimal, value: Decimal) {
+    public init(date: Date, quantity: Decimal, value: Decimal, isSplit: Bool = false) {
         self.date = date
         self.quantity = quantity
         self.value = value
+        self.isSplit = isSplit
     }
 }
 
@@ -149,7 +156,7 @@ public enum CostBasis {
     private struct MutableLot {
         let date: Date
         var remaining: Decimal
-        let costPerShare: Decimal
+        var costPerShare: Decimal
     }
 
     private static func matchedLots(
@@ -159,6 +166,21 @@ public enum CostBasis {
         var gains: [RealizedGain] = []
 
         for event in events {
+            if event.isSplit {
+                // Rescale every open lot so total cost is preserved: shares grow
+                // by the split ratio, per-share cost shrinks by it.
+                let current = open.reduce(Decimal(0)) { $0 + $1.remaining }
+                if current > 0 {
+                    let ratio = (current + event.quantity) / current
+                    if ratio > 0 {
+                        for index in open.indices {
+                            open[index].remaining *= ratio
+                            open[index].costPerShare /= ratio
+                        }
+                    }
+                }
+                continue
+            }
             if event.quantity > 0 {
                 let perShare = event.value / event.quantity
                 open.append(MutableLot(date: event.date, remaining: event.quantity, costPerShare: perShare))
@@ -207,6 +229,11 @@ public enum CostBasis {
         var gains: [RealizedGain] = []
 
         for event in events {
+            if event.isSplit {
+                // Cost pool is unchanged; only the share count moves.
+                pooledShares += event.quantity
+                continue
+            }
             if event.quantity > 0 {
                 pooledShares += event.quantity
                 pooledCost += event.value

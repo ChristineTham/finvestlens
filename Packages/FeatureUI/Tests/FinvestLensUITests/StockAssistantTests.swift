@@ -82,6 +82,22 @@ struct StockAssistantTests {
         #expect(gains.openLots.contains { $0.quantity == dec("2.5") })
     }
 
+    @Test("A 2:1 split doubles shares and preserves cost basis")
+    func stockSplit() throws {
+        let (model, stock, cash, _, _, url) = try model()
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+        try model.recordStockTransaction(
+            action: .buy, securityID: stock, settlementID: cash,
+            shares: dec("10"), pricePerShare: dec("10"), date: day(0), description: "Buy")
+        try model.recordStockTransaction(
+            action: .split, securityID: stock, settlementID: nil,
+            splitNew: 2, splitOld: 1, date: day(100), description: "2:1")
+
+        let gains = try #require(model.capitalGains())
+        #expect(gains.openLots.reduce(Decimal(0)) { $0 + $1.quantity } == dec("20"))
+        #expect(gains.openCostBasis == dec("100"))
+    }
+
     @Test("Invalid input throws")
     func invalid() throws {
         let (model, stock, cash, _, _, url) = try model()

@@ -26,6 +26,8 @@ struct StockTransactionSheet: View {
     @State private var priceText = ""
     @State private var amountText = ""
     @State private var commissionText = ""
+    @State private var splitNewText = "2"
+    @State private var splitOldText = "1"
     @State private var memo = ""
     @State private var errorText: String?
 
@@ -33,6 +35,8 @@ struct StockTransactionSheet: View {
     private var price: Decimal? { Decimal(string: priceText) }
     private var amount: Decimal? { Decimal(string: amountText) }
     private var commission: Decimal { Decimal(string: commissionText) ?? 0 }
+    private var splitNew: Decimal? { Decimal(string: splitNewText) }
+    private var splitOld: Decimal? { Decimal(string: splitOldText) }
 
     var body: some View {
         NavigationStack {
@@ -81,7 +85,7 @@ struct StockTransactionSheet: View {
             if action != .dividend {
                 accountPicker("Security", selection: $securityID, nodes: model.securityAccountNodes)
             }
-            if action != .reinvestDividend {
+            if action != .reinvestDividend && action != .split {
                 accountPicker(action == .dividend ? "Deposit to" : "Settlement",
                               selection: $settlementID, nodes: model.settlementAccountNodes)
             }
@@ -98,19 +102,33 @@ struct StockTransactionSheet: View {
     @ViewBuilder
     private var amountsSection: some View {
         Section("Amounts") {
-            if action.movesShares {
-                numberField("Shares", text: $sharesText)
-            }
             switch action {
             case .buy, .sell:
+                numberField("Shares", text: $sharesText)
                 numberField("Price per share", text: $priceText)
                 numberField("Commission", text: $commissionText)
             case .dividend:
                 numberField("Amount", text: $amountText)
             case .reinvestDividend:
+                numberField("Shares", text: $sharesText)
                 numberField("Amount", text: $amountText)
+            case .split:
+                numberField("New shares", text: $splitNewText)
+                numberField("Per old shares", text: $splitOldText)
+                if let resulting = splitResultingShares {
+                    LabeledContent("Resulting shares") {
+                        Text(resulting.formatted()).monospacedDigit().foregroundStyle(.secondary)
+                    }
+                }
             }
         }
+    }
+
+    private var splitResultingShares: Decimal? {
+        guard let new = splitNew, let old = splitOld, old != 0,
+              let balance = model.securityAccountNodes.first(where: { $0.id == securityID })?.balance
+        else { return nil }
+        return balance * new / old
     }
 
     private func accountPicker(_ label: String, selection: Binding<GncGUID?>,
@@ -141,6 +159,7 @@ struct StockTransactionSheet: View {
         case .buy: return "Total cost"
         case .sell: return "Net proceeds"
         case .dividend, .reinvestDividend: return "Amount"
+        case .split: return ""
         }
     }
 
@@ -154,6 +173,8 @@ struct StockTransactionSheet: View {
             return shares * price - commission
         case .dividend, .reinvestDividend:
             return amount
+        case .split:
+            return nil
         }
     }
 
@@ -166,11 +187,13 @@ struct StockTransactionSheet: View {
             return incomeID != nil && (amount ?? 0) > 0
         case .reinvestDividend:
             return securityID != nil && incomeID != nil && (amount ?? 0) > 0 && (shares ?? 0) > 0
+        case .split:
+            return securityID != nil && (splitNew ?? 0) > 0 && (splitOld ?? 0) > 0
         }
     }
 
     private var settlementValid: Bool {
-        action == .reinvestDividend || settlementID != nil
+        action == .reinvestDividend || action == .split || settlementID != nil
     }
 
     // MARK: Actions
@@ -189,7 +212,8 @@ struct StockTransactionSheet: View {
                 action: action, securityID: securityID, settlementID: settlementID,
                 incomeID: incomeID, commissionID: commissionID,
                 shares: shares ?? 0, pricePerShare: price ?? 0, amount: amount ?? 0,
-                commission: commission, date: date, description: name, memo: memo)
+                commission: commission, splitNew: splitNew ?? 0, splitOld: splitOld ?? 0,
+                date: date, description: name, memo: memo)
             dismiss()
         } catch {
             errorText = "Couldn’t record: \(error)"

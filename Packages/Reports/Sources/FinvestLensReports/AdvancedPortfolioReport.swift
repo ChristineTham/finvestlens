@@ -46,6 +46,14 @@ public struct AdvancedPortfolio: Sendable {
     public var totalValue: Decimal
     public var totalUnrealized: Decimal
     public var totalRealized: Decimal
+
+    /// Simple total return: (unrealized + realized) ÷ cost basis of holdings
+    /// (`nil` when there is no cost basis).
+    public var totalReturnFraction: Double? {
+        guard totalCost != 0 else { return nil }
+        let gain = totalUnrealized + totalRealized
+        return NSDecimalNumber(decimal: gain).doubleValue / NSDecimalNumber(decimal: totalCost).doubleValue
+    }
 }
 
 public extension FinancialReports {

@@ -60,6 +60,8 @@ extension AppModel {
         pricePerShare: Decimal = 0,
         amount: Decimal = 0,
         commission: Decimal = 0,
+        splitNew: Decimal = 0,
+        splitOld: Decimal = 0,
         date: Date,
         description: String,
         memo: String = ""
@@ -108,6 +110,18 @@ extension AppModel {
             txn = StockTransaction.reinvestDividend(
                 income: income, security: security, shares: shares, amount: amount,
                 date: date, currency: income.commodity, description: description, memo: memo)
+
+        case .split:
+            guard let security = securityID.flatMap({ book.account(with: $0) })
+            else { throw StockEntryError.unknownAccount }
+            guard splitNew > 0, splitOld > 0 else { throw StockEntryError.invalidInput }
+            let current = book.costBasis(for: security).remainingQuantity
+            guard current > 0 else { throw StockEntryError.invalidInput }
+            let added = current * (splitNew / splitOld - 1)
+            guard added != 0 else { throw StockEntryError.invalidInput }
+            txn = StockTransaction.stockSplit(
+                security: security, addedShares: added,
+                date: date, currency: reportCurrency, description: description, memo: memo)
         }
 
         guard txn.isBalanced else { throw StockEntryError.invalidInput }

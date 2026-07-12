@@ -69,6 +69,14 @@ extension AppModel {
                                                   asOf: asOf, method: costBasisMethod)
     }
 
+    /// Every open tax lot valued at the latest price, under the selected
+    /// cost-basis method (`FR-RPT-02`, Investment Lots).
+    public func investmentLots(asOf: Date = Date()) -> [LotDetail] {
+        guard let book, !securityCommodities.isEmpty else { return [] }
+        return FinancialReports.investmentLots(book, currency: reportCurrency,
+                                               asOf: asOf, method: costBasisMethod)
+    }
+
     /// Securities that have at least one recorded price (candidates for the
     /// price-history chart).
     public var securitiesWithPriceHistory: [Commodity] {

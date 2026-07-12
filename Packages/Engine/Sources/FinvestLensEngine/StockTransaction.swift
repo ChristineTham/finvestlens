@@ -10,15 +10,12 @@ import Foundation
 
 /// The security-transaction shapes the Stock Transaction Assistant can build
 /// (`FR-INV-05`).
-///
-/// Stock splits (share re-denomination) are intentionally excluded: doing them
-/// correctly requires rescaling existing lots rather than adding a parcel, which
-/// the cost-basis model does not yet express.
 public enum StockActionKind: String, CaseIterable, Sendable, Identifiable {
     case buy
     case sell
     case dividend
     case reinvestDividend
+    case split
 
     public var id: String { rawValue }
 
@@ -28,6 +25,7 @@ public enum StockActionKind: String, CaseIterable, Sendable, Identifiable {
         case .sell: return "Sell"
         case .dividend: return "Dividend"
         case .reinvestDividend: return "Reinvest Dividend"
+        case .split: return "Split"
         }
     }
 
@@ -107,6 +105,19 @@ public enum StockTransaction {
         let txn = Transaction(currency: currency, datePosted: date, description: description)
         txn.addSplit(account: income, value: -value, memo: memo)
         txn.addSplit(account: security, value: value, quantity: shares)
+        return txn
+    }
+
+    /// A stock split adding `addedShares` (negative for a reverse split) to
+    /// `security` at zero cost. A single split marked `action = "Split"` so the
+    /// cost-basis engine rescales the open lots rather than adding a parcel.
+    public static func stockSplit(
+        security: Account, addedShares: Decimal,
+        date: Date, currency: Commodity, description: String, memo: String = ""
+    ) -> Transaction {
+        let txn = Transaction(currency: currency, datePosted: date, description: description)
+        let split = Split(account: security, value: 0, quantity: addedShares, memo: memo, action: "Split")
+        txn.addSplit(split)
         return txn
     }
 }
