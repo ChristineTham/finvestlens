@@ -23,75 +23,71 @@
 //
 
 import SwiftUI
-import SwiftData
+import UniformTypeIdentifiers
+import FinvestLensUI
 
-struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+/// Hosts either the welcome screen or an open document.
+struct RootHost: View {
+    @Bindable var model: AppModel
+    @State private var importing = false
+    @State private var errorMessage: String?
+
+    static var documentType: UTType {
+        UTType(exportedAs: "com.hellotham.finvestlens.document", conformingTo: .database)
+    }
 
     var body: some View {
-        NavigationViewWrapper {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
-                    }
-                }
-                .onDelete(perform: deleteItems)
+        Group {
+            if model.isOpen {
+                FinvestLensRootView(model: model)
+            } else {
+                WelcomeView(onNew: newTemporary) { importing = true }
             }
-#if os(macOS)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-#endif
-            .toolbar {
-#if os(iOS)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-#endif
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [Self.documentType, .data]) { result in
+            if case .success(let url) = result {
+                do { try model.open(at: url) }
+                catch { errorMessage = error.localizedDescription }
             }
+        }
+        .alert("Couldn’t open document",
+               isPresented: Binding(get: { errorMessage != nil },
+                                    set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
-            }
-        }
+    private func newTemporary() {
+        let name = "Untitled-\(UUID().uuidString.prefix(6)).finvestlens"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try? model.newDocument(at: url)
     }
 }
 
-fileprivate struct NavigationViewWrapper<Content: View>: View {
-    let content: () -> Content
+/// Simple welcome screen shown when no document is open.
+struct WelcomeView: View {
+    let onNew: () -> Void
+    let onOpen: () -> Void
 
     var body: some View {
-#if os(macOS)
-        NavigationSplitView {
-            content()
-        } detail: {
-            Text("Select an item")
+        VStack(spacing: 16) {
+            Image(systemName: "building.columns")
+                .font(.system(size: 56))
+                .foregroundStyle(.tint)
+            Text("FinvestLens")
+                .font(.largeTitle.bold())
+            Text("Native double-entry accounting")
+                .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                Button("New Book", action: onNew)
+                    .buttonStyle(.borderedProminent)
+                Button("Open…", action: onOpen)
+            }
+            .padding(.top, 8)
         }
-#else
-        content()
-#endif
+        .padding(48)
+        .frame(minWidth: 420, minHeight: 320)
     }
-}
-
-#Preview {
-    ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
 }

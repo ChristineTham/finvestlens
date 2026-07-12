@@ -23,38 +23,22 @@
 //
 
 import SwiftUI
-import SwiftData
-import UniformTypeIdentifiers
+import FinvestLensUI
 
 @main
 struct finvestlensApp: App {
+    @State private var model = AppModel()
+
     var body: some Scene {
-        DocumentGroup(editing: .itemDocument, migrationPlan: finvestlensMigrationPlan.self) {
-            ContentView()
+        WindowGroup {
+            RootHost(model: model)
+        }
+        .commands {
+            CommandGroup(after: .saveItem) {
+                Button("Save") { try? model.save() }
+                    .keyboardShortcut("s", modifiers: .command)
+                    .disabled(!model.hasUnsavedChanges)
+            }
         }
     }
-}
-
-extension UTType {
-    static var itemDocument: UTType {
-        UTType(importedAs: "com.example.item-document")
-    }
-}
-
-struct finvestlensMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [VersionedSchema.Type] = [
-        finvestlensVersionedSchema.self,
-    ]
-
-    static var stages: [MigrationStage] = [
-        // Stages of migration between VersionedSchema, if required.
-    ]
-}
-
-struct finvestlensVersionedSchema: VersionedSchema {
-    static var versionIdentifier = Schema.Version(1, 0, 0)
-
-    static var models: [any PersistentModel.Type] = [
-        Item.self,
-    ]
 }

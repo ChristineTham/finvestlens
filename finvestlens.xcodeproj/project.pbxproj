@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		FE00000000000000000000B1 /* FinvestLensUI in Frameworks */ = {isa = PBXBuildFile; productRef = FE00000000000000000000D1 /* FinvestLensUI */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		878083733002E200001776CE /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -65,6 +69,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FE00000000000000000000B1 /* FinvestLensUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -125,6 +130,7 @@
 			);
 			name = finvestlens;
 			packageProductDependencies = (
+				FE00000000000000000000D1 /* FinvestLensUI */,
 			);
 			productName = finvestlens;
 			productReference = 878083623002E1FF001776CE /* finvestlens.app */;
@@ -212,6 +218,9 @@
 			productRefGroup = 878083633002E1FF001776CE /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
+			packageReferences = (
+				FE00000000000000000000C1 /* XCLocalSwiftPackageReference "Packages/FeatureUI" */,
+			);
 			targets = (
 				878083613002E1FF001776CE /* finvestlens */,
 				878083713002E200001776CE /* finvestlensTests */,
@@ -640,6 +649,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		FE00000000000000000000C1 /* XCLocalSwiftPackageReference "Packages/FeatureUI" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/FeatureUI;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		FE00000000000000000000D1 /* FinvestLensUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = FinvestLensUI;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 8780835A3002E1FF001776CE /* Project object */;
 }

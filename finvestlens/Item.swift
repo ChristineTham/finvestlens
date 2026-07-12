@@ -22,14 +22,6 @@
 //  along with FinvestLens.  If not, see <https://www.gnu.org/licenses/>.
 //
 
-import Foundation
-import SwiftData
-
-@Model
-final class Item {
-    var timestamp: Date
-
-    init(timestamp: Date) {
-        self.timestamp = timestamp
-    }
-}
+//  The SwiftData scaffold has been removed: FinvestLens stores data in its own
+//  native `.finvestlens` SQLite document (see the FinvestLensPersistence
+//  package), not SwiftData. This file is intentionally left without types.
