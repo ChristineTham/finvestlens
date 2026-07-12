@@ -11,6 +11,7 @@ import Observation
 import FinvestLensEngine
 import FinvestLensPersistence
 import FinvestLensInterchange
+import FinvestLensRules
 
 /// A row in the chart-of-accounts tree.
 public struct AccountNode: Identifiable, Hashable, Sendable {
@@ -64,6 +65,13 @@ public final class AppModel {
     /// The active reconciliation session, or `nil` when not reconciling.
     public internal(set) var reconcileSession: ReconcileSessionState?
 
+    // Book-KVP-backed collections, held as observed stored properties so views
+    // update when they change (the underlying `book.kvp` is not observable).
+    // Loaded from the book on open and persisted back on mutation.
+    public internal(set) var ruleGroups: [RuleGroup] = []
+    public internal(set) var scheduledTransactions: [ScheduledTransaction] = []
+    public internal(set) var budgets: [Budget] = []
+
     /// `true` when a document is open.
     public var isOpen: Bool { document != nil }
     /// `true` when there are unsaved changes.
@@ -73,15 +81,63 @@ public final class AppModel {
 
     public init() {}
 
+    // MARK: KVP-backed collections
+
+    private enum KvpKey {
+        static let rules = "finvestlens/ruleGroups"
+        static let scheduled = "finvestlens/scheduledTransactions"
+        static let budgets = "finvestlens/budgets"
+    }
+
+    /// Loads the KVP-backed collections from the current book.
+    func reloadKvpCollections() {
+        guard let book else {
+            ruleGroups = []; scheduledTransactions = []; budgets = []
+            return
+        }
+        ruleGroups = Self.decodeSlot([RuleGroup].self, book.kvp[KvpKey.rules]) ?? []
+        scheduledTransactions = Self.decodeSlot([ScheduledTransaction].self, book.kvp[KvpKey.scheduled]) ?? []
+        budgets = Self.decodeSlot([Budget].self, book.kvp[KvpKey.budgets]) ?? []
+    }
+
+    /// Writes the KVP-backed collections into the current book's slots.
+    func persistKvpCollections() {
+        guard let book else { return }
+        book.kvp[KvpKey.rules] = Self.encodeSlot(ruleGroups)
+        book.kvp[KvpKey.scheduled] = Self.encodeSlot(scheduledTransactions)
+        book.kvp[KvpKey.budgets] = Self.encodeSlot(budgets)
+    }
+
+    /// Persists the collections and refreshes derived UI state.
+    func commitKvpCollections() {
+        persistKvpCollections()
+        markDirtyAndRefresh()
+    }
+
+    private static func decodeSlot<T: Decodable>(_ type: T.Type, _ value: KvpValue?) -> T? {
+        guard case let .string(json)? = value, let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
+    }
+
+    private static func encodeSlot<T: Encodable>(_ array: [T]) -> KvpValue? {
+        guard !array.isEmpty,
+              let data = try? JSONEncoder().encode(array),
+              let json = String(data: data, encoding: .utf8)
+        else { return nil }
+        return .string(json)
+    }
+
     // MARK: Document lifecycle
 
     public func newDocument(at url: URL, baseCurrency: Commodity = .aud) throws {
         document = try FinvestLensDocument.create(at: url, baseCurrency: baseCurrency)
+        reloadKvpCollections()
         refreshAll()
     }
 
     public func open(at url: URL, breakStaleLock: Bool = false) throws {
         document = try FinvestLensDocument.open(at: url, breakStaleLock: breakStaleLock)
+        reloadKvpCollections()
         refreshAll()
     }
 
@@ -94,6 +150,7 @@ public final class AppModel {
         // Replace the fresh document's book with the imported one and save.
         try replaceBook(of: doc, with: result.book)
         document = doc
+        reloadKvpCollections()
         refreshAll()
         return result.summary
     }
@@ -112,6 +169,7 @@ public final class AppModel {
 
     public func revert() throws {
         try document?.revert()
+        reloadKvpCollections()
         refreshAll()
     }
 
@@ -121,6 +179,9 @@ public final class AppModel {
         accountTree = []
         registerRows = []
         selectedAccountID = nil
+        ruleGroups = []
+        scheduledTransactions = []
+        budgets = []
     }
 
     // MARK: Mutations
