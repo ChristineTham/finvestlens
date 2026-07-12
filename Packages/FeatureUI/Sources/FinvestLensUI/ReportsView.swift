@@ -16,6 +16,8 @@ struct ReportsView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var selection: ReportKind = .balanceSheet
+    @State private var exporting = false
+    @State private var pdfDocument: PDFReportDocument?
 
     enum ReportKind: String, CaseIterable, Identifiable {
         case balanceSheet = "Balance Sheet"
@@ -62,9 +64,68 @@ struct ReportsView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+                if printableStatement != nil {
+                    ToolbarItem {
+                        Button("PDF", systemImage: "arrow.up.doc") { exportPDF() }
+                    }
+                }
             }
+            .fileExporter(isPresented: $exporting, document: pdfDocument,
+                          contentType: .pdf, defaultFilename: selection.rawValue) { _ in }
         }
         .frame(minWidth: 520, minHeight: 440)
+    }
+
+    /// A printable statement for the current report, or `nil` for reports that
+    /// are chart/table-only.
+    private var printableStatement: PrintableStatement? {
+        let code = model.reportCurrency.mnemonic
+        switch selection {
+        case .balanceSheet:
+            guard let sheet = model.balanceSheet() else { return nil }
+            return PrintableStatement(
+                title: "Balance Sheet",
+                subtitle: "As of \(sheet.asOf.formatted(.dateTime.year().month().day())) · \(code)",
+                code: code,
+                sections: [
+                    PrintableSection(heading: "Assets", rows:
+                        sheet.assets.map { PrintableRow(label: $0.name, amount: $0.amount) }
+                        + [PrintableRow(label: "Total Assets", amount: sheet.totalAssets, bold: true)]),
+                    PrintableSection(heading: "Liabilities", rows:
+                        sheet.liabilities.map { PrintableRow(label: $0.name, amount: $0.amount) }
+                        + [PrintableRow(label: "Total Liabilities", amount: sheet.totalLiabilities, bold: true)]),
+                    PrintableSection(heading: "Equity", rows:
+                        sheet.equity.map { PrintableRow(label: $0.name, amount: $0.amount) }
+                        + [PrintableRow(label: "Retained Earnings", amount: sheet.retainedEarnings),
+                           PrintableRow(label: "Total Equity", amount: sheet.totalEquity, bold: true)]),
+                ])
+        case .incomeStatement:
+            let cal = Calendar(identifier: .gregorian)
+            let start = cal.date(byAdding: .month, value: -12, to: Date()) ?? Date()
+            guard let statement = model.incomeStatement(from: start, to: Date()) else { return nil }
+            return PrintableStatement(
+                title: "Income Statement",
+                subtitle: "\(start.formatted(.dateTime.year().month())) – \(Date().formatted(.dateTime.year().month())) · \(code)",
+                code: code,
+                sections: [
+                    PrintableSection(heading: "Income", rows:
+                        statement.income.map { PrintableRow(label: $0.name, amount: $0.amount) }
+                        + [PrintableRow(label: "Total Income", amount: statement.totalIncome, bold: true)]),
+                    PrintableSection(heading: "Expenses", rows:
+                        statement.expenses.map { PrintableRow(label: $0.name, amount: $0.amount) }
+                        + [PrintableRow(label: "Total Expenses", amount: statement.totalExpenses, bold: true)]),
+                    PrintableSection(heading: "Summary", rows:
+                        [PrintableRow(label: "Net Income", amount: statement.netIncome, bold: true)]),
+                ])
+        default:
+            return nil
+        }
+    }
+
+    private func exportPDF() {
+        guard let statement = printableStatement, let data = ReportExport.pdf(statement) else { return }
+        pdfDocument = PDFReportDocument(data: data)
+        exporting = true
     }
 }
 
