@@ -62,6 +62,11 @@ public struct GncGUID: Hashable, Sendable, CustomStringConvertible {
     }
 }
 
+extension GncGUID: Identifiable {
+    /// A GUID is its own identity.
+    public var id: GncGUID { self }
+}
+
 // MARK: - Codable (as the canonical hex string)
 
 extension GncGUID: Codable {

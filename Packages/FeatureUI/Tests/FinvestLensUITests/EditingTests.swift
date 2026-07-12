@@ -155,6 +155,66 @@ struct EditingTests {
         #expect(model.searchResults.isEmpty)
     }
 
+    @Test("Editing a transaction in place, with re-validation")
+    func editTransaction() throws {
+        let (model, bank, salary, groceries, url) = try makeModel()
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        let txn = try model.addTransaction(date: Date(), description: "Pay", currency: .aud, splits: [
+            SplitInput(accountID: bank, value: 100), SplitInput(accountID: salary, value: -100),
+        ])
+
+        let edit = try #require(model.editData(forTransaction: txn))
+        #expect(edit.description == "Pay")
+        #expect(edit.splits.count == 2)
+
+        // Re-route $30 of the pay into groceries; still balances.
+        try model.updateTransaction(id: txn, date: edit.date, description: "Pay + shop", currency: .aud, splits: [
+            SplitInput(accountID: bank, value: 70),
+            SplitInput(accountID: groceries, value: 30),
+            SplitInput(accountID: salary, value: -100),
+        ])
+
+        model.selectedAccountID = bank
+        #expect(model.registerRows.first?.description == "Pay + shop")
+        #expect(model.registerRows.first?.amount == Decimal(70))
+
+        // An unbalanced edit is rejected.
+        #expect(throws: TransactionEntryError.self) {
+            try model.updateTransaction(id: txn, date: edit.date, description: "x", currency: .aud, splits: [
+                SplitInput(accountID: bank, value: 70), SplitInput(accountID: salary, value: -100),
+            ])
+        }
+    }
+
+    @Test("Jump selects the counter-account")
+    func jump() throws {
+        let (model, bank, salary, _, url) = try makeModel()
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        try model.addTransaction(date: Date(), description: "Pay", currency: .aud, splits: [
+            SplitInput(accountID: bank, value: 100), SplitInput(accountID: salary, value: -100),
+        ])
+        model.selectedAccountID = bank
+        let splitID = try #require(model.registerRows.first?.id)
+        model.jumpToOtherAccount(ofSplit: splitID)
+        #expect(model.selectedAccountID == salary)
+    }
+
+    @Test("Editing an account's fields")
+    func editAccount() throws {
+        let (model, bank, _, _, url) = try makeModel()
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        let edit = try #require(model.editData(forAccount: bank))
+        #expect(edit.name == "Bank")
+        model.updateAccount(id: bank, name: "Everyday", code: "1001", description: "Cheque account",
+                            notes: "", isPlaceholder: false, isHidden: true)
+        let node = try #require(model.accountTree.first { $0.id == bank })
+        #expect(node.name == "Everyday")
+        #expect(node.isHidden)
+    }
+
     @Test("QuickFill suggests and templates recent entries")
     func quickFill() throws {
         let (model, bank, _, groceries, url) = try makeModel()

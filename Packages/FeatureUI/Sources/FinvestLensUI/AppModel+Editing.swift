@@ -39,6 +39,25 @@ public enum TransactionEntryError: Error, Equatable {
     case tooFewSplits
     case unbalanced(Decimal)
     case unknownAccount
+    case notFound
+}
+
+/// A snapshot of a transaction for pre-filling the editor.
+public struct TransactionEdit: Sendable {
+    public var date: Date
+    public var description: String
+    public var currency: Commodity
+    public var splits: [SplitInput]
+}
+
+/// A snapshot of an account's editable fields.
+public struct AccountEdit: Sendable {
+    public var name: String
+    public var code: String
+    public var description: String
+    public var notes: String
+    public var isPlaceholder: Bool
+    public var isHidden: Bool
 }
 
 @MainActor
@@ -68,6 +87,84 @@ extension AppModel {
         book.addTransaction(txn)
         markDirtyAndRefresh()
         return txn.guid
+    }
+
+    /// A snapshot of a transaction for editing, or `nil` if not found.
+    public func editData(forTransaction id: GncGUID) -> TransactionEdit? {
+        guard let book, let txn = book.transaction(with: id) else { return nil }
+        return TransactionEdit(
+            date: txn.datePosted,
+            description: txn.transactionDescription,
+            currency: txn.currency,
+            splits: txn.splits.map {
+                SplitInput(accountID: $0.account?.guid, value: $0.value, memo: $0.memo)
+            }
+        )
+    }
+
+    /// Replaces a transaction's fields and splits in place, re-validating the
+    /// double-entry invariant (`FR-REG-02`).
+    @discardableResult
+    public func updateTransaction(id: GncGUID, date: Date, description: String,
+                                  currency: Commodity, splits: [SplitInput]) throws -> GncGUID {
+        guard let book, let txn = book.transaction(with: id) else { throw TransactionEntryError.notFound }
+        let realSplits = splits.filter { $0.accountID != nil }
+        guard realSplits.count >= 2 else { throw TransactionEntryError.tooFewSplits }
+        let residual = currency.round(realSplits.reduce(Decimal(0)) { $0 + $1.value })
+        guard residual == 0 else { throw TransactionEntryError.unbalanced(residual) }
+
+        txn.datePosted = date
+        txn.dateEntered = date
+        txn.transactionDescription = description
+        txn.currency = currency
+        for existing in Array(txn.splits) { txn.removeSplit(existing) }
+        for input in realSplits {
+            guard let accountID = input.accountID, let account = book.account(with: accountID) else {
+                throw TransactionEntryError.unknownAccount
+            }
+            txn.addSplit(account: account, value: input.value, memo: input.memo)
+        }
+        markDirtyAndRefresh()
+        return txn.guid
+    }
+
+    // MARK: Register navigation
+
+    /// The account on the "other side" of a split's transaction (for jump).
+    public func otherAccountID(ofSplit splitID: GncGUID) -> GncGUID? {
+        guard let book, let split = book.split(with: splitID), let txn = split.transaction else { return nil }
+        return txn.splits.first { $0 !== split }?.account?.guid
+    }
+
+    /// Selects the counter-account of a split (GnuCash "Jump", `FR-REG-08`).
+    public func jumpToOtherAccount(ofSplit splitID: GncGUID) {
+        if let other = otherAccountID(ofSplit: splitID) { selectedAccountID = other }
+    }
+
+    // MARK: Account editing
+
+    public func editData(forAccount id: GncGUID) -> AccountEdit? {
+        guard let book, let account = book.account(with: id) else { return nil }
+        return AccountEdit(
+            name: account.name,
+            code: account.code,
+            description: account.accountDescription,
+            notes: account.notes,
+            isPlaceholder: account.isPlaceholder,
+            isHidden: account.isHidden
+        )
+    }
+
+    public func updateAccount(id: GncGUID, name: String, code: String, description: String,
+                              notes: String, isPlaceholder: Bool, isHidden: Bool) {
+        guard let book, let account = book.account(with: id) else { return }
+        account.name = name
+        account.code = code
+        account.accountDescription = description
+        account.notes = notes
+        account.isPlaceholder = isPlaceholder
+        account.isHidden = isHidden
+        markDirtyAndRefresh()
     }
 
     // MARK: Transaction operations

@@ -83,6 +83,7 @@ public struct FinvestLensRootView: View {
 
 struct AccountsSidebar: View {
     @Bindable var model: AppModel
+    @State private var editingAccountID: GncGUID?
 
     var body: some View {
         List(selection: $model.selectedAccountID) {
@@ -96,7 +97,16 @@ struct AccountsSidebar: View {
                         .foregroundStyle(node.balance < 0 ? .red : .secondary)
                 }
                 .tag(node.id)
+                .contextMenu {
+                    Button("Edit…") { editingAccountID = node.id }
+                    if model.canDeleteAccount(node.id) {
+                        Button("Delete", role: .destructive) { model.deleteAccount(node.id) }
+                    }
+                }
             }
+        }
+        .sheet(item: $editingAccountID) { id in
+            EditAccountSheet(model: model, accountID: id)
         }
     }
 }
@@ -106,6 +116,7 @@ struct AccountsSidebar: View {
 struct RegisterView: View {
     @Bindable var model: AppModel
     @State private var selection: Set<GncGUID> = []
+    @State private var editingTransactionID: GncGUID?
 
     var body: some View {
         Group {
@@ -148,12 +159,18 @@ struct RegisterView: View {
         }
         .contextMenu(forSelectionType: GncGUID.self) { ids in
             if let splitID = ids.first, let txnID = model.transactionID(ofSplit: splitID) {
+                Button("Edit…") { editingTransactionID = txnID }
+                Button("Go to Other Account") { model.jumpToOtherAccount(ofSplit: splitID) }
+                Divider()
                 Button("Duplicate") { model.duplicateTransaction(txnID) }
                 Button("Add Reversing Transaction") { _ = model.addReversingTransaction(txnID) }
                 Button("Void") { model.voidTransaction(txnID) }
                 Divider()
                 Button("Delete", role: .destructive) { model.deleteTransaction(txnID) }
             }
+        }
+        .sheet(item: $editingTransactionID) { id in
+            TransactionEditorSheet(model: model, editingID: id)
         }
     }
 
@@ -244,12 +261,25 @@ private struct EditableSplit: Identifiable {
     var amountText: String = ""
 
     var amount: Decimal { Decimal(string: amountText) ?? 0 }
+
+    init(accountID: GncGUID? = nil, amountText: String = "") {
+        self.accountID = accountID
+        self.amountText = amountText
+    }
+
+    init(_ input: SplitInput) {
+        self.accountID = input.accountID
+        self.amountText = NSDecimalNumber(decimal: input.value).stringValue
+    }
 }
 
+/// Creates or edits a transaction with N balancing splits, with QuickFill.
 struct TransactionEditorSheet: View {
     @Bindable var model: AppModel
+    var editingID: GncGUID?
     @Environment(\.dismiss) private var dismiss
 
+    @State private var loaded = false
     @State private var date = Date()
     @State private var description = ""
     @State private var lines: [EditableSplit] = [EditableSplit(), EditableSplit()]
@@ -257,12 +287,23 @@ struct TransactionEditorSheet: View {
     private var imbalance: Decimal { lines.reduce(Decimal(0)) { $0 + $1.amount } }
     private var validLineCount: Int { lines.filter { $0.accountID != nil }.count }
     private var isBalanced: Bool { imbalance == 0 && validLineCount >= 2 }
+    private var isEditing: Bool { editingID != nil }
 
     var body: some View {
         NavigationStack {
             Form {
                 DatePicker("Date", selection: $date, displayedComponents: .date)
                 TextField("Description", text: $description)
+                if !isEditing {
+                    let suggestions = model.descriptionSuggestions(prefix: description)
+                    if !suggestions.isEmpty {
+                        Menu("Fill from recent…") {
+                            ForEach(suggestions, id: \.self) { suggestion in
+                                Button(suggestion) { applyTemplate(suggestion) }
+                            }
+                        }
+                    }
+                }
 
                 Section("Splits") {
                     ForEach($lines) { $line in
@@ -293,24 +334,98 @@ struct TransactionEditorSheet: View {
                     }
                 }
             }
-            .navigationTitle("New Transaction")
+            .navigationTitle(isEditing ? "Edit Transaction" : "New Transaction")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { add() }
+                    Button(isEditing ? "Save" : "Add") { commit() }
                         .disabled(!isBalanced)
                 }
             }
+            .onAppear(perform: loadIfNeeded)
         }
     }
 
-    private func add() {
+    private func loadIfNeeded() {
+        guard !loaded else { return }
+        loaded = true
+        if let editingID, let edit = model.editData(forTransaction: editingID) {
+            date = edit.date
+            description = edit.description
+            lines = edit.splits.map { EditableSplit($0) }
+        }
+    }
+
+    private func applyTemplate(_ suggestion: String) {
+        description = suggestion
+        if let template = model.template(forDescription: suggestion) {
+            lines = template.map { EditableSplit($0) }
+        }
+    }
+
+    private func commit() {
         let inputs = lines
             .filter { $0.accountID != nil }
             .map { SplitInput(accountID: $0.accountID, value: $0.amount) }
-        _ = try? model.addTransaction(date: date, description: description, currency: .aud, splits: inputs)
+        if let editingID {
+            _ = try? model.updateTransaction(id: editingID, date: date, description: description,
+                                             currency: .aud, splits: inputs)
+        } else {
+            _ = try? model.addTransaction(date: date, description: description,
+                                          currency: .aud, splits: inputs)
+        }
         dismiss()
+    }
+}
+
+// MARK: - Edit account
+
+struct EditAccountSheet: View {
+    @Bindable var model: AppModel
+    let accountID: GncGUID
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var loaded = false
+    @State private var name = ""
+    @State private var code = ""
+    @State private var description = ""
+    @State private var notes = ""
+    @State private var isPlaceholder = false
+    @State private var isHidden = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Name", text: $name)
+                TextField("Code", text: $code)
+                TextField("Description", text: $description)
+                TextField("Notes", text: $notes, axis: .vertical)
+                Toggle("Placeholder", isOn: $isPlaceholder)
+                Toggle("Hidden", isOn: $isHidden)
+            }
+            .navigationTitle("Edit Account")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        model.updateAccount(id: accountID, name: name, code: code,
+                                            description: description, notes: notes,
+                                            isPlaceholder: isPlaceholder, isHidden: isHidden)
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .onAppear {
+                guard !loaded, let edit = model.editData(forAccount: accountID) else { return }
+                loaded = true
+                name = edit.name; code = edit.code; description = edit.description
+                notes = edit.notes; isPlaceholder = edit.isPlaceholder; isHidden = edit.isHidden
+            }
+        }
     }
 }
