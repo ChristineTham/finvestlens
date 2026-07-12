@@ -27,8 +27,26 @@ struct BudgetView: View {
                         ContentUnavailableView("No budget lines", systemImage: "chart.bar.doc.horizontal",
                                                description: Text("Edit the budget to set amounts for your expense accounts."))
                     } else {
-                        List(actuals) { actual in
-                            BudgetRow(actual: actual, code: model.reportCurrency.mnemonic)
+                        List {
+                            if let summary = model.budgetSummary(budget), summary.incomeBudget != 0 {
+                                Section("Zero-based") {
+                                    let code = model.reportCurrency.mnemonic
+                                    LabeledContent("Income budgeted", value: AmountFormat.string(summary.incomeBudget, code: code))
+                                    LabeledContent("Expenses budgeted", value: AmountFormat.string(summary.expenseBudget, code: code))
+                                    HStack {
+                                        Text("To allocate").fontWeight(.medium)
+                                        Spacer()
+                                        Text(AmountFormat.string(summary.unallocated, code: code))
+                                            .monospacedDigit()
+                                            .foregroundStyle(summary.unallocated == 0 ? .green : .orange)
+                                    }
+                                }
+                            }
+                            Section {
+                                ForEach(actuals) { actual in
+                                    BudgetRow(actual: actual, code: model.reportCurrency.mnemonic)
+                                }
+                            }
                         }
                     }
                 } else {
@@ -48,6 +66,11 @@ struct BudgetView: View {
                     Button("Done") { dismiss() }
                 }
                 if let budget {
+                    ToolbarItem {
+                        Button("Auto-budget", systemImage: "wand.and.stars.inverse") {
+                            model.autoBudget(budget.id, months: 3)
+                        }
+                    }
                     ToolbarItem {
                         Button("Edit Amounts", systemImage: "slider.horizontal.3") { showingEdit = true }
                             .sheet(isPresented: $showingEdit) {
@@ -69,8 +92,13 @@ private struct BudgetRow: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(actual.accountName)
+                if actual.carryover != 0 {
+                    Text("rollover \(AmountFormat.string(actual.carryover, code: code))")
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .padding(.horizontal, 4).background(.secondary.opacity(0.15)).clipShape(Capsule())
+                }
                 Spacer()
-                Text("\(AmountFormat.string(actual.actual, code: code)) of \(AmountFormat.string(actual.budgeted, code: code))")
+                Text("\(AmountFormat.string(actual.actual, code: code)) of \(AmountFormat.string(actual.effectiveBudget, code: code))")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
@@ -95,7 +123,11 @@ struct EditBudgetSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var amounts: [GncGUID: String] = [:]
+    @State private var rollovers: [GncGUID: Bool] = [:]
 
+    private var incomeAccounts: [AccountNode] {
+        model.postableAccounts.filter { $0.typeName == "Income" }
+    }
     private var expenseAccounts: [AccountNode] {
         model.postableAccounts.filter { $0.typeName == "Expense" }
     }
@@ -103,16 +135,31 @@ struct EditBudgetSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                if expenseAccounts.isEmpty {
-                    Text("No expense accounts yet.").foregroundStyle(.secondary)
+                if !incomeAccounts.isEmpty {
+                    Section("Income") {
+                        ForEach(incomeAccounts) { node in
+                            HStack {
+                                Text(node.name)
+                                Spacer()
+                                TextField("0", text: binding(for: node.id))
+                                    .multilineTextAlignment(.trailing).frame(width: 100)
+                            }
+                        }
+                    }
                 }
-                ForEach(expenseAccounts) { node in
-                    HStack {
-                        Text(node.name)
-                        Spacer()
-                        TextField("0", text: binding(for: node.id))
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 100)
+                Section("Expenses") {
+                    if expenseAccounts.isEmpty {
+                        Text("No expense accounts yet.").foregroundStyle(.secondary)
+                    }
+                    ForEach(expenseAccounts) { node in
+                        HStack {
+                            Text(node.name)
+                            Spacer()
+                            Toggle("Rollover", isOn: rolloverBinding(for: node.id))
+                                .labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                            TextField("0", text: binding(for: node.id))
+                                .multilineTextAlignment(.trailing).frame(width: 100)
+                        }
                     }
                 }
             }
@@ -126,10 +173,11 @@ struct EditBudgetSheet: View {
                 }
             }
             .onAppear {
-                for node in expenseAccounts {
+                for node in incomeAccounts + expenseAccounts {
                     if let amount = budget.amount(for: node.id) {
                         amounts[node.id] = NSDecimalNumber(decimal: amount).stringValue
                     }
+                    rollovers[node.id] = budget.lines.first { $0.accountGUID == node.id }?.rollover ?? false
                 }
             }
         }
@@ -138,6 +186,9 @@ struct EditBudgetSheet: View {
     private func binding(for id: GncGUID) -> Binding<String> {
         Binding(get: { amounts[id] ?? "" }, set: { amounts[id] = $0 })
     }
+    private func rolloverBinding(for id: GncGUID) -> Binding<Bool> {
+        Binding(get: { rollovers[id] ?? false }, set: { rollovers[id] = $0 })
+    }
 
     private func save() {
         var updated = budget
@@ -145,6 +196,7 @@ struct EditBudgetSheet: View {
         for (id, text) in amounts {
             if let amount = Decimal(string: text), amount != 0 {
                 updated.setAmount(amount, for: id)
+                updated.setRollover(rollovers[id] ?? false, for: id)
             }
         }
         model.updateBudget(updated)

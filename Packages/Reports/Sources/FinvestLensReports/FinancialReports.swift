@@ -177,6 +177,13 @@ public enum FinancialReports {
         return account.type.normalBalanceIsDebit ? total : -total
     }
 
+    /// The sign-adjusted actual for an account over a period (spending positive
+    /// for expense accounts) — used by auto-budget.
+    public static func periodActual(of account: Account, in book: Book,
+                                    from: Date, to: Date) -> Decimal {
+        displayBalance(of: account, in: book, from: from, to: to)
+    }
+
     /// The account's sign-adjusted balance converted into `currency` at
     /// `rateDate`, or `nil` when a foreign account cannot be valued.
     static func convertedDisplayBalance(of account: Account, in book: Book,
