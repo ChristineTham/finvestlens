@@ -312,22 +312,46 @@ struct RegisterView: View {
     @Bindable var model: AppModel
     @State private var selection: Set<GncGUID> = []
     @State private var editingTransactionID: GncGUID?
+    @State private var style: RegisterStyle = .basic
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            Picker("Style", selection: $style) {
+                ForEach(RegisterStyle.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            .fixedSize().padding(6)
+            Divider()
+            content
+        }
+        .navigationTitle(style == .generalLedger ? "General Ledger" : selectedName)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch style {
+        case .basic:
             if model.selectedAccountID == nil {
-                ContentUnavailableView("Select an account",
-                                       systemImage: "list.bullet.rectangle",
+                ContentUnavailableView("Select an account", systemImage: "list.bullet.rectangle",
                                        description: Text("Choose an account to see its transactions."))
             } else if model.registerRows.isEmpty {
-                ContentUnavailableView("No transactions",
-                                       systemImage: "tray",
+                ContentUnavailableView("No transactions", systemImage: "tray",
                                        description: Text("This account has no postings yet."))
             } else {
                 registerTable
             }
+        case .journal:
+            if model.selectedAccountID == nil {
+                ContentUnavailableView("Select an account", systemImage: "list.bullet.rectangle",
+                                       description: Text("Choose an account to see its transactions."))
+            } else {
+                JournalView(model: model, accountID: model.selectedAccountID,
+                            editingTransactionID: $editingTransactionID)
+            }
+        case .generalLedger:
+            JournalView(model: model, accountID: nil,
+                        editingTransactionID: $editingTransactionID)
         }
-        .navigationTitle(selectedName)
     }
 
     private var registerTable: some View {
@@ -377,6 +401,49 @@ struct RegisterView: View {
 
     private var currencyCode: String {
         model.postableAccounts.first { $0.id == model.selectedAccountID }?.currencyCode ?? "AUD"
+    }
+}
+
+/// Journal / general-ledger register: each transaction with all its legs.
+struct JournalView: View {
+    @Bindable var model: AppModel
+    let accountID: GncGUID?
+    @Binding var editingTransactionID: GncGUID?
+
+    var body: some View {
+        let entries = model.journalEntries(forAccountID: accountID)
+        if entries.isEmpty {
+            ContentUnavailableView("No transactions", systemImage: "tray",
+                                   description: Text("No postings to show."))
+        } else {
+            List {
+                ForEach(entries) { entry in
+                    Section {
+                        ForEach(entry.lines) { line in
+                            HStack {
+                                Text(line.accountName)
+                                    .fontWeight(line.isFocusAccount ? .semibold : .regular)
+                                Spacer()
+                                Text(AmountFormat.string(line.amount, code: entry.currencyCode))
+                                    .monospacedDigit()
+                                    .foregroundStyle(line.amount < 0 ? .red : .primary)
+                            }
+                        }
+                    } header: {
+                        HStack {
+                            Text(entry.date, format: .dateTime.year().month().day())
+                            Text(entry.description).fontWeight(.medium)
+                            Spacer()
+                            Button("Edit") { editingTransactionID = entry.id }
+                                .buttonStyle(.borderless).font(.caption)
+                        }
+                    }
+                }
+            }
+            .sheet(item: $editingTransactionID) { id in
+                TransactionEditorSheet(model: model, editingID: id)
+            }
+        }
     }
 }
 
