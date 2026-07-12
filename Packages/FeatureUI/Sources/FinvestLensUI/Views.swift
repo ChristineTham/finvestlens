@@ -73,6 +73,7 @@ public struct FinvestLensRootView: View {
     @State private var showingScheduled = false
     @State private var showingBudget = false
     @State private var showingPrices = false
+    @State private var showingStockTxn = false
 
     public init(model: AppModel) {
         self.model = model
@@ -99,6 +100,10 @@ public struct FinvestLensRootView: View {
                     showingNewTransaction = true
                 }
                 .disabled(model.postableAccounts.count < 2)
+                Button("Stock Transaction", systemImage: "chart.line.uptrend.xyaxis") {
+                    showingStockTxn = true
+                }
+                .disabled(model.securityAccountNodes.isEmpty)
                 Button("Reports", systemImage: "chart.pie") {
                     showingReports = true
                 }
@@ -155,6 +160,9 @@ public struct FinvestLensRootView: View {
         }
         .sheet(isPresented: $showingPrices) {
             PricesView(model: model)
+        }
+        .sheet(isPresented: $showingStockTxn) {
+            StockTransactionSheet(model: model)
         }
         .fileExporter(isPresented: $showingExport, document: exportDocument,
                       contentType: GnuCashFileDocument.contentType, defaultFilename: "Book") { _ in
