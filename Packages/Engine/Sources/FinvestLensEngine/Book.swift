@@ -100,6 +100,19 @@ public final class Book {
         for split in transaction.splits { split.transaction = nil }
     }
 
+    /// Looks up a transaction by GUID.
+    public func transaction(with guid: GncGUID) -> Transaction? {
+        transactions.first { $0.guid == guid }
+    }
+
+    /// Looks up a split by GUID across all transactions.
+    public func split(with guid: GncGUID) -> Split? {
+        for transaction in transactions {
+            if let split = transaction.splits.first(where: { $0.guid == guid }) { return split }
+        }
+        return nil
+    }
+
     /// All splits posted to `account` across every transaction.
     public func splits(for account: Account) -> [Split] {
         transactions.flatMap { $0.splits }.filter { $0.account === account }
@@ -108,7 +121,9 @@ public final class Book {
     // MARK: Balances
 
     /// Whether a split should be counted at a given reconcile filter.
+    /// Voided splits never count toward a balance.
     private static func matches(_ split: Split, _ filter: BalanceFilter) -> Bool {
+        guard split.reconcileState != .voided else { return false }
         switch filter {
         case .all:
             return true

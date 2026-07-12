@@ -55,12 +55,18 @@ public final class AppModel {
         didSet { refreshRegister() }
     }
 
+    /// Free-text query; setting it recomputes ``searchResults``.
+    public var searchQuery: String = "" {
+        didSet { runSearch() }
+    }
+    public internal(set) var searchResults: [TransactionSummary] = []
+
     /// `true` when a document is open.
     public var isOpen: Bool { document != nil }
     /// `true` when there are unsaved changes.
     public var hasUnsavedChanges: Bool { document?.hasUnsavedChanges ?? false }
 
-    private var book: Book? { document?.book }
+    var book: Book? { document?.book }
 
     public init() {}
 
@@ -158,12 +164,13 @@ public final class AppModel {
 
     // MARK: Snapshots
 
-    private func refreshAll() {
+    func refreshAll() {
         rebuildAccountTree()
         refreshRegister()
+        runSearch()
     }
 
-    private func markDirtyAndRefresh() {
+    func markDirtyAndRefresh() {
         document?.markDirty()
         refreshAll()
     }

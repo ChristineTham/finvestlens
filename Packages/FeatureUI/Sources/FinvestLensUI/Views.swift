@@ -33,7 +33,7 @@ public extension AppModel {
 
 // MARK: - Root
 
-/// The main document view: accounts sidebar + register detail.
+/// The main document view: accounts sidebar + register (or search results).
 public struct FinvestLensRootView: View {
     @Bindable var model: AppModel
     @State private var showingNewAccount = false
@@ -48,8 +48,13 @@ public struct FinvestLensRootView: View {
             AccountsSidebar(model: model)
                 .navigationTitle("Accounts")
         } detail: {
-            RegisterView(model: model)
+            if !model.searchResults.isEmpty {
+                SearchResultsView(model: model)
+            } else {
+                RegisterView(model: model)
+            }
         }
+        .searchable(text: $model.searchQuery, prompt: "Search transactions")
         .toolbar {
             ToolbarItemGroup {
                 Button("New Account", systemImage: "plus.rectangle.on.folder") {
@@ -69,7 +74,7 @@ public struct FinvestLensRootView: View {
             NewAccountSheet(model: model)
         }
         .sheet(isPresented: $showingNewTransaction) {
-            NewTransactionSheet(model: model)
+            TransactionEditorSheet(model: model)
         }
     }
 }
@@ -100,6 +105,7 @@ struct AccountsSidebar: View {
 
 struct RegisterView: View {
     @Bindable var model: AppModel
+    @State private var selection: Set<GncGUID> = []
 
     var body: some View {
         Group {
@@ -112,25 +118,43 @@ struct RegisterView: View {
                                        systemImage: "tray",
                                        description: Text("This account has no postings yet."))
             } else {
-                Table(model.registerRows) {
-                    TableColumn("Date") { row in
-                        Text(row.date, format: .dateTime.year().month().day())
-                    }
-                    TableColumn("Description", value: \.description)
-                    TableColumn("Transfer", value: \.transfer)
-                    TableColumn("R", value: \.reconcile)
-                    TableColumn("Amount") { row in
-                        Text(AmountFormat.string(row.amount, code: currencyCode))
-                            .monospacedDigit()
-                    }
-                    TableColumn("Balance") { row in
-                        Text(AmountFormat.string(row.runningBalance, code: currencyCode))
-                            .monospacedDigit()
-                    }
-                }
+                registerTable
             }
         }
         .navigationTitle(selectedName)
+    }
+
+    private var registerTable: some View {
+        Table(model.registerRows, selection: $selection) {
+            TableColumn("Date") { row in
+                Text(row.date, format: .dateTime.year().month().day())
+            }
+            TableColumn("Description", value: \.description)
+            TableColumn("Transfer", value: \.transfer)
+            TableColumn("R") { row in
+                Button(row.reconcile) { model.cycleReconcileState(splitID: row.id) }
+                    .buttonStyle(.plain)
+                    .frame(width: 16)
+            }
+            TableColumn("Amount") { row in
+                Text(AmountFormat.string(row.amount, code: currencyCode))
+                    .monospacedDigit()
+                    .foregroundStyle(row.amount < 0 ? .red : .primary)
+            }
+            TableColumn("Balance") { row in
+                Text(AmountFormat.string(row.runningBalance, code: currencyCode))
+                    .monospacedDigit()
+            }
+        }
+        .contextMenu(forSelectionType: GncGUID.self) { ids in
+            if let splitID = ids.first, let txnID = model.transactionID(ofSplit: splitID) {
+                Button("Duplicate") { model.duplicateTransaction(txnID) }
+                Button("Add Reversing Transaction") { _ = model.addReversingTransaction(txnID) }
+                Button("Void") { model.voidTransaction(txnID) }
+                Divider()
+                Button("Delete", role: .destructive) { model.deleteTransaction(txnID) }
+            }
+        }
     }
 
     private var selectedName: String {
@@ -141,6 +165,27 @@ struct RegisterView: View {
 
     private var currencyCode: String {
         model.postableAccounts.first { $0.id == model.selectedAccountID }?.currencyCode ?? "AUD"
+    }
+}
+
+// MARK: - Search results
+
+struct SearchResultsView: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        Table(model.searchResults) {
+            TableColumn("Date") { row in
+                Text(row.date, format: .dateTime.year().month().day())
+            }
+            TableColumn("Description", value: \.description)
+            TableColumn("Accounts", value: \.accounts)
+            TableColumn("Amount") { row in
+                Text(AmountFormat.string(row.amount, code: row.currencyCode))
+                    .monospacedDigit()
+            }
+        }
+        .navigationTitle("Results for “\(model.searchQuery)”")
     }
 }
 
@@ -191,34 +236,60 @@ struct NewAccountSheet: View {
     }
 }
 
-// MARK: - New transaction
+// MARK: - Transaction editor (multi-split)
 
-struct NewTransactionSheet: View {
+private struct EditableSplit: Identifiable {
+    let id = UUID()
+    var accountID: GncGUID?
+    var amountText: String = ""
+
+    var amount: Decimal { Decimal(string: amountText) ?? 0 }
+}
+
+struct TransactionEditorSheet: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var date = Date()
     @State private var description = ""
-    @State private var amountText = ""
-    @State private var sourceID: GncGUID?
-    @State private var destinationID: GncGUID?
+    @State private var lines: [EditableSplit] = [EditableSplit(), EditableSplit()]
+
+    private var imbalance: Decimal { lines.reduce(Decimal(0)) { $0 + $1.amount } }
+    private var validLineCount: Int { lines.filter { $0.accountID != nil }.count }
+    private var isBalanced: Bool { imbalance == 0 && validLineCount >= 2 }
 
     var body: some View {
         NavigationStack {
             Form {
                 DatePicker("Date", selection: $date, displayedComponents: .date)
                 TextField("Description", text: $description)
-                TextField("Amount", text: $amountText)
-                Picker("From", selection: $sourceID) {
-                    Text("—").tag(GncGUID?.none)
-                    ForEach(model.postableAccounts) { node in
-                        Text(node.fullName).tag(GncGUID?.some(node.id))
+
+                Section("Splits") {
+                    ForEach($lines) { $line in
+                        HStack {
+                            Picker("Account", selection: $line.accountID) {
+                                Text("—").tag(GncGUID?.none)
+                                ForEach(model.postableAccounts) { node in
+                                    Text(node.fullName).tag(GncGUID?.some(node.id))
+                                }
+                            }
+                            .labelsHidden()
+                            TextField("Amount", text: $line.amountText)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 100)
+                        }
                     }
+                    .onDelete { lines.remove(atOffsets: $0) }
+                    Button("Add Split", systemImage: "plus") { lines.append(EditableSplit()) }
                 }
-                Picker("To", selection: $destinationID) {
-                    Text("—").tag(GncGUID?.none)
-                    ForEach(model.postableAccounts) { node in
-                        Text(node.fullName).tag(GncGUID?.some(node.id))
+
+                Section {
+                    HStack {
+                        Text("Imbalance")
+                        Spacer()
+                        Text(AmountFormat.string(imbalance, code: "AUD"))
+                            .monospacedDigit()
+                            .foregroundStyle(imbalance == 0 ? Color.secondary : Color.red)
                     }
                 }
             }
@@ -228,23 +299,18 @@ struct NewTransactionSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        if let source = sourceID, let destination = destinationID,
-                           let amount = Decimal(string: amountText) {
-                            model.addTransfer(from: source, to: destination,
-                                              amount: amount, date: date, description: description)
-                        }
-                        dismiss()
-                    }
-                    .disabled(!isValid)
+                    Button("Add") { add() }
+                        .disabled(!isBalanced)
                 }
             }
         }
     }
 
-    private var isValid: Bool {
-        guard let sourceID, let destinationID, sourceID != destinationID else { return false }
-        guard let amount = Decimal(string: amountText), amount != 0 else { return false }
-        return true
+    private func add() {
+        let inputs = lines
+            .filter { $0.accountID != nil }
+            .map { SplitInput(accountID: $0.accountID, value: $0.amount) }
+        _ = try? model.addTransaction(date: date, description: description, currency: .aud, splits: inputs)
+        dismiss()
     }
 }
