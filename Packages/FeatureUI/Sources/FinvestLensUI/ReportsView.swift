@@ -25,7 +25,14 @@ struct ReportsView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            VStack(spacing: 0) {
+                Picker("Report", selection: $selection) {
+                    ForEach(ReportKind.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding()
+                Divider()
                 switch selection {
                 case .balanceSheet: BalanceSheetView(model: model)
                 case .incomeStatement: IncomeStatementView(model: model)
@@ -34,18 +41,12 @@ struct ReportsView: View {
             }
             .navigationTitle("Reports")
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker("Report", selection: $selection) {
-                        ForEach(ReportKind.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
             }
         }
-        .frame(minWidth: 520, minHeight: 420)
+        .frame(minWidth: 520, minHeight: 440)
     }
 }
 
