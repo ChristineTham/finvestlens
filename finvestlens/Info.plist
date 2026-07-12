@@ -5,34 +5,36 @@
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
+			<key>CFBundleTypeName</key>
+			<string>FinvestLens Book</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
-			<string>Default</string>
+			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.example.item-document</string>
+				<string>com.hellotham.finvestlens.document</string>
 			</array>
 			<key>NSUbiquitousDocumentUserActivityType</key>
-			<string>$(PRODUCT_BUNDLE_IDENTIFIER).exampledocument</string>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).document</string>
 		</dict>
 	</array>
-	<key>UTImportedTypeDeclarations</key>
+	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>
-				<string>com.apple.package</string>
+				<string>public.database</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>Example Document</string>
+			<string>FinvestLens Book</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.example.item-document</string>
+			<string>com.hellotham.finvestlens.document</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
-					<string>exampledocument</string>
+					<string>finvestlens</string>
 				</array>
 			</dict>
 		</dict>

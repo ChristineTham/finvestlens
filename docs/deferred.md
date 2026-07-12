@@ -1,69 +1,47 @@
 # Deferred backlog (P0–P5)
 
-Items that were in scope for a completed phase but deferred, partially built, or
-skipped. Each row notes the originating phase, the FR reference where one exists,
-a short status, and a suggested phase to pick it up. Intentional non-goals (e.g.
-bit-for-bit arithmetic parity with GnuCash) are **not** listed here.
+Tracks items that were in scope for a completed phase but deferred, partial, or
+never run. Intentional non-goals (e.g. bit-for-bit arithmetic parity with
+GnuCash) are **not** listed.
 
-Status legend: **absent** (not built) · **partial** (a subset shipped) ·
-**not-run** (task never executed).
+**Status of the functional backlog:** all functional deficits below have been
+**implemented** (see the "Resolved" section). The only items still outstanding
+are **CI** and **GnuCash round-trip fidelity / perf validation**, deliberately
+left for later.
 
-## Cross-cutting (call these out first)
+## Still outstanding (intentionally deferred)
 
 | Item | Origin | Status | Notes | Target |
 |---|---|---|---|---|
-| CI pipeline + file-header/coverage gate | P0 | absent | No `.github`; tests run locally only. The ≥90%-coverage exit criterion is unmeasured. | P6 |
-| 100k-txn perf validation (local + real SMB/NFS) | P1 (NFR-02, OD-1/2/3) | not-run | Documented go/no-go for GRDB direct-mode vs always-working-copy. Still unresolved. | P6 |
-| Report print / PDF export | P4 | absent | No printing anywhere in the app. | P6 |
-| Native round-trip of budgets/scheduled/business objects | P3 | partial | These persist only as KVP-JSON, not GnuCash XML slots. Prices *do* round-trip. | P7 (with business objects) |
+| CI pipeline + file-header/coverage gate | P0 | absent | Tests run locally; no `.github`. | P6 |
+| 100k-txn perf validation (local + SMB/NFS) | P1 (NFR-02, OD-1/2/3) | not-run | Go/no-go for GRDB direct-mode vs working-copy. | P6 |
+| Round-trip corpus CI gate | P3 | not-run | Interop verified manually via `gnucash-cli`; not automated. | P6 |
+| Budgets/scheduled/business in native GnuCash slots | P3 | partial | Persist as KVP-JSON, not GnuCash XML slots. | P7 |
 
-## P0 — Foundation
+## Resolved (functional deficits — implemented)
 
-| Item | FR | Status | Notes | Target |
-|---|---|---|---|---|
-| CI + automated GPLv3 header check | — | absent | See cross-cutting. | P6 |
-
-## P1 — Native document & import
-
-| Item | FR | Status | Notes | Target |
-|---|---|---|---|---|
-| 100k-txn perf on local + SMB/NFS | NFR-02, OD-1/2/3 | not-run | See cross-cutting; gates OD-1/2/3. | P6 |
-| UTI / document-type registration for `.finvestlens` | FR-PLT-04 | absent | App opens via in-app file picker; no Finder double-click / OS registration. | P6 |
-
-## P2 — Core UX
-
-| Item | FR | Status | Notes | Target |
-|---|---|---|---|---|
-| Register styles: auto-split / journal / general-ledger | FR-REG-01 | partial | Only the basic register exists. | P6 |
-| Tags (model + minimal UI) | FR-TAG-01 | absent | Not implemented. | P6 |
-| Account codes + renumber | FR-COA | partial | Reparent/rename present; code renumbering absent. | P6 |
-
-## P3 — Export & round-trip
-
-| Item | FR | Status | Notes | Target |
-|---|---|---|---|---|
-| Budgets/scheduled/business in native GnuCash slots | FR-EXP | partial | KVP-JSON only; stale code comment says "not yet written". | P7 |
-| Round-trip corpus CI gate | FR-EXP-02, NFR-08 | partial | Interop verified manually via `gnucash-cli`; not automated. | P6 |
-
-## P4 — Everyday finance
-
-| Item | FR | Status | Notes | Target |
-|---|---|---|---|---|
-| Transaction Report | FR-RPT-04 | absent | — | P6 |
-| Report PDF / print | FR-RPT | absent | See cross-cutting. | P6 |
-| Budget rollover / envelope | FR-BUD-02 | absent | Only per-account budgets + budget-vs-actual shipped. | P9 |
-| Auto-budget replenish / zero-based | FR-BUD-03, FR-PLAN-04 | absent | — | P9 |
-| Default category taxonomy + heuristic auto-categorisation / merchant cleanup | FR-RULE-03 | absent | Frollo-inspired; basic rules engine shipped. | P8 (with bank sync) |
-| Saved searches | FR-FIND-01 | absent | Operator search grammar is present. | P6 |
-| Bill reminders + Financial Calendar + bill matching | FR-PLAN-01, FR-BILL-01 | absent | — | P6 |
-| Onboarding / setup assistant (starter chart of accounts) | FR-PLAN-09, FR-COA-03 | absent | Welcome screen is New/Open only. | P6 |
-
-## P5 — Investments (complete; explicitly deferred)
-
-| Item | FR | Status | Notes | Target |
-|---|---|---|---|---|
-| Security Editor (edit commodity in place) | FR-INV-01/07 | absent | Risky with existing postings; creation already sets metadata. | P6 |
-| Trading accounts (exact multi-currency FX-gain balancing) | FR-CUR, FR-REG-07 | absent | Balance-sheet residual is the unrealised FX gain; `isBalanced` is informational. | P6 |
-| Scheduled quote auto-refresh | FR-INV-03 | absent | Needs background-task infra. | P6 |
-| Watch lists (securities not held) | FR-PLAN-07 | absent | — | P6/P9 |
-| Return-of-capital action in the Stock Assistant | FR-INV-04 | absent | Minor; reduces cost basis without proceeds. | P6 |
+| Item | FR | Origin | Commit theme |
+|---|---|---|---|
+| Tags (model + editor + `tag:` search) | FR-TAG-01 | P2 | tags/operator search |
+| Operator search language | FR-FIND-01 | P4 | tags/operator search |
+| Account codes + renumber | FR-COA | P2 | account renumber |
+| Register styles (journal / general ledger) | FR-REG-01 | P2 | register styles |
+| Transaction Report | FR-RPT-04 | P4 | transaction report |
+| Report PDF export | FR-RPT | P4 | report PDF export |
+| Saved searches | FR-FIND-01 | P4 | saved searches |
+| Merchant cleanup + heuristic categorisation | FR-RULE-03 | P4 | merchant heuristics |
+| Default taxonomy / starter chart | FR-COA-03 | P4 | starter chart |
+| Onboarding assistant | FR-PLAN-09 | P4 | onboarding |
+| Bill reminders + Financial Calendar + matching | FR-PLAN-01, FR-BILL-01 | P4 | bill reminders |
+| Budget rollover / envelope | FR-BUD-02 | P4 | advanced budgets |
+| Auto-budget replenish / zero-based | FR-BUD-03, FR-PLAN-04 | P4 | advanced budgets |
+| Return-of-capital action | FR-INV-04 | P5 | return-of-capital |
+| Investment Lots + Price Scatter + rate of return | FR-RPT-02 | P5 | investment reports |
+| Stock splits | FR-INV-04 | P5 | stock splits |
+| Security Editor | FR-INV-07 | P5 | security editor |
+| Watch lists | FR-PLAN-07 | P5 | watch lists |
+| Trading accounts (multi-currency FX balancing) | FR-CUR, FR-REG-07 | P5 | trading accounts |
+| Scheduled quote auto-refresh | FR-INV-03 | P5 | quote auto-refresh |
+| Rules apply-to-historical + preview | FR-RULE-02 | P5 | (done earlier in P5) |
+| What-if scenarios on cash flow | FR-PLAN-03 | P5 | (done earlier in P5) |
+| UTI / document-type registration | FR-PLT-04 | P1 | document type + onOpenURL |

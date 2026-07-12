@@ -32,6 +32,11 @@ struct finvestlensApp: App {
     var body: some Scene {
         WindowGroup {
             RootHost(model: model)
+                .onOpenURL { url in
+                    // Opened from Finder / another app via the .finvestlens type.
+                    guard url.pathExtension == "finvestlens" else { return }
+                    try? model.open(at: url)
+                }
         }
         .commands {
             CommandGroup(after: .saveItem) {
