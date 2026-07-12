@@ -164,22 +164,23 @@ Dependencies point downward only; `Engine` builds/tests with nothing above it (`
 
 **Objective.** Full securities support with prices, lots/cap-gains, multi-currency, and live/historical quotes.
 
-**Workstreams & tasks**
-- **PriceDB + Price Editor.** *(FR-ENG-09, FR-INV-02; ports `gnc-pricedb`)*
-- **Securities + Security Editor.** *(FR-INV-01/07)*
-- **Lots + FIFO/LIFO policy + cap-gains + Lots Editor.** *(FR-ENG-10, FR-INV-05; ports `gnc-lot`/`policy`/`cap-gains`)*
-- **Stock Transaction Assistant** (buy/sell/dividend/return-of-capital/fees/splits). *(FR-INV-04)*
-- **Multi-currency** transactions + per-split exchange rates + optional trading accounts. *(FR-CUR-01..04, FR-REG-07)*
-- **Quote providers:** keyless yfinance-like Yahoo client (cookie/crumb) + keyed EODHD (delisted/history), Alpha Vantage, Finnhub; Keychain keys; **historical backfill**; scheduled refresh. *(FR-INV-03/03a–e, FR-CUR-04, ADR-7)*
-- **Investment reports:** Portfolio, Advanced Portfolio, Price Scatter, Investment Lots. *(FR-RPT-02)*
-- **Portfolio enhancements:** watch lists, asset allocation, rate of return. *(FR-PLAN-07)*
-- **What-if scenarios** on cash flow. *(FR-PLAN-03)*
-- **Rules apply-to-historical + preview.** *(FR-RULE-02)*
+**Workstreams & tasks** — status as of completion.
+- ✅ **PriceDB + Price Editor.** *(FR-ENG-09, FR-INV-02)*
+- ✅ **Securities** — created with commodity (exchange/ticker/name) in the New Account editor. ⏸️ A dedicated **Security Editor** (mutate a commodity in place across all holdings) is deferred: risky with existing postings, low value now that creation sets the metadata. *(FR-INV-01/07)*
+- ✅ **Lots + FIFO/LIFO/average + cap-gains + Investment Lots report.** *(FR-ENG-10, FR-INV-05)*
+- ✅ **Stock Transaction Assistant** — buy/sell/dividend/reinvest/**split** (lot-rescaling). Commission is expensed (not capitalised). ⏸️ Return-of-capital deferred (minor). *(FR-INV-04)*
+- ✅ **Multi-currency** transactions + exchange rates + FX valuation + currency-transfer entry. ⏸️ Optional **trading accounts** (exact multi-currency balancing of unrealised FX) deferred — the balance sheet's residual is the unrealised FX gain; `isBalanced` is informational. *(FR-CUR-01..04, FR-REG-07)*
+- ✅ **Quote providers:** keyless Yahoo + keyed EODHD/Alpha Vantage/Finnhub; Keychain keys; latest + historical backfill; injectable transport. ⏸️ **Scheduled refresh** deferred to P6 (background-task infra). *(FR-INV-03/03a–e, FR-CUR-04, ADR-7)*
+- ✅ **Investment reports:** Portfolio, Advanced Portfolio (allocation donut, price-history chart), Price Scatter, Investment Lots. *(FR-RPT-02)*
+- ✅ **Portfolio enhancements:** asset allocation, rate of return. ⏸️ **Watch lists** deferred (minor). *(FR-PLAN-07)*
+- ✅ **What-if scenarios** on cash flow (session-only hypothetical events). *(FR-PLAN-03)*
+- ✅ **Rules apply-to-historical + preview** (safe recategorisation of the income/expense leg + notes). *(FR-RULE-02)*
 
 **Dependencies.** P4.
 **Deliverables.** Investments module; quote layer; investment reports.
-**Exit criteria.** Record buys/sells/dividends/splits; fetch latest + historical quotes (keyless and keyed, incl. a delisted ticker via EODHD); compute cap gains via lots; value a multi-currency portfolio in a base currency.
-**Test focus.** Lot/cap-gains vs GnuCash fixtures (PR5); quote-provider parsing incl. Yahoo crumb flow; FX valuation.
+**Exit criteria.** ✅ Record buys/sells/dividends/splits; ✅ fetch latest + historical quotes (keyless and keyed, incl. delisted via EODHD); ✅ compute cap gains via lots; ✅ value a multi-currency portfolio in a base currency.
+**Status.** **Complete.** Deferred items (Security Editor, trading accounts, scheduled quote refresh, watch lists, return-of-capital) are documented above; the first three are better tackled in P6 alongside sync/background infra.
+**Test focus.** Lot/cap-gains, cost-basis methods, splits; quote-provider parsing; FX valuation.
 **Risks.** Yahoo endpoint drift (keyed providers as stable fallback); cap-gains subtlety.
 
 ---

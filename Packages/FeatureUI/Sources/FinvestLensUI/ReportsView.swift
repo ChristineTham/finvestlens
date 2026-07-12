@@ -517,24 +517,36 @@ private struct CapitalGainsView: View {
 
 private struct CashFlowView: View {
     @Bindable var model: AppModel
+    @State private var showAddWhatIf = false
+    @State private var wiDate = Date()
+    @State private var wiAmount = ""
+    @State private var wiLabel = ""
 
     var body: some View {
         if let accountID = model.defaultForecastAccountID {
             let points = model.cashFlowForecast(accountID: accountID)
             let events = points.filter { $0.change != 0 }
-            if events.isEmpty {
-                ContentUnavailableView("No upcoming activity", systemImage: "calendar",
-                                       description: Text("Add scheduled transactions to forecast cash flow."))
-            } else {
-                VStack(spacing: 0) {
-                    Chart(points) { point in
-                        LineMark(x: .value("Date", point.date), y: .value("Balance", point.balance))
-                            .interpolationMethod(.stepEnd)
+            VStack(spacing: 0) {
+                whatIfBar
+                Divider()
+                if events.isEmpty {
+                    ContentUnavailableView("No upcoming activity", systemImage: "calendar",
+                                           description: Text("Add scheduled transactions or a what-if event to forecast cash flow."))
+                } else {
+                    Chart {
+                        ForEach(points) { point in
+                            LineMark(x: .value("Date", point.date), y: .value("Balance", point.balance))
+                                .interpolationMethod(.stepEnd)
+                        }
+                        ForEach(points.filter(\.isWhatIf)) { point in
+                            PointMark(x: .value("Date", point.date), y: .value("Balance", point.balance))
+                                .foregroundStyle(.orange)
+                        }
                         RuleMark(y: .value("Zero", 0))
                             .lineStyle(StrokeStyle(lineWidth: 0.5, dash: [4]))
                             .foregroundStyle(.secondary)
                     }
-                    .frame(height: 180)
+                    .frame(height: 170)
                     .padding()
                     Divider()
                     List(events) { event in
@@ -543,6 +555,10 @@ private struct CashFlowView: View {
                                 .foregroundStyle(.secondary)
                                 .frame(width: 96, alignment: .leading)
                             Text(event.label)
+                            if event.isWhatIf {
+                                Text("what-if").font(.caption2)
+                                    .padding(.horizontal, 4).background(.orange.opacity(0.2)).clipShape(Capsule())
+                            }
                             Spacer()
                             Text(AmountFormat.string(event.change, code: model.reportCurrency.mnemonic))
                                 .monospacedDigit()
@@ -559,5 +575,46 @@ private struct CashFlowView: View {
             ContentUnavailableView("No account to forecast", systemImage: "banknote",
                                    description: Text("Create an asset account first."))
         }
+    }
+
+    private var whatIfBar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("What-if scenario").font(.subheadline).fontWeight(.medium)
+                Spacer()
+                Button(showAddWhatIf ? "Close" : "Add event", systemImage: "plus") {
+                    showAddWhatIf.toggle()
+                }
+                .font(.caption)
+            }
+            if showAddWhatIf {
+                HStack {
+                    DatePicker("", selection: $wiDate, displayedComponents: .date).labelsHidden()
+                    TextField("Amount (+in / −out)", text: $wiAmount)
+                        .frame(width: 130).multilineTextAlignment(.trailing)
+                    TextField("Label", text: $wiLabel).frame(width: 120)
+                    Button("Add") { addWhatIf() }.disabled(Decimal(string: wiAmount) == nil)
+                }
+                .font(.caption)
+            }
+            ForEach(model.whatIfEvents) { event in
+                HStack(spacing: 4) {
+                    Button(role: .destructive) { model.removeWhatIfEvent(event.id) } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    Text("\(event.label): \(AmountFormat.string(event.amount, code: model.reportCurrency.mnemonic)) on \(event.date, format: .dateTime.year().month().day())")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal).padding(.vertical, 8)
+    }
+
+    private func addWhatIf() {
+        guard let amount = Decimal(string: wiAmount) else { return }
+        model.addWhatIfEvent(date: wiDate, amount: amount, label: wiLabel)
+        wiAmount = ""; wiLabel = ""; showAddWhatIf = false
     }
 }

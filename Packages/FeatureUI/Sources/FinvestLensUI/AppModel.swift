@@ -13,6 +13,7 @@ import FinvestLensPersistence
 import FinvestLensInterchange
 import FinvestLensRules
 import FinvestLensQuotes
+import FinvestLensReports
 
 /// A row in the chart-of-accounts tree.
 public struct AccountNode: Identifiable, Hashable, Sendable {
@@ -84,6 +85,9 @@ public final class AppModel {
 
     /// Cost-basis method used by the capital-gains / lots reports.
     public var costBasisMethod: CostBasisMethod = .fifo
+
+    /// Hypothetical events layered onto the cash-flow forecast (session-only).
+    public internal(set) var whatIfEvents: [WhatIfEvent] = []
 
     /// API-key store (Keychain in production; injectable for tests/previews).
     let apiKeys: APIKeyStoring
@@ -216,6 +220,7 @@ public final class AppModel {
         budgets = []
         quoteSymbols = [:]
         quoteStatus = .idle
+        whatIfEvents = []
     }
 
     // MARK: Mutations

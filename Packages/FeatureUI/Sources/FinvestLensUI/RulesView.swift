@@ -15,6 +15,7 @@ struct RulesView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var showingAdd = false
+    @State private var showingApply = false
 
     private var rules: [Rule] { model.ruleGroups.flatMap(\.rules) }
 
@@ -44,10 +45,17 @@ struct RulesView: View {
                     Button("Done") { dismiss() }
                 }
                 ToolbarItem {
+                    Button("Apply to History", systemImage: "clock.arrow.circlepath") {
+                        showingApply = true
+                    }
+                    .disabled(rules.isEmpty)
+                }
+                ToolbarItem {
                     Button("Add Rule", systemImage: "plus") { showingAdd = true }
                 }
             }
             .sheet(isPresented: $showingAdd) { AddRuleSheet(model: model) }
+            .sheet(isPresented: $showingApply) { ApplyRulesSheet(model: model) }
         }
         .frame(minWidth: 480, minHeight: 400)
     }
@@ -67,6 +75,58 @@ struct RulesView: View {
 
     private func accountName(_ id: GncGUID) -> String {
         model.postableAccounts.first { $0.id == id }?.name ?? "?"
+    }
+}
+
+/// Previews and applies the document's rules to existing transactions
+/// (`FR-RULE-02`).
+struct ApplyRulesSheet: View {
+    @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var proposals: [RuleApplication] = []
+    @State private var applied = false
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if applied {
+                    ContentUnavailableView("Done", systemImage: "checkmark.circle",
+                                           description: Text("Applied \(proposals.count) change\(proposals.count == 1 ? "" : "s")."))
+                } else if proposals.isEmpty {
+                    ContentUnavailableView("Nothing to change", systemImage: "clock.arrow.circlepath",
+                                           description: Text("No historical transactions match your rules, or they’re already categorised."))
+                } else {
+                    List(proposals) { item in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.description).fontWeight(.medium)
+                            if let proposed = item.proposedCategory {
+                                Text("\(item.currentCategory ?? "—") → \(proposed)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            if let notes = item.proposedNotes {
+                                Text("Notes: \(notes)").font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Apply Rules")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(applied ? "Close" : "Cancel") { dismiss() }
+                }
+                if !applied && !proposals.isEmpty {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Apply \(proposals.count)") {
+                            model.applyHistoricalRules(proposals)
+                            applied = true
+                        }
+                    }
+                }
+            }
+            .onAppear { proposals = model.previewHistoricalRules() }
+        }
+        .frame(minWidth: 460, minHeight: 360)
     }
 }
 
