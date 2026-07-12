@@ -71,6 +71,7 @@ public struct FinvestLensRootView: View {
     @State private var importPayload: ImportPayload?
     @State private var showingRules = false
     @State private var showingScheduled = false
+    @State private var showingBudget = false
 
     public init(model: AppModel) {
         self.model = model
@@ -109,6 +110,9 @@ public struct FinvestLensRootView: View {
                 Button("Scheduled", systemImage: "calendar.badge.clock") {
                     showingScheduled = true
                 }
+                Button("Budget", systemImage: "chart.bar.doc.horizontal") {
+                    showingBudget = true
+                }
                 Button("Save", systemImage: "square.and.arrow.down") {
                     try? model.save()
                 }
@@ -141,6 +145,9 @@ public struct FinvestLensRootView: View {
         }
         .sheet(isPresented: $showingScheduled) {
             ScheduledView(model: model)
+        }
+        .sheet(isPresented: $showingBudget) {
+            BudgetView(model: model)
         }
         .fileExporter(isPresented: $showingExport, document: exportDocument,
                       contentType: GnuCashFileDocument.contentType, defaultFilename: "Book") { _ in
