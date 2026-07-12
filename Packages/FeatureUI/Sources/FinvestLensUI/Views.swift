@@ -76,6 +76,8 @@ public struct FinvestLensRootView: View {
     @State private var showingStockTxn = false
     @State private var showingCurrencyTransfer = false
     @State private var showingSaveSearch = false
+    @State private var showingOnboarding = false
+    @State private var offeredOnboarding = false
 
     public init(model: AppModel) {
         self.model = model
@@ -193,6 +195,10 @@ public struct FinvestLensRootView: View {
         .sheet(isPresented: $showingSaveSearch) {
             SaveSearchSheet(model: model)
         }
+        .sheet(isPresented: $showingOnboarding) {
+            OnboardingSheet(model: model)
+        }
+        .onAppear(perform: offerOnboardingIfEmpty)
         .fileExporter(isPresented: $showingExport, document: exportDocument,
                       contentType: GnuCashFileDocument.contentType, defaultFilename: "Book") { _ in
             exportDocument = nil
@@ -205,6 +211,49 @@ public struct FinvestLensRootView: View {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard let data = try? Data(contentsOf: url) else { return }
         importPayload = ImportPayload(data: data, format: format)
+    }
+
+    /// Offers onboarding once per open document when it has no accounts yet.
+    private func offerOnboardingIfEmpty() {
+        guard !offeredOnboarding else { return }
+        offeredOnboarding = true
+        if model.isOpen && model.accountTree.isEmpty {
+            showingOnboarding = true
+        }
+    }
+}
+
+/// Offers a starter chart of accounts for a new, empty book (`FR-COA-03`,
+/// `FR-PLAN-09`).
+struct OnboardingSheet: View {
+    @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 44)).foregroundStyle(.tint)
+                Text("Welcome to your new book").font(.title2.bold())
+                Text("Start with a ready-made personal chart of accounts — cheque, savings, credit card, income and common expense categories — or begin from scratch.")
+                    .multilineTextAlignment(.center).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    model.createStarterAccounts()
+                    dismiss()
+                } label: {
+                    Label("Create starter accounts", systemImage: "square.stack.3d.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                Button("Start empty") { dismiss() }
+            }
+            .padding(32)
+            .frame(minWidth: 420)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Skip") { dismiss() } }
+            }
+        }
     }
 }
 

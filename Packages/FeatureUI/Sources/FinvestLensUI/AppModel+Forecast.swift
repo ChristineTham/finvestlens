@@ -33,6 +33,18 @@ extension AppModel {
                                                  whatIf: whatIfEvents)
     }
 
+    /// Upcoming/overdue bills from scheduled transactions over a window around
+    /// `asOf` (30 days back … 60 days ahead) (`FR-BILL-01`).
+    public func billReminders(asOf: Date = Date()) -> [BillReminder] {
+        guard let book else { return [] }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+        let from = calendar.date(byAdding: .day, value: -30, to: asOf) ?? asOf
+        let to = calendar.date(byAdding: .day, value: 60, to: asOf) ?? asOf
+        return FinancialReports.billReminders(book, scheduled: scheduledTransactions,
+                                              from: from, to: to, asOf: asOf)
+    }
+
     /// Adds a hypothetical what-if event to the cash-flow forecast (session-only,
     /// not persisted).
     public func addWhatIfEvent(date: Date, amount: Decimal, label: String) {

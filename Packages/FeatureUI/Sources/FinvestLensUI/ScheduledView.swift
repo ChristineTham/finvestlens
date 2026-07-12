@@ -8,6 +8,7 @@
 
 import SwiftUI
 import FinvestLensEngine
+import FinvestLensReports
 
 /// Lists scheduled transactions, shows what's due, and posts due instances
 /// (`FR-SCH-01/03`).
@@ -18,10 +19,27 @@ struct ScheduledView: View {
 
     private var scheduled: [ScheduledTransaction] { model.scheduledTransactions }
     private var due: [ScheduledTransactionService.PendingInstance] { model.pendingScheduled() }
+    private var bills: [BillReminder] { model.billReminders().filter { $0.status != .paid } }
 
     var body: some View {
         NavigationStack {
             List {
+                if !bills.isEmpty {
+                    Section("Bills & Calendar") {
+                        ForEach(bills) { bill in
+                            HStack {
+                                billBadge(bill.status)
+                                Text(bill.name)
+                                Text(bill.dueDate, format: .dateTime.year().month().day())
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                Text(AmountFormat.string(bill.amount, code: model.reportCurrency.mnemonic))
+                                    .monospacedDigit()
+                            }
+                        }
+                    }
+                }
+
                 if !due.isEmpty {
                     Section("Due now (\(due.count))") {
                         ForEach(due) { instance in
@@ -84,6 +102,19 @@ struct ScheduledView: View {
         }
         let every = recurrence.interval == 1 ? "Every \(unit)" : "Every \(recurrence.interval) \(unit)s"
         return "\(every), from \(recurrence.startDate.formatted(.dateTime.year().month().day()))"
+    }
+
+    @ViewBuilder
+    private func billBadge(_ status: BillStatus) -> some View {
+        let (label, color): (String, Color) = switch status {
+        case .overdue: ("Overdue", .red)
+        case .dueSoon: ("Due soon", .orange)
+        case .upcoming: ("Upcoming", .secondary)
+        case .paid: ("Paid", .green)
+        }
+        Text(label).font(.caption2)
+            .padding(.horizontal, 5).padding(.vertical, 1)
+            .background(color.opacity(0.2)).foregroundStyle(color).clipShape(Capsule())
     }
 }
 
