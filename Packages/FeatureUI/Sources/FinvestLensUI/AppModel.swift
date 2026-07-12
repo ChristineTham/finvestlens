@@ -12,6 +12,7 @@ import FinvestLensEngine
 import FinvestLensPersistence
 import FinvestLensInterchange
 import FinvestLensRules
+import FinvestLensQuotes
 
 /// A row in the chart-of-accounts tree.
 public struct AccountNode: Identifiable, Hashable, Sendable {
@@ -73,6 +74,18 @@ public final class AppModel {
     public internal(set) var scheduledTransactions: [ScheduledTransaction] = []
     public internal(set) var budgets: [Budget] = []
 
+    /// Per-security ticker overrides for quote lookups, keyed by
+    /// `"namespace|mnemonic"` (e.g. maps `CBA` → `CBA.AX` for Yahoo).
+    public internal(set) var quoteSymbols: [String: String] = [:]
+
+    /// Progress/result of the most recent quote fetch, for the UI.
+    public internal(set) var quoteStatus: QuoteFetchStatus = .idle
+
+    /// API-key store (Keychain in production; injectable for tests/previews).
+    let apiKeys: APIKeyStoring
+    /// HTTP transport for quote providers (injectable for tests).
+    let quoteHTTP: HTTPFetching
+
     /// `true` when a document is open.
     public var isOpen: Bool { document != nil }
     /// `true` when there are unsaved changes.
@@ -80,7 +93,10 @@ public final class AppModel {
 
     var book: Book? { document?.book }
 
-    public init() {}
+    public init(apiKeys: APIKeyStoring? = nil, quoteHTTP: HTTPFetching? = nil) {
+        self.apiKeys = apiKeys ?? KeychainAPIKeyStore()
+        self.quoteHTTP = quoteHTTP ?? URLSessionHTTPClient()
+    }
 
     // MARK: KVP-backed collections
 
@@ -88,17 +104,19 @@ public final class AppModel {
         static let rules = "finvestlens/ruleGroups"
         static let scheduled = "finvestlens/scheduledTransactions"
         static let budgets = "finvestlens/budgets"
+        static let quoteSymbols = "finvestlens/quoteSymbols"
     }
 
     /// Loads the KVP-backed collections from the current book.
     func reloadKvpCollections() {
         guard let book else {
-            ruleGroups = []; scheduledTransactions = []; budgets = []
+            ruleGroups = []; scheduledTransactions = []; budgets = []; quoteSymbols = [:]
             return
         }
         ruleGroups = Self.decodeSlot([RuleGroup].self, book.kvp[KvpKey.rules]) ?? []
         scheduledTransactions = Self.decodeSlot([ScheduledTransaction].self, book.kvp[KvpKey.scheduled]) ?? []
         budgets = Self.decodeSlot([Budget].self, book.kvp[KvpKey.budgets]) ?? []
+        quoteSymbols = Self.decodeSlot([String: String].self, book.kvp[KvpKey.quoteSymbols]) ?? [:]
     }
 
     /// Writes the KVP-backed collections into the current book's slots.
@@ -107,6 +125,7 @@ public final class AppModel {
         book.kvp[KvpKey.rules] = Self.encodeSlot(ruleGroups)
         book.kvp[KvpKey.scheduled] = Self.encodeSlot(scheduledTransactions)
         book.kvp[KvpKey.budgets] = Self.encodeSlot(budgets)
+        book.kvp[KvpKey.quoteSymbols] = Self.encodeMap(quoteSymbols)
     }
 
     /// Persists the collections and refreshes derived UI state.
@@ -123,6 +142,14 @@ public final class AppModel {
     private static func encodeSlot<T: Encodable>(_ array: [T]) -> KvpValue? {
         guard !array.isEmpty,
               let data = try? JSONEncoder().encode(array),
+              let json = String(data: data, encoding: .utf8)
+        else { return nil }
+        return .string(json)
+    }
+
+    private static func encodeMap(_ map: [String: String]) -> KvpValue? {
+        guard !map.isEmpty,
+              let data = try? JSONEncoder().encode(map),
               let json = String(data: data, encoding: .utf8)
         else { return nil }
         return .string(json)
@@ -183,6 +210,8 @@ public final class AppModel {
         ruleGroups = []
         scheduledTransactions = []
         budgets = []
+        quoteSymbols = [:]
+        quoteStatus = .idle
     }
 
     // MARK: Mutations

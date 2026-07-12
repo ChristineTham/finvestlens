@@ -14,6 +14,7 @@ struct PricesView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var showingAdd = false
+    @State private var showingQuotes = false
 
     var body: some View {
         NavigationStack {
@@ -45,11 +46,16 @@ struct PricesView: View {
                     Button("Done") { dismiss() }
                 }
                 ToolbarItem {
+                    Button("Get Quotes", systemImage: "arrow.down.circle") { showingQuotes = true }
+                        .disabled(model.securityCommodities.isEmpty)
+                }
+                ToolbarItem {
                     Button("Add Price", systemImage: "plus") { showingAdd = true }
                         .disabled(model.securityCommodities.isEmpty)
                 }
             }
             .sheet(isPresented: $showingAdd) { AddPriceSheet(model: model) }
+            .sheet(isPresented: $showingQuotes) { QuotesView(model: model) }
         }
         .frame(minWidth: 460, minHeight: 380)
     }
