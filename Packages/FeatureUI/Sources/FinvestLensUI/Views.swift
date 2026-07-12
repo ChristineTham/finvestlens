@@ -21,6 +21,16 @@ enum AmountFormat {
     }
 }
 
+/// Applies keyboard focus a beat after a sheet finishes presenting, so very
+/// fast input (or automation) can't precede the field gaining focus.
+@MainActor
+func focusSoon(_ apply: @escaping @MainActor () -> Void) {
+    Task { @MainActor in
+        try? await Task.sleep(for: .milliseconds(120))
+        apply()
+    }
+}
+
 public extension AppModel {
     /// Flattened, non-placeholder accounts usable as transfer endpoints.
     var postableAccounts: [AccountNode] {
@@ -215,6 +225,7 @@ struct NewAccountSheet: View {
     @State private var name = ""
     @State private var type: AccountType = .bank
     @State private var parentID: GncGUID?
+    @FocusState private var nameFocused: Bool
 
     private let selectableTypes: [AccountType] = [
         .bank, .cash, .asset, .credit, .liability, .equity, .income, .expense, .stock, .mutualFund,
@@ -224,6 +235,7 @@ struct NewAccountSheet: View {
         NavigationStack {
             Form {
                 TextField("Name", text: $name)
+                    .focused($nameFocused)
                 Picker("Type", selection: $type) {
                     ForEach(selectableTypes, id: \.self) { t in
                         Text(t.rawValue.capitalized).tag(t)
@@ -249,6 +261,7 @@ struct NewAccountSheet: View {
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .onAppear { focusSoon { nameFocused = true } }
         }
     }
 }
@@ -283,6 +296,7 @@ struct TransactionEditorSheet: View {
     @State private var date = Date()
     @State private var description = ""
     @State private var lines: [EditableSplit] = [EditableSplit(), EditableSplit()]
+    @FocusState private var descriptionFocused: Bool
 
     private var imbalance: Decimal { lines.reduce(Decimal(0)) { $0 + $1.amount } }
     private var validLineCount: Int { lines.filter { $0.accountID != nil }.count }
@@ -294,6 +308,7 @@ struct TransactionEditorSheet: View {
             Form {
                 DatePicker("Date", selection: $date, displayedComponents: .date)
                 TextField("Description", text: $description)
+                    .focused($descriptionFocused)
                 if !isEditing {
                     let suggestions = model.descriptionSuggestions(prefix: description)
                     if !suggestions.isEmpty {
@@ -356,6 +371,7 @@ struct TransactionEditorSheet: View {
             description = edit.description
             lines = edit.splits.map { EditableSplit($0) }
         }
+        focusSoon { descriptionFocused = true }
     }
 
     private func applyTemplate(_ suggestion: String) {
@@ -394,11 +410,13 @@ struct EditAccountSheet: View {
     @State private var notes = ""
     @State private var isPlaceholder = false
     @State private var isHidden = false
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
         NavigationStack {
             Form {
                 TextField("Name", text: $name)
+                    .focused($nameFocused)
                 TextField("Code", text: $code)
                 TextField("Description", text: $description)
                 TextField("Notes", text: $notes, axis: .vertical)
@@ -421,10 +439,12 @@ struct EditAccountSheet: View {
                 }
             }
             .onAppear {
-                guard !loaded, let edit = model.editData(forAccount: accountID) else { return }
-                loaded = true
-                name = edit.name; code = edit.code; description = edit.description
-                notes = edit.notes; isPlaceholder = edit.isPlaceholder; isHidden = edit.isHidden
+                if !loaded, let edit = model.editData(forAccount: accountID) {
+                    loaded = true
+                    name = edit.name; code = edit.code; description = edit.description
+                    notes = edit.notes; isPlaceholder = edit.isPlaceholder; isHidden = edit.isHidden
+                }
+                focusSoon { nameFocused = true }
             }
         }
     }
