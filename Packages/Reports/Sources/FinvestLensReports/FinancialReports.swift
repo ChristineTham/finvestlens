@@ -99,15 +99,26 @@ public enum FinancialReports {
         let expenses = periodTotal(book, types: [.expense], from: nil, to: asOf, currency: currency, rateDate: asOf)
         let retained = income - expenses
 
+        // Trading accounts (multi-currency FX): their net value at current rates
+        // is the unrealised FX gain. They are debit-normal, so subtract to fold
+        // that gain into equity and keep the sheet balanced (`FR-REG-07`).
+        var equityLines = equityAccounts
+        let trading = periodTotal(book, types: [.trading], from: nil, to: asOf, currency: currency, rateDate: asOf)
+        let tradingEquity = -trading
+        if tradingEquity != 0 {
+            equityLines.append(ReportLine(id: .random(), name: "Unrealised FX", fullName: "Trading",
+                                          amount: currency.round(tradingEquity)))
+        }
+
         return BalanceSheet(
             asOf: asOf,
             currencyCode: currency.mnemonic,
             assets: assets,
             liabilities: liabilities,
-            equity: equityAccounts,
+            equity: equityLines,
             totalAssets: currency.round(totalAssets),
             totalLiabilities: currency.round(totalLiabilities),
-            totalEquity: currency.round(equityFromAccounts + retained),
+            totalEquity: currency.round(equityFromAccounts + retained + tradingEquity),
             retainedEarnings: currency.round(retained)
         )
     }

@@ -54,6 +54,9 @@ struct CurrencyTransferSheet: View {
                 Section {
                     DatePicker("Date", selection: $date, displayedComponents: .date)
                     TextField("Description", text: $description)
+                    Toggle("Use trading accounts", isOn: Binding(
+                        get: { model.useTradingAccounts },
+                        set: { model.useTradingAccounts = $0 }))
                 }
                 if let errorText {
                     Label(errorText, systemImage: "exclamationmark.triangle").foregroundStyle(.red)

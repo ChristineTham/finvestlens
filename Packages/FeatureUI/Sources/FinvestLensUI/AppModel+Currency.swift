@@ -72,6 +72,16 @@ extension AppModel {
         // Destination leg: value in source currency (balances), quantity in the
         // destination currency (the amount actually received).
         txn.addSplit(account: to, value: sourceAmount, quantity: destAmount)
+
+        // Optional trading accounts make the transaction balance in *each*
+        // currency (not just by value), so the balance sheet stays balanced and
+        // unrealised FX is captured (`FR-REG-07`).
+        if useTradingAccounts,
+           let tradingFrom = tradingAccount(for: from.commodity),
+           let tradingTo = tradingAccount(for: to.commodity) {
+            txn.addSplit(account: tradingFrom, value: sourceAmount, quantity: sourceAmount)
+            txn.addSplit(account: tradingTo, value: -sourceAmount, quantity: -destAmount)
+        }
         book.addTransaction(txn)
 
         // Persist the implied rate so reports can value either currency.
@@ -79,5 +89,39 @@ extension AppModel {
                              rate: destAmount / sourceAmount, date: date, source: "user:xfer")
         markDirtyAndRefresh()
         return txn.guid
+    }
+
+    // MARK: Trading accounts (`FR-REG-07`)
+
+    /// Whether cross-currency transfers post to trading accounts (book
+    /// preference, persisted in the book KVP).
+    public var useTradingAccounts: Bool {
+        get {
+            if case let .int64(v)? = book?.kvp["finvestlens/useTradingAccounts"] { return v != 0 }
+            return false
+        }
+        set {
+            book?.kvp["finvestlens/useTradingAccounts"] = .int64(newValue ? 1 : 0)
+            markDirtyAndRefresh()
+        }
+    }
+
+    /// The trading account for `currency`, creating the `Trading` tree on first
+    /// use.
+    public func tradingAccount(for currency: Commodity) -> Account? {
+        guard let book else { return nil }
+        if let existing = book.accounts.first(where: { $0.type == .trading && $0.commodity == currency && !$0.isPlaceholder }) {
+            return existing
+        }
+        let parent = book.accounts.first { $0.type == .trading && $0.name == "Trading" && $0.isPlaceholder }
+            ?? {
+                let container = Account(name: "Trading", type: .trading, commodity: reportCurrency)
+                container.isPlaceholder = true
+                book.addAccount(container)
+                return container
+            }()
+        let account = Account(name: currency.mnemonic, type: .trading, commodity: currency)
+        book.addAccount(account, under: parent)
+        return account
     }
 }
