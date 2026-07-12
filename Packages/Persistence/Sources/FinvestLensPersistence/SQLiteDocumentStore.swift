@@ -93,6 +93,19 @@ public final class SQLiteDocumentStore {
             try db.create(index: "split_by_account", on: "split", columns: ["accountGuid"])
             try db.create(index: "split_by_txn", on: "split", columns: ["txnGuid"])
         }
+        migrator.registerMigration("v2_prices") { db in
+            try db.create(table: "price") { t in
+                t.primaryKey("guid", .text)
+                t.column("commodityNamespace", .text).notNull()
+                t.column("commodityMnemonic", .text).notNull()
+                t.column("currencyNamespace", .text).notNull()
+                t.column("currencyMnemonic", .text).notNull()
+                t.column("date", .datetime).notNull()
+                t.column("value", .text).notNull()
+                t.column("source", .text).notNull().defaults(to: "")
+                t.column("type", .text).notNull().defaults(to: "")
+            }
+        }
         return migrator
     }
 
@@ -102,7 +115,7 @@ public final class SQLiteDocumentStore {
     /// the change counter, in a single transaction.
     public func write(_ book: Book) throws {
         try dbQueue.write { db in
-            for table in ["split", "txn", "account", "commodity"] {
+            for table in ["split", "txn", "account", "commodity", "price"] {
                 try db.execute(sql: "DELETE FROM \(table)")
             }
 
@@ -156,6 +169,20 @@ public final class SQLiteDocumentStore {
                             split.memo, split.action, Serialize.kvp(split.kvp),
                         ])
                 }
+            }
+
+            for price in book.prices {
+                try db.execute(sql: """
+                    INSERT INTO price
+                    (guid, commodityNamespace, commodityMnemonic, currencyNamespace, currencyMnemonic,
+                     date, value, source, type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [
+                        price.guid.hexString,
+                        Serialize.namespace(price.commodity.namespace), price.commodity.mnemonic,
+                        Serialize.namespace(price.currency.namespace), price.currency.mnemonic,
+                        price.date, Serialize.decimal(price.value), price.source, price.type,
+                    ])
             }
 
             changeCounter += 1
@@ -274,6 +301,20 @@ public final class SQLiteDocumentStore {
                     txn.addSplit(split)
                 }
                 book.addTransaction(txn)
+            }
+
+            // Prices.
+            for row in try Row.fetchAll(db, sql: "SELECT * FROM price") {
+                guard let guid = GncGUID(hex: row["guid"]) else { continue }
+                book.addPrice(Price(
+                    guid: guid,
+                    commodity: commodity(row["commodityNamespace"], row["commodityMnemonic"]),
+                    currency: commodity(row["currencyNamespace"], row["currencyMnemonic"]),
+                    date: row["date"],
+                    value: Serialize.parseDecimal(row["value"]),
+                    source: row["source"],
+                    type: row["type"]
+                ))
             }
 
             return book

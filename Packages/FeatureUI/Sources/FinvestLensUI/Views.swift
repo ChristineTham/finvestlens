@@ -72,6 +72,7 @@ public struct FinvestLensRootView: View {
     @State private var showingRules = false
     @State private var showingScheduled = false
     @State private var showingBudget = false
+    @State private var showingPrices = false
 
     public init(model: AppModel) {
         self.model = model
@@ -113,6 +114,9 @@ public struct FinvestLensRootView: View {
                 Button("Budget", systemImage: "chart.bar.doc.horizontal") {
                     showingBudget = true
                 }
+                Button("Prices", systemImage: "tag") {
+                    showingPrices = true
+                }
                 Button("Save", systemImage: "square.and.arrow.down") {
                     try? model.save()
                 }
@@ -148,6 +152,9 @@ public struct FinvestLensRootView: View {
         }
         .sheet(isPresented: $showingBudget) {
             BudgetView(model: model)
+        }
+        .sheet(isPresented: $showingPrices) {
+            PricesView(model: model)
         }
         .fileExporter(isPresented: $showingExport, document: exportDocument,
                       contentType: GnuCashFileDocument.contentType, defaultFilename: "Book") { _ in

@@ -51,6 +51,7 @@ public final class AppModel {
     public private(set) var document: FinvestLensDocument?
     public private(set) var accountTree: [AccountNode] = []
     public private(set) var registerRows: [RegisterRow] = []
+    public private(set) var priceRows: [PriceRow] = []
 
     public var selectedAccountID: GncGUID? {
         didSet { refreshRegister() }
@@ -238,7 +239,16 @@ public final class AppModel {
     func refreshAll() {
         rebuildAccountTree()
         refreshRegister()
+        rebuildPrices()
         runSearch()
+    }
+
+    private func rebuildPrices() {
+        guard let book else { priceRows = []; return }
+        priceRows = book.prices
+            .sorted { $0.date > $1.date }
+            .map { PriceRow(id: $0.guid, symbol: $0.commodity.mnemonic,
+                            currencyCode: $0.currency.mnemonic, date: $0.date, value: $0.value) }
     }
 
     func markDirtyAndRefresh() {

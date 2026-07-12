@@ -28,6 +28,9 @@ public final class Book {
     /// Known commodities (currencies and securities).
     public private(set) var commodities: [Commodity]
 
+    /// The price database (`FR-ENG-09`).
+    public private(set) var prices: [Price]
+
     /// Preserved book-level key-value slots.
     public var kvp: KvpFrame
 
@@ -42,6 +45,7 @@ public final class Book {
         self.rootAccount = rootAccount
         self.transactions = []
         self.commodities = []
+        self.prices = []
         self.kvp = kvp
     }
 
@@ -82,6 +86,47 @@ public final class Book {
         if !commodities.contains(commodity) {
             commodities.append(commodity)
         }
+    }
+
+    // MARK: Prices
+
+    /// Adds a price to the database (and registers its commodities).
+    @discardableResult
+    public func addPrice(_ price: Price) -> Price {
+        registerCommodity(price.commodity)
+        registerCommodity(price.currency)
+        prices.append(price)
+        return price
+    }
+
+    /// Removes a price by GUID.
+    public func removePrice(_ guid: GncGUID) {
+        prices.removeAll { $0.guid == guid }
+    }
+
+    /// The most recent price of `commodity` in `currency` on or before `date`
+    /// (or the latest overall when `date` is `nil`).
+    public func latestPrice(of commodity: Commodity, in currency: Commodity,
+                            on date: Date? = nil) -> Price? {
+        var best: Price?
+        for price in prices {
+            guard price.commodity == commodity, price.currency == currency else { continue }
+            if let date, price.date > date { continue }
+            if best == nil || price.date > best!.date {
+                best = price
+            }
+        }
+        return best
+    }
+
+    /// Values `quantity` units of `commodity` in `currency` using the price
+    /// database. Returns `quantity` unchanged when the commodities match, or
+    /// `nil` when no price is available.
+    public func value(of quantity: Decimal, commodity: Commodity,
+                      in currency: Commodity, on date: Date? = nil) -> Decimal? {
+        if commodity == currency { return quantity }
+        guard let price = latestPrice(of: commodity, in: currency, on: date) else { return nil }
+        return quantity * price.value
     }
 
     // MARK: Transactions

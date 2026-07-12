@@ -60,6 +60,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
     private var parentGUID: [GncGUID: GncGUID] = [:]
     private var rootGUID: GncGUID?
     private var transactions: [Transaction] = []
+    private var prices: [Price] = []
     private var summary = ImportSummary()
 
     // Parse state.
@@ -71,6 +72,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
     private var account: AccountBuilder?
     private var transaction: TransactionBuilder?
     private var split: SplitBuilder?
+    private var price: PriceBuilder?
     private var slotKey: String?
 
     private var parentElement: String? { stack.count >= 2 ? stack[stack.count - 2] : nil }
@@ -88,7 +90,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "gnc:account": account = AccountBuilder()
         case "gnc:transaction": transaction = TransactionBuilder()
         case "trn:split": split = SplitBuilder()
-        case "price": summary.priceCount += 1
+        case "price": price = PriceBuilder(); summary.priceCount += 1
         default: break
         }
     }
@@ -130,6 +132,13 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "ts:date": setTransactionDate(value)
         case "gnc:transaction": finishTransaction()
 
+        // Price fields.
+        case "price:id": price?.guid = GncGUID(hex: value)
+        case "price:source": price?.source = value
+        case "price:type": price?.type = value
+        case "price:value": price?.value = GnuCashNumeric.parse(value)
+        case "price": finishPrice()
+
         // Split fields.
         case "split:id": split?.guid = GncGUID(hex: value)
         case "split:reconciled-state": split?.reconcileState = value
@@ -161,6 +170,12 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "trn:currency":
             if let space { transaction?.currencySpace = space }
             if let id { transaction?.currencyID = id }
+        case "price:commodity":
+            if let space { price?.commoditySpace = space }
+            if let id { price?.commodityID = id }
+        case "price:currency":
+            if let space { price?.currencySpace = space }
+            if let id { price?.currencyID = id }
         default:
             break
         }
@@ -171,6 +186,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
         switch parentElement {
         case "trn:date-posted": transaction?.datePosted = date
         case "trn:date-entered": transaction?.dateEntered = date
+        case "price:time": price?.date = date
         default: break
         }
     }
@@ -265,6 +281,22 @@ private final class Delegate: NSObject, XMLParserDelegate {
         transactions.append(txn)
     }
 
+    private func finishPrice() {
+        defer { price = nil }
+        guard let builder = price, let value = builder.value else { return }
+        let commodity = resolveCommodity(space: builder.commoditySpace, id: builder.commodityID, fractionHint: nil)
+        let currency = resolveCommodity(space: builder.currencySpace, id: builder.currencyID, fractionHint: nil)
+        prices.append(Price(
+            guid: builder.guid ?? .random(),
+            commodity: commodity,
+            currency: currency,
+            date: builder.date ?? Date(timeIntervalSince1970: 0),
+            value: value,
+            source: builder.source,
+            type: builder.type
+        ))
+    }
+
     // MARK: Commodity resolution
 
     private static func commodityKey(space: String, id: String) -> String { "\(space)|\(id)" }
@@ -320,15 +352,14 @@ private final class Delegate: NSObject, XMLParserDelegate {
         }
 
         for txn in transactions { book.addTransaction(txn) }
+        for price in prices { book.addPrice(price) }
 
         summary.commodityCount = commoditiesByKey.count
         summary.accountCount = book.accounts.count
         summary.transactionCount = transactions.count
         summary.splitCount = transactions.reduce(0) { $0 + $1.splits.count }
+        summary.priceCount = prices.count
         summary.scrubIssues = Scrub.check(book)
-        if summary.priceCount > 0 {
-            summary.warnings.append("\(summary.priceCount) price(s) not imported (P5)")
-        }
 
         return ImportResult(book: book, summary: summary)
     }
@@ -386,4 +417,16 @@ private struct SplitBuilder {
     var accountGUID: GncGUID?
     var memo = ""
     var action = ""
+}
+
+private struct PriceBuilder {
+    var guid: GncGUID?
+    var commoditySpace: String?
+    var commodityID: String?
+    var currencySpace: String?
+    var currencyID: String?
+    var date: Date?
+    var value: Decimal?
+    var source = ""
+    var type = ""
 }

@@ -40,6 +40,7 @@ public enum GnuCashXMLExporter {
              xmlns:trn="http://www.gnucash.org/XML/trn"
              xmlns:split="http://www.gnucash.org/XML/split"
              xmlns:slot="http://www.gnucash.org/XML/slot"
+             xmlns:price="http://www.gnucash.org/XML/price"
              xmlns:ts="http://www.gnucash.org/XML/ts">
         <gnc:count-data cd:type="book">1</gnc:count-data>
         <gnc:book version="2.0.0">
@@ -55,6 +56,9 @@ public enum GnuCashXMLExporter {
         for commodity in book.commodities {
             out += commodityBlock(commodity)
         }
+        if !book.prices.isEmpty {
+            out += priceDBBlock(book.prices)
+        }
         for account in accounts {
             out += accountBlock(account)
         }
@@ -64,6 +68,29 @@ public enum GnuCashXMLExporter {
 
         out += "</gnc:book>\n</gnc-v2>\n"
         return out
+    }
+
+    private static func priceDBBlock(_ prices: [Price]) -> String {
+        var block = "<gnc:pricedb version=\"1\">\n"
+        for price in prices {
+            block += "  <price>\n"
+            block += "    <price:id type=\"guid\">\(price.guid.hexString)</price:id>\n"
+            block += "    <price:commodity>\n"
+            block += "      <cmdty:space>\(escape(namespace(price.commodity.namespace)))</cmdty:space>\n"
+            block += "      <cmdty:id>\(escape(price.commodity.mnemonic))</cmdty:id>\n"
+            block += "    </price:commodity>\n"
+            block += "    <price:currency>\n"
+            block += "      <cmdty:space>\(escape(namespace(price.currency.namespace)))</cmdty:space>\n"
+            block += "      <cmdty:id>\(escape(price.currency.mnemonic))</cmdty:id>\n"
+            block += "    </price:currency>\n"
+            block += "    <price:time><ts:date>\(GnuCashDate.format(price.date))</ts:date></price:time>\n"
+            if !price.source.isEmpty { block += "    <price:source>\(escape(price.source))</price:source>\n" }
+            if !price.type.isEmpty { block += "    <price:type>\(escape(price.type))</price:type>\n" }
+            block += "    <price:value>\(numeric(price.value, fraction: price.currency.smallestFraction))</price:value>\n"
+            block += "  </price>\n"
+        }
+        block += "</gnc:pricedb>\n"
+        return block
     }
 
     private static func commodityBlock(_ commodity: Commodity) -> String {

@@ -21,6 +21,7 @@ struct ReportsView: View {
         case incomeStatement = "Income Statement"
         case netWorth = "Net Worth"
         case cashFlow = "Cash Flow"
+        case portfolio = "Portfolio"
         var id: String { rawValue }
     }
 
@@ -39,6 +40,7 @@ struct ReportsView: View {
                 case .incomeStatement: IncomeStatementView(model: model)
                 case .netWorth: NetWorthChartView(model: model)
                 case .cashFlow: CashFlowView(model: model)
+                case .portfolio: PortfolioView(model: model)
                 }
             }
             .navigationTitle("Reports")
@@ -159,6 +161,63 @@ private struct NetWorthChartView: View {
         } else {
             ContentUnavailableView("Not enough history", systemImage: "chart.line.uptrend.xyaxis")
         }
+    }
+}
+
+private struct PortfolioView: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        if let portfolio = model.portfolio() {
+            List {
+                ForEach(portfolio.holdings) { holding in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(holding.accountName).fontWeight(.medium)
+                            Text(holding.symbol).font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            if let value = holding.marketValue {
+                                Text(AmountFormat.string(value, code: portfolio.currencyCode))
+                                    .monospacedDigit()
+                            } else {
+                                Text("no price").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        HStack {
+                            Text("\(holding.shares.formatted()) @ \(holding.price.map { AmountFormat.string($0, code: portfolio.currencyCode) } ?? "—")")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            if let gain = holding.gain {
+                                Text(gainText(gain, fraction: holding.gainFraction, code: portfolio.currencyCode))
+                                    .font(.caption)
+                                    .foregroundStyle(gain < 0 ? .red : .green)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                Section {
+                    TotalRow(label: "Cost basis", amount: portfolio.totalCost, code: portfolio.currencyCode)
+                    TotalRow(label: "Market value", amount: portfolio.totalValue, code: portfolio.currencyCode, emphasised: true)
+                    HStack {
+                        Text("Total gain").fontWeight(.bold)
+                        Spacer()
+                        Text(AmountFormat.string(portfolio.totalGain, code: portfolio.currencyCode))
+                            .monospacedDigit().fontWeight(.bold)
+                            .foregroundStyle(portfolio.totalGain < 0 ? .red : .green)
+                    }
+                }
+            }
+        } else {
+            ContentUnavailableView("No securities", systemImage: "chart.pie",
+                                   description: Text("Add a stock or fund account to see your portfolio."))
+        }
+    }
+
+    private func gainText(_ gain: Decimal, fraction: Double?, code: String) -> String {
+        let amount = AmountFormat.string(gain, code: code)
+        if let fraction { return "\(amount) (\(fraction.formatted(.percent.precision(.fractionLength(1)))))" }
+        return amount
     }
 }
 
