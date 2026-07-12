@@ -89,6 +89,25 @@ struct StockTransactionTests {
         #expect(stockSplit?.quantity == dec("2.5"))
     }
 
+    @Test("Return of capital reduces cost basis without moving shares")
+    func returnOfCapital() {
+        let a = accounts()
+        let book = Book(baseCurrency: .aud)
+        book.addAccount(a.stock); book.addAccount(a.cash)
+        book.addTransaction(StockTransaction.buy(
+            security: a.stock, cash: a.cash,
+            shares: dec("10"), pricePerShare: dec("10"),
+            date: day(0), currency: .aud, description: "Buy"))
+        book.addTransaction(StockTransaction.returnOfCapital(
+            security: a.stock, cash: a.cash, amount: dec("30"),
+            date: day(100), currency: .aud, description: "RoC"))
+        let result = book.costBasis(for: a.stock, method: .fifo)
+        // 10 shares still held; basis 100 − 30 = 70.
+        #expect(result.remainingQuantity == dec("10"))
+        #expect(result.remainingCostBasis == dec("70"))
+        #expect(result.realizedGains.isEmpty)
+    }
+
     @Test("Buy then sell flows through cost basis")
     func costBasisFlow() {
         let a = accounts()

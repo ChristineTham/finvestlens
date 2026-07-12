@@ -45,12 +45,17 @@ public struct LotEvent: Hashable, Sendable {
     public var quantity: Decimal
     public var value: Decimal
     public var isSplit: Bool
+    /// A return-of-capital distribution: `value` (negative) reduces the cost
+    /// basis of the open lots pro rata without moving shares.
+    public var isReturnOfCapital: Bool
 
-    public init(date: Date, quantity: Decimal, value: Decimal, isSplit: Bool = false) {
+    public init(date: Date, quantity: Decimal, value: Decimal,
+                isSplit: Bool = false, isReturnOfCapital: Bool = false) {
         self.date = date
         self.quantity = quantity
         self.value = value
         self.isSplit = isSplit
+        self.isReturnOfCapital = isReturnOfCapital
     }
 }
 
@@ -181,6 +186,19 @@ public enum CostBasis {
                 }
                 continue
             }
+            if event.isReturnOfCapital {
+                // Reduce basis pro rata by remaining cost; floor at zero.
+                let totalCost = open.reduce(Decimal(0)) { $0 + $1.remaining * $1.costPerShare }
+                let reduction = min(-event.value, totalCost)
+                if totalCost > 0, reduction > 0 {
+                    for index in open.indices where open[index].remaining != 0 {
+                        let lotCost = open[index].remaining * open[index].costPerShare
+                        let newLotCost = max(0, lotCost - reduction * (lotCost / totalCost))
+                        open[index].costPerShare = newLotCost / open[index].remaining
+                    }
+                }
+                continue
+            }
             if event.quantity > 0 {
                 let perShare = event.value / event.quantity
                 open.append(MutableLot(date: event.date, remaining: event.quantity, costPerShare: perShare))
@@ -232,6 +250,10 @@ public enum CostBasis {
             if event.isSplit {
                 // Cost pool is unchanged; only the share count moves.
                 pooledShares += event.quantity
+                continue
+            }
+            if event.isReturnOfCapital {
+                pooledCost = max(0, pooledCost + event.value)   // value is negative
                 continue
             }
             if event.quantity > 0 {

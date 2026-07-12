@@ -28,6 +28,12 @@ extension AppModel {
         return FinancialReports.incomeStatement(book, from: from, to: to, currency: reportCurrency)
     }
 
+    /// An account's postings over a period with a running balance (`FR-RPT-04`).
+    public func transactionReport(accountID: GncGUID, from: Date, to: Date) -> TransactionReport? {
+        guard let book else { return nil }
+        return FinancialReports.transactionReport(book, accountID: accountID, from: from, to: to)
+    }
+
     /// A monthly net-worth series across the last `months` months.
     public func netWorthSeries(months: Int = 12, endingAt end: Date = Date()) -> [NetWorthPoint] {
         guard let book else { return [] }

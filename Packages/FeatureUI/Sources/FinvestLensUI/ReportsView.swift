@@ -20,6 +20,7 @@ struct ReportsView: View {
     enum ReportKind: String, CaseIterable, Identifiable {
         case balanceSheet = "Balance Sheet"
         case incomeStatement = "Income Statement"
+        case transactions = "Transactions"
         case netWorth = "Net Worth"
         case cashFlow = "Cash Flow"
         case portfolio = "Portfolio"
@@ -47,6 +48,7 @@ struct ReportsView: View {
                 switch selection {
                 case .balanceSheet: BalanceSheetView(model: model)
                 case .incomeStatement: IncomeStatementView(model: model)
+                case .transactions: TransactionReportView(model: model)
                 case .netWorth: NetWorthChartView(model: model)
                 case .cashFlow: CashFlowView(model: model)
                 case .portfolio: PortfolioView(model: model)
@@ -338,6 +340,62 @@ private struct PriceHistorySection: View {
                     .frame(height: 160)
                     .padding(.vertical, 4)
                 }
+            }
+        }
+    }
+}
+
+private struct TransactionReportView: View {
+    @Bindable var model: AppModel
+    @State private var accountID: GncGUID?
+    @State private var from = Calendar.current.date(byAdding: .month, value: -3, to: Date()) ?? Date()
+    @State private var to = Date()
+
+    private var accounts: [AccountNode] { model.postableAccounts }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                Picker("Account", selection: $accountID) {
+                    Text("—").tag(GncGUID?.none)
+                    ForEach(accounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+                }
+                DatePicker("From", selection: $from, displayedComponents: .date)
+                DatePicker("To", selection: $to, displayedComponents: .date)
+            }
+            .frame(maxHeight: 140)
+            Divider()
+            if let id = accountID, let report = model.transactionReport(accountID: id, from: from, to: to) {
+                if report.rows.isEmpty {
+                    ContentUnavailableView("No postings", systemImage: "list.bullet.rectangle",
+                                           description: Text("No transactions in this period."))
+                } else {
+                    List {
+                        ForEach(report.rows) { row in
+                            HStack {
+                                Text(row.date, format: .dateTime.year().month().day())
+                                    .foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
+                                VStack(alignment: .leading) {
+                                    Text(row.description)
+                                    Text(row.transfer).font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(AmountFormat.string(row.amount, code: report.currencyCode))
+                                    .monospacedDigit().foregroundStyle(row.amount < 0 ? .red : .primary)
+                                Text(AmountFormat.string(row.balance, code: report.currencyCode))
+                                    .monospacedDigit().frame(width: 90, alignment: .trailing)
+                            }
+                        }
+                        Section {
+                            TotalRow(label: "Opening", amount: report.opening, code: report.currencyCode)
+                            TotalRow(label: "Net change", amount: report.total, code: report.currencyCode)
+                            TotalRow(label: "Closing", amount: report.closing, code: report.currencyCode, emphasised: true)
+                        }
+                    }
+                }
+            } else {
+                ContentUnavailableView("Choose an account", systemImage: "list.bullet.rectangle",
+                                       description: Text("Pick an account to list its postings."))
             }
         }
     }

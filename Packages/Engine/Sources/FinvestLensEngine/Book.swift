@@ -137,10 +137,12 @@ public final class Book {
         var events: [LotEvent] = []
         for transaction in transactions {
             for split in transaction.splits
-            where split.account === account && split.reconcileState != .voided && split.quantity != 0 {
+            where split.account === account && split.reconcileState != .voided
+                && (split.quantity != 0 || split.action == "ReturnOfCapital") {
                 events.append(LotEvent(date: transaction.datePosted,
                                        quantity: split.quantity, value: split.value,
-                                       isSplit: split.action == "Split"))
+                                       isSplit: split.action == "Split",
+                                       isReturnOfCapital: split.action == "ReturnOfCapital"))
             }
         }
         return events

@@ -16,6 +16,7 @@ public enum StockActionKind: String, CaseIterable, Sendable, Identifiable {
     case dividend
     case reinvestDividend
     case split
+    case returnOfCapital
 
     public var id: String { rawValue }
 
@@ -26,11 +27,12 @@ public enum StockActionKind: String, CaseIterable, Sendable, Identifiable {
         case .dividend: return "Dividend"
         case .reinvestDividend: return "Reinvest Dividend"
         case .split: return "Split"
+        case .returnOfCapital: return "Return of Capital"
         }
     }
 
     /// Whether the action moves shares (needs a price/share count).
-    public var movesShares: Bool { self != .dividend }
+    public var movesShares: Bool { self == .buy || self == .sell || self == .reinvestDividend }
 }
 
 /// Builds correctly-signed, balanced multi-split ``Transaction``s for security
@@ -105,6 +107,23 @@ public enum StockTransaction {
         let txn = Transaction(currency: currency, datePosted: date, description: description)
         txn.addSplit(account: income, value: -value, memo: memo)
         txn.addSplit(account: security, value: value, quantity: shares)
+        return txn
+    }
+
+    /// A return-of-capital distribution of `amount`: cash received, cost basis
+    /// of `security` reduced (no shares move, no income).
+    ///
+    /// Splits: cash +amount, security −amount/0 shares (action
+    /// `"ReturnOfCapital"`).
+    public static func returnOfCapital(
+        security: Account, cash: Account, amount: Decimal,
+        date: Date, currency: Commodity, description: String, memo: String = ""
+    ) -> Transaction {
+        let value = currency.round(amount)
+        let txn = Transaction(currency: currency, datePosted: date, description: description)
+        txn.addSplit(account: cash, value: value)
+        let leg = Split(account: security, value: -value, quantity: 0, memo: memo, action: "ReturnOfCapital")
+        txn.addSplit(leg)
         return txn
     }
 

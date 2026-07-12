@@ -122,6 +122,15 @@ extension AppModel {
             txn = StockTransaction.stockSplit(
                 security: security, addedShares: added,
                 date: date, currency: reportCurrency, description: description, memo: memo)
+
+        case .returnOfCapital:
+            guard let security = securityID.flatMap({ book.account(with: $0) }),
+                  let cash = settlementID.flatMap({ book.account(with: $0) })
+            else { throw StockEntryError.unknownAccount }
+            guard amount > 0 else { throw StockEntryError.invalidInput }
+            txn = StockTransaction.returnOfCapital(
+                security: security, cash: cash, amount: amount,
+                date: date, currency: cash.commodity, description: description, memo: memo)
         }
 
         guard txn.isBalanced else { throw StockEntryError.invalidInput }

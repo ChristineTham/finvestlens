@@ -86,7 +86,7 @@ struct StockTransactionSheet: View {
                 accountPicker("Security", selection: $securityID, nodes: model.securityAccountNodes)
             }
             if action != .reinvestDividend && action != .split {
-                accountPicker(action == .dividend ? "Deposit to" : "Settlement",
+                accountPicker(action == .dividend || action == .returnOfCapital ? "Deposit to" : "Settlement",
                               selection: $settlementID, nodes: model.settlementAccountNodes)
             }
             if action == .dividend || action == .reinvestDividend {
@@ -107,7 +107,7 @@ struct StockTransactionSheet: View {
                 numberField("Shares", text: $sharesText)
                 numberField("Price per share", text: $priceText)
                 numberField("Commission", text: $commissionText)
-            case .dividend:
+            case .dividend, .returnOfCapital:
                 numberField("Amount", text: $amountText)
             case .reinvestDividend:
                 numberField("Shares", text: $sharesText)
@@ -158,7 +158,7 @@ struct StockTransactionSheet: View {
         switch action {
         case .buy: return "Total cost"
         case .sell: return "Net proceeds"
-        case .dividend, .reinvestDividend: return "Amount"
+        case .dividend, .reinvestDividend, .returnOfCapital: return "Amount"
         case .split: return ""
         }
     }
@@ -171,7 +171,7 @@ struct StockTransactionSheet: View {
         case .sell:
             guard let shares, let price else { return nil }
             return shares * price - commission
-        case .dividend, .reinvestDividend:
+        case .dividend, .reinvestDividend, .returnOfCapital:
             return amount
         case .split:
             return nil
@@ -189,6 +189,8 @@ struct StockTransactionSheet: View {
             return securityID != nil && incomeID != nil && (amount ?? 0) > 0 && (shares ?? 0) > 0
         case .split:
             return securityID != nil && (splitNew ?? 0) > 0 && (splitOld ?? 0) > 0
+        case .returnOfCapital:
+            return securityID != nil && (amount ?? 0) > 0
         }
     }
 
