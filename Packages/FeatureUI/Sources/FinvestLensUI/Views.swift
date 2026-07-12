@@ -75,6 +75,7 @@ public struct FinvestLensRootView: View {
     @State private var showingPrices = false
     @State private var showingStockTxn = false
     @State private var showingCurrencyTransfer = false
+    @State private var showingSaveSearch = false
 
     public init(model: AppModel) {
         self.model = model
@@ -127,6 +128,23 @@ public struct FinvestLensRootView: View {
                 Button("Prices", systemImage: "tag") {
                     showingPrices = true
                 }
+                Menu {
+                    if model.savedSearches.isEmpty {
+                        Text("No saved searches")
+                    } else {
+                        ForEach(model.savedSearches) { search in
+                            Menu(search.name) {
+                                Button("Apply") { model.applySavedSearch(search.id) }
+                                Button("Delete", role: .destructive) { model.deleteSavedSearch(search.id) }
+                            }
+                        }
+                    }
+                    Divider()
+                    Button("Save current search…") { showingSaveSearch = true }
+                        .disabled(model.searchQuery.trimmingCharacters(in: .whitespaces).isEmpty)
+                } label: {
+                    Label("Saved Searches", systemImage: "bookmark")
+                }
                 Button("Save", systemImage: "square.and.arrow.down") {
                     try? model.save()
                 }
@@ -171,6 +189,9 @@ public struct FinvestLensRootView: View {
         }
         .sheet(isPresented: $showingCurrencyTransfer) {
             CurrencyTransferSheet(model: model)
+        }
+        .sheet(isPresented: $showingSaveSearch) {
+            SaveSearchSheet(model: model)
         }
         .fileExporter(isPresented: $showingExport, document: exportDocument,
                       contentType: GnuCashFileDocument.contentType, defaultFilename: "Book") { _ in
@@ -349,6 +370,32 @@ enum CurrencyCatalog {
         .currency("SGD", name: "Singapore Dollar"),
         .currency("INR", name: "Indian Rupee"),
     ]
+}
+
+/// Names and saves the current search query.
+struct SaveSearchSheet: View {
+    @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                LabeledContent("Query", value: model.searchQuery)
+                TextField("Name", text: $name).focused($focused)
+            }
+            .navigationTitle("Save Search")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { model.saveCurrentSearch(name: name); dismiss() }
+                }
+            }
+            .onAppear { focusSoon { focused = true } }
+        }
+        .frame(minWidth: 360, minHeight: 160)
+    }
 }
 
 struct NewAccountSheet: View {

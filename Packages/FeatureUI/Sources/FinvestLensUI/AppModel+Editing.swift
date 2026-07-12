@@ -27,6 +27,19 @@ public struct SplitInput: Identifiable, Hashable, Sendable {
     }
 }
 
+/// A named, persisted search query (`FR-FIND-01`).
+public struct SavedSearch: Identifiable, Codable, Hashable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var query: String
+
+    public init(id: UUID = UUID(), name: String, query: String) {
+        self.id = id
+        self.name = name
+        self.query = query
+    }
+}
+
 /// A transaction-level row used by search results.
 public struct TransactionSummary: Identifiable, Hashable, Sendable {
     public let id: GncGUID
@@ -337,6 +350,28 @@ extension AppModel {
             if let name = split.account?.name.lowercased(), name.contains(needle) { return true }
         }
         return false
+    }
+
+    // MARK: Saved searches (`FR-FIND-01`)
+
+    /// Saves the current query under `name`.
+    public func saveCurrentSearch(name: String) {
+        let query = searchQuery.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return }
+        let label = name.trimmingCharacters(in: .whitespaces)
+        savedSearches.append(SavedSearch(name: label.isEmpty ? query : label, query: query))
+        commitKvpCollections()
+    }
+
+    public func deleteSavedSearch(_ id: UUID) {
+        savedSearches.removeAll { $0.id == id }
+        commitKvpCollections()
+    }
+
+    /// Applies a saved search by setting the query (which re-runs the search).
+    public func applySavedSearch(_ id: UUID) {
+        guard let saved = savedSearches.first(where: { $0.id == id }) else { return }
+        searchQuery = saved.query
     }
 
     private func summary(for txn: Transaction) -> TransactionSummary {

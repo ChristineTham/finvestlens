@@ -46,18 +46,33 @@ extension AppModel {
         var results = ImportMatcher.match(staged, into: account, book: book)
 
         let groups = ruleGroups
-        if !groups.isEmpty {
-            for index in results.indices {
-                let staged = results[index].staged
-                let name = staged.payee.isEmpty ? staged.memo : staged.payee
+        for index in results.indices {
+            let staged = results[index].staged
+            let name = staged.payee.isEmpty ? staged.memo : staged.payee
+            // Rules take precedence.
+            if !groups.isEmpty {
                 let outcome = RuleEngine.evaluate(groups, context: RuleContext(
                     description: name, memo: staged.memo, amount: staged.amount))
                 if let account = outcome.accountID {
                     results[index].suggestedAccountID = account
+                    continue
                 }
+            }
+            // Heuristic fallback when history + rules didn't assign one.
+            if results[index].suggestedAccountID == nil,
+               let categoryName = MerchantHeuristics.category(for: name),
+               let account = self.account(named: categoryName) {
+                results[index].suggestedAccountID = account
             }
         }
         return results
+    }
+
+    /// Finds a non-placeholder account by (case-insensitive) name.
+    private func account(named name: String) -> GncGUID? {
+        book?.accounts.first {
+            !$0.isPlaceholder && $0.name.caseInsensitiveCompare(name) == .orderedSame
+        }?.guid
     }
 
     /// Posts accepted rows into the book as balanced transactions: the target
@@ -77,9 +92,12 @@ extension AppModel {
             guard let destinationID, let destination = book.account(with: destinationID) else { continue }
 
             let staged = result.staged
-            let name = staged.payee.isEmpty ? staged.memo : staged.payee
+            let rawName = staged.payee.isEmpty ? staged.memo : staged.payee
+            // Tidy the statement line for the transaction description.
+            let name = MerchantHeuristics.cleanMerchant(rawName)
             let transaction = Transaction(currency: target.commodity, datePosted: staged.date,
-                                          number: staged.reference, description: name)
+                                          number: staged.reference,
+                                          description: name.isEmpty ? rawName : name)
             transaction.addSplit(account: target, value: staged.amount, memo: staged.memo)
             transaction.addSplit(account: destination, value: -staged.amount)
             book.addTransaction(transaction)
