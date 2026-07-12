@@ -333,6 +333,24 @@ struct SearchResultsView: View {
 
 // MARK: - New account
 
+/// A small catalog of common ISO currencies for the account editor.
+enum CurrencyCatalog {
+    static let common: [Commodity] = [
+        .currency("AUD", name: "Australian Dollar"),
+        .currency("USD", name: "US Dollar"),
+        .currency("EUR", name: "Euro"),
+        .currency("GBP", name: "Pound Sterling"),
+        .currency("NZD", name: "New Zealand Dollar"),
+        .currency("CAD", name: "Canadian Dollar"),
+        .currency("JPY", fractionDigits: 0, name: "Japanese Yen"),
+        .currency("CHF", name: "Swiss Franc"),
+        .currency("CNY", name: "Chinese Yuan"),
+        .currency("HKD", name: "Hong Kong Dollar"),
+        .currency("SGD", name: "Singapore Dollar"),
+        .currency("INR", name: "Indian Rupee"),
+    ]
+}
+
 struct NewAccountSheet: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -340,11 +358,33 @@ struct NewAccountSheet: View {
     @State private var name = ""
     @State private var type: AccountType = .bank
     @State private var parentID: GncGUID?
+    @State private var currencyCode = ""
+    @State private var exchange = ""
+    @State private var ticker = ""
+    @State private var securityName = ""
     @FocusState private var nameFocused: Bool
 
     private let selectableTypes: [AccountType] = [
         .bank, .cash, .asset, .credit, .liability, .equity, .income, .expense, .stock, .mutualFund,
     ]
+
+    private var isSecurity: Bool { type.isSecurityType }
+
+    /// Book currencies plus the common catalog, de-duplicated by code.
+    private var availableCurrencies: [Commodity] {
+        var seen = Set<String>()
+        var result: [Commodity] = []
+        for commodity in model.currencyCommodities + CurrencyCatalog.common
+        where seen.insert(commodity.mnemonic).inserted {
+            result.append(commodity)
+        }
+        return result
+    }
+
+    private var canAdd: Bool {
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        return isSecurity ? !ticker.trimmingCharacters(in: .whitespaces).isEmpty : true
+    }
 
     var body: some View {
         NavigationStack {
@@ -362,6 +402,20 @@ struct NewAccountSheet: View {
                         Text(node.name).tag(GncGUID?.some(node.id))
                     }
                 }
+
+                if isSecurity {
+                    Section("Security") {
+                        TextField("Exchange (e.g. ASX)", text: $exchange)
+                        TextField("Ticker (e.g. CBA)", text: $ticker)
+                        TextField("Full name (optional)", text: $securityName)
+                    }
+                } else {
+                    Picker("Currency", selection: $currencyCode) {
+                        ForEach(availableCurrencies, id: \.mnemonic) { c in
+                            Text("\(c.mnemonic) — \(c.fullName)").tag(c.mnemonic)
+                        }
+                    }
+                }
             }
             .navigationTitle("New Account")
             .toolbar {
@@ -369,15 +423,32 @@ struct NewAccountSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        model.addAccount(name: name, type: type, parentID: parentID)
-                        dismiss()
-                    }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("Add") { add() }.disabled(!canAdd)
                 }
             }
-            .onAppear { focusSoon { nameFocused = true } }
+            .onAppear {
+                if currencyCode.isEmpty { currencyCode = model.reportCurrency.mnemonic }
+                focusSoon { nameFocused = true }
+            }
         }
+    }
+
+    private func makeCommodity() -> Commodity {
+        if isSecurity {
+            let code = ticker.trimmingCharacters(in: .whitespaces).uppercased()
+            let ex = exchange.trimmingCharacters(in: .whitespaces).uppercased()
+            let full = securityName.trimmingCharacters(in: .whitespaces)
+            return Commodity(namespace: .security(ex.isEmpty ? "OTHER" : ex),
+                             mnemonic: code,
+                             fullName: full.isEmpty ? code : full,
+                             smallestFraction: 10_000)
+        }
+        return availableCurrencies.first { $0.mnemonic == currencyCode } ?? .currency(currencyCode)
+    }
+
+    private func add() {
+        model.addAccount(name: name, type: type, commodity: makeCommodity(), parentID: parentID)
+        dismiss()
     }
 }
 
