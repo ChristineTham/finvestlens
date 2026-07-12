@@ -20,6 +20,7 @@ struct ReportsView: View {
         case balanceSheet = "Balance Sheet"
         case incomeStatement = "Income Statement"
         case netWorth = "Net Worth"
+        case cashFlow = "Cash Flow"
         var id: String { rawValue }
     }
 
@@ -37,6 +38,7 @@ struct ReportsView: View {
                 case .balanceSheet: BalanceSheetView(model: model)
                 case .incomeStatement: IncomeStatementView(model: model)
                 case .netWorth: NetWorthChartView(model: model)
+                case .cashFlow: CashFlowView(model: model)
                 }
             }
             .navigationTitle("Reports")
@@ -156,6 +158,53 @@ private struct NetWorthChartView: View {
             .padding()
         } else {
             ContentUnavailableView("Not enough history", systemImage: "chart.line.uptrend.xyaxis")
+        }
+    }
+}
+
+private struct CashFlowView: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        if let accountID = model.defaultForecastAccountID {
+            let points = model.cashFlowForecast(accountID: accountID)
+            let events = points.filter { $0.change != 0 }
+            if events.isEmpty {
+                ContentUnavailableView("No upcoming activity", systemImage: "calendar",
+                                       description: Text("Add scheduled transactions to forecast cash flow."))
+            } else {
+                VStack(spacing: 0) {
+                    Chart(points) { point in
+                        LineMark(x: .value("Date", point.date), y: .value("Balance", point.balance))
+                            .interpolationMethod(.stepEnd)
+                        RuleMark(y: .value("Zero", 0))
+                            .lineStyle(StrokeStyle(lineWidth: 0.5, dash: [4]))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(height: 180)
+                    .padding()
+                    Divider()
+                    List(events) { event in
+                        HStack {
+                            Text(event.date, format: .dateTime.year().month().day())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 96, alignment: .leading)
+                            Text(event.label)
+                            Spacer()
+                            Text(AmountFormat.string(event.change, code: model.reportCurrency.mnemonic))
+                                .monospacedDigit()
+                                .foregroundStyle(event.change < 0 ? .red : .green)
+                            Text(AmountFormat.string(event.balance, code: model.reportCurrency.mnemonic))
+                                .monospacedDigit()
+                                .frame(width: 96, alignment: .trailing)
+                                .foregroundStyle(event.balance < 0 ? .red : .primary)
+                        }
+                    }
+                }
+            }
+        } else {
+            ContentUnavailableView("No account to forecast", systemImage: "banknote",
+                                   description: Text("Create an asset account first."))
         }
     }
 }
