@@ -69,6 +69,7 @@ public struct FinvestLensRootView: View {
     @State private var showingReports = false
     @State private var showingBankImport = false
     @State private var importPayload: ImportPayload?
+    @State private var showingRules = false
 
     public init(model: AppModel) {
         self.model = model
@@ -101,6 +102,9 @@ public struct FinvestLensRootView: View {
                 Button("Import Bank File…", systemImage: "square.and.arrow.down.on.square") {
                     showingBankImport = true
                 }
+                Button("Rules", systemImage: "wand.and.stars") {
+                    showingRules = true
+                }
                 Button("Save", systemImage: "square.and.arrow.down") {
                     try? model.save()
                 }
@@ -127,6 +131,9 @@ public struct FinvestLensRootView: View {
         }
         .sheet(item: $importPayload) { payload in
             ImportView(model: model, payload: payload)
+        }
+        .sheet(isPresented: $showingRules) {
+            RulesView(model: model)
         }
         .fileExporter(isPresented: $showingExport, document: exportDocument,
                       contentType: GnuCashFileDocument.contentType, defaultFilename: "Book") { _ in

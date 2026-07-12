@@ -163,6 +163,9 @@ public final class SQLiteDocumentStore {
                            arguments: [changeCounter])
             try db.execute(sql: "INSERT OR REPLACE INTO meta (key, value) VALUES ('bookGuid', ?)",
                            arguments: [book.guid.hexString])
+            let bookKvp = Serialize.kvp(book.kvp)
+            try db.execute(sql: "INSERT OR REPLACE INTO meta (key, value) VALUES ('bookKvp', ?)",
+                           arguments: [bookKvp])
         }
     }
 
@@ -224,6 +227,10 @@ public final class SQLiteDocumentStore {
                 .flatMap { $0 }.flatMap { GncGUID(hex: $0) } ?? .random()
             let book = Book(guid: bookGuid, rootAccount: rootAccount)
             for commodity in commodities { book.registerCommodity(commodity) }
+            if let bookKvp = try String.fetchOne(db, sql: "SELECT value FROM meta WHERE key = 'bookKvp'")
+                .flatMap({ $0 }) {
+                book.kvp = Serialize.parseKvp(bookKvp)
+            }
 
             for guid in order {
                 guard let account = accountsByGUID[guid], account.type != .root else { continue }

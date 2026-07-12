@@ -9,6 +9,7 @@
 import Foundation
 import FinvestLensEngine
 import FinvestLensInterchange
+import FinvestLensRules
 
 /// Supported bank-file import formats.
 public enum BankFileFormat: String, Sendable, CaseIterable, Identifiable {
@@ -38,10 +39,25 @@ extension AppModel {
         }
     }
 
-    /// Matches staged rows against a target account (`FR-XIO-05`).
+    /// Matches staged rows against a target account (`FR-XIO-05`), then lets
+    /// categorisation rules override the history-based suggestion (`FR-RULE-01`).
     public func matchStaged(_ staged: [StagedTransaction], intoAccountID id: GncGUID) -> [MatchResult] {
         guard let book, let account = book.account(with: id) else { return [] }
-        return ImportMatcher.match(staged, into: account, book: book)
+        var results = ImportMatcher.match(staged, into: account, book: book)
+
+        let groups = ruleGroups
+        if !groups.isEmpty {
+            for index in results.indices {
+                let staged = results[index].staged
+                let name = staged.payee.isEmpty ? staged.memo : staged.payee
+                let outcome = RuleEngine.evaluate(groups, context: RuleContext(
+                    description: name, memo: staged.memo, amount: staged.amount))
+                if let account = outcome.accountID {
+                    results[index].suggestedAccountID = account
+                }
+            }
+        }
+        return results
     }
 
     /// Posts accepted rows into the book as balanced transactions: the target
