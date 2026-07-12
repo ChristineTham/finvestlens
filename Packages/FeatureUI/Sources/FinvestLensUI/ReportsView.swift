@@ -8,6 +8,7 @@
 
 import SwiftUI
 import Charts
+import FinvestLensEngine
 import FinvestLensReports
 
 /// A tabbed reports view: Balance Sheet, Income Statement, and a Net-Worth chart.
@@ -22,6 +23,7 @@ struct ReportsView: View {
         case netWorth = "Net Worth"
         case cashFlow = "Cash Flow"
         case portfolio = "Portfolio"
+        case capitalGains = "Capital Gains"
         var id: String { rawValue }
     }
 
@@ -41,6 +43,7 @@ struct ReportsView: View {
                 case .netWorth: NetWorthChartView(model: model)
                 case .cashFlow: CashFlowView(model: model)
                 case .portfolio: PortfolioView(model: model)
+                case .capitalGains: CapitalGainsView(model: model)
                 }
             }
             .navigationTitle("Reports")
@@ -218,6 +221,93 @@ private struct PortfolioView: View {
         let amount = AmountFormat.string(gain, code: code)
         if let fraction { return "\(amount) (\(fraction.formatted(.percent.precision(.fractionLength(1)))))" }
         return amount
+    }
+}
+
+private struct CapitalGainsView: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        if let report = model.capitalGains() {
+            List {
+                Section {
+                    Picker("Method", selection: $model.costBasisMethod) {
+                        ForEach(CostBasisMethod.allCases) { Text($0.displayName).tag($0) }
+                    }
+                }
+                if report.lines.isEmpty {
+                    Text("No realised gains yet.").foregroundStyle(.secondary)
+                } else {
+                    Section("Realised gains") {
+                        ForEach(report.lines) { line in
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Text(line.symbol).fontWeight(.medium)
+                                    termBadge(line.longTerm)
+                                    Spacer()
+                                    Text(AmountFormat.string(line.gain, code: report.currencyCode))
+                                        .monospacedDigit()
+                                        .foregroundStyle(line.gain < 0 ? .red : .green)
+                                }
+                                HStack {
+                                    Text("\(line.quantity.formatted()) sold \(line.disposalDate, format: .dateTime.year().month().day())")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                    Spacer()
+                                    Text("proceeds \(AmountFormat.string(line.proceeds, code: report.currencyCode)) − cost \(AmountFormat.string(line.costBasis, code: report.currencyCode))")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    Section {
+                        TotalRow(label: "Short-term gain", amount: report.shortTermGain, code: report.currencyCode)
+                        TotalRow(label: "Long-term gain", amount: report.longTermGain, code: report.currencyCode)
+                        if report.otherGain != 0 {
+                            TotalRow(label: "Other", amount: report.otherGain, code: report.currencyCode)
+                        }
+                        HStack {
+                            Text("Total realised").fontWeight(.bold)
+                            Spacer()
+                            Text(AmountFormat.string(report.totalGain, code: report.currencyCode))
+                                .monospacedDigit().fontWeight(.bold)
+                                .foregroundStyle(report.totalGain < 0 ? .red : .green)
+                        }
+                    }
+                }
+                if !report.openLots.isEmpty {
+                    Section("Open lots") {
+                        ForEach(report.openLots) { lot in
+                            HStack {
+                                Text(lot.symbol).fontWeight(.medium)
+                                if let date = lot.acquisitionDate {
+                                    Text(date, format: .dateTime.year().month().day())
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text("\(lot.quantity.formatted()) · \(AmountFormat.string(lot.costBasis, code: report.currencyCode))")
+                                    .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            ContentUnavailableView("No securities", systemImage: "chart.line.uptrend.xyaxis",
+                                   description: Text("Record buys and sells in a stock or fund account to see capital gains."))
+        }
+    }
+
+    @ViewBuilder
+    private func termBadge(_ longTerm: Bool?) -> some View {
+        switch longTerm {
+        case .some(true):
+            Text("LT").font(.caption2).padding(.horizontal, 4).background(.green.opacity(0.2)).clipShape(Capsule())
+        case .some(false):
+            Text("ST").font(.caption2).padding(.horizontal, 4).background(.orange.opacity(0.2)).clipShape(Capsule())
+        case .none:
+            EmptyView()
+        }
     }
 }
 

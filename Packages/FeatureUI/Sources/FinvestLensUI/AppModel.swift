@@ -81,6 +81,9 @@ public final class AppModel {
     /// Progress/result of the most recent quote fetch, for the UI.
     public internal(set) var quoteStatus: QuoteFetchStatus = .idle
 
+    /// Cost-basis method used by the capital-gains / lots reports.
+    public var costBasisMethod: CostBasisMethod = .fifo
+
     /// API-key store (Keychain in production; injectable for tests/previews).
     let apiKeys: APIKeyStoring
     /// HTTP transport for quote providers (injectable for tests).

@@ -52,4 +52,12 @@ extension AppModel {
         guard let book, !securityCommodities.isEmpty else { return nil }
         return FinancialReports.portfolio(book, currency: reportCurrency, asOf: asOf)
     }
+
+    /// Realised capital gains and open lots under the selected cost-basis
+    /// method (`FR-RPT-03`).
+    public func capitalGains(from: Date = .distantPast, to: Date = .distantFuture) -> CapitalGainsReport? {
+        guard let book, !securityCommodities.isEmpty else { return nil }
+        return FinancialReports.capitalGains(book, currency: reportCurrency,
+                                             from: from, to: to, method: costBasisMethod)
+    }
 }

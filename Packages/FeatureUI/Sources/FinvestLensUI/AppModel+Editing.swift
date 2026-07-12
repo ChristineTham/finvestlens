@@ -14,11 +14,15 @@ public struct SplitInput: Identifiable, Hashable, Sendable {
     public var id = UUID()
     public var accountID: GncGUID?
     public var value: Decimal
+    /// Amount in the account's own commodity (e.g. share count for a security).
+    /// `nil` defaults to `value`, correct for same-currency cash postings.
+    public var quantity: Decimal?
     public var memo: String
 
-    public init(accountID: GncGUID? = nil, value: Decimal = 0, memo: String = "") {
+    public init(accountID: GncGUID? = nil, value: Decimal = 0, quantity: Decimal? = nil, memo: String = "") {
         self.accountID = accountID
         self.value = value
+        self.quantity = quantity
         self.memo = memo
     }
 }
@@ -79,7 +83,7 @@ extension AppModel {
             guard let id = input.accountID, let account = book.account(with: id) else {
                 throw TransactionEntryError.unknownAccount
             }
-            txn.addSplit(account: account, value: input.value, memo: input.memo)
+            txn.addSplit(account: account, value: input.value, quantity: input.quantity, memo: input.memo)
         }
         guard txn.isBalanced else {
             throw TransactionEntryError.unbalanced(txn.imbalance.rounded.amount)
@@ -97,7 +101,10 @@ extension AppModel {
             description: txn.transactionDescription,
             currency: txn.currency,
             splits: txn.splits.map {
-                SplitInput(accountID: $0.account?.guid, value: $0.value, memo: $0.memo)
+                // Preserve share counts when the quantity differs from the value
+                // (security / foreign-currency legs).
+                SplitInput(accountID: $0.account?.guid, value: $0.value,
+                           quantity: $0.quantity == $0.value ? nil : $0.quantity, memo: $0.memo)
             }
         )
     }
@@ -122,7 +129,7 @@ extension AppModel {
             guard let accountID = input.accountID, let account = book.account(with: accountID) else {
                 throw TransactionEntryError.unknownAccount
             }
-            txn.addSplit(account: account, value: input.value, memo: input.memo)
+            txn.addSplit(account: account, value: input.value, quantity: input.quantity, memo: input.memo)
         }
         markDirtyAndRefresh()
         return txn.guid

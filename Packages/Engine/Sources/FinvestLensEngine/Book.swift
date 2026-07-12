@@ -129,6 +129,33 @@ public final class Book {
         return quantity * price.value
     }
 
+    // MARK: Cost basis / lots
+
+    /// The chronological acquisition/disposal events for a security `account`,
+    /// derived from its non-voided splits (`FR-INV-04`).
+    public func lotEvents(for account: Account) -> [LotEvent] {
+        var events: [LotEvent] = []
+        for transaction in transactions {
+            for split in transaction.splits
+            where split.account === account && split.reconcileState != .voided && split.quantity != 0 {
+                events.append(LotEvent(date: transaction.datePosted,
+                                       quantity: split.quantity, value: split.value))
+            }
+        }
+        return events
+    }
+
+    /// Computes cost basis, open lots and realised gains for a security
+    /// `account` under `method`.
+    public func costBasis(
+        for account: Account,
+        method: CostBasisMethod = .fifo,
+        longTermThresholdDays: Int = CostBasis.defaultLongTermThresholdDays
+    ) -> CostBasisResult {
+        CostBasis.compute(events: lotEvents(for: account), method: method,
+                          longTermThresholdDays: longTermThresholdDays)
+    }
+
     // MARK: Transactions
 
     /// Adds a transaction to the book.
