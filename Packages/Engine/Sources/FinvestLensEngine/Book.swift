@@ -178,6 +178,15 @@ public final class Book {
         transactions.first { $0.guid == guid }
     }
 
+    /// All distinct tags used across transactions, sorted (`FR-TAG-01`).
+    public var allTags: [String] {
+        var seen = Set<String>()
+        for transaction in transactions {
+            for tag in transaction.tags { seen.insert(tag) }
+        }
+        return seen.sorted()
+    }
+
     /// Looks up a split by GUID across all transactions.
     public func split(with guid: GncGUID) -> Split? {
         for transaction in transactions {

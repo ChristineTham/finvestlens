@@ -481,8 +481,15 @@ struct TransactionEditorSheet: View {
     @State private var loaded = false
     @State private var date = Date()
     @State private var description = ""
+    @State private var tagsText = ""
     @State private var lines: [EditableSplit] = [EditableSplit(), EditableSplit()]
     @FocusState private var descriptionFocused: Bool
+
+    private var parsedTags: [String] {
+        tagsText.split(whereSeparator: { $0 == "," || $0 == " " })
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
 
     private var imbalance: Decimal { lines.reduce(Decimal(0)) { $0 + $1.amount } }
     private var validLineCount: Int { lines.filter { $0.accountID != nil }.count }
@@ -525,6 +532,10 @@ struct TransactionEditorSheet: View {
                     Button("Add Split", systemImage: "plus") { lines.append(EditableSplit()) }
                 }
 
+                Section("Tags") {
+                    TextField("Comma-separated tags", text: $tagsText)
+                }
+
                 Section {
                     HStack {
                         Text("Imbalance")
@@ -556,6 +567,7 @@ struct TransactionEditorSheet: View {
             date = edit.date
             description = edit.description
             lines = edit.splits.map { EditableSplit($0) }
+            tagsText = edit.tags.joined(separator: ", ")
         }
         focusSoon { descriptionFocused = true }
     }
@@ -573,10 +585,10 @@ struct TransactionEditorSheet: View {
             .map { SplitInput(accountID: $0.accountID, value: $0.amount) }
         if let editingID {
             _ = try? model.updateTransaction(id: editingID, date: date, description: description,
-                                             currency: .aud, splits: inputs)
+                                             currency: .aud, splits: inputs, tags: parsedTags)
         } else {
             _ = try? model.addTransaction(date: date, description: description,
-                                          currency: .aud, splits: inputs)
+                                          currency: .aud, splits: inputs, tags: parsedTags)
         }
         dismiss()
     }
@@ -608,6 +620,14 @@ struct EditAccountSheet: View {
                 TextField("Notes", text: $notes, axis: .vertical)
                 Toggle("Placeholder", isOn: $isPlaceholder)
                 Toggle("Hidden", isOn: $isHidden)
+
+                Section {
+                    Button("Renumber sub-accounts") {
+                        model.renumberChildren(of: accountID)
+                    }
+                } footer: {
+                    Text("Assigns sequential codes (010, 020, …) to this account's children.")
+                }
             }
             .navigationTitle("Edit Account")
             .toolbar {

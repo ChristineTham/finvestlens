@@ -255,6 +255,25 @@ public final class AppModel {
         markDirtyAndRefresh()
     }
 
+    /// Assigns sequential codes to the children of `parentID` (or the top level),
+    /// ordered by existing code then name (`FR-COA`). Codes are zero-padded,
+    /// e.g. prefix "" interval 10 → "010", "020", … `nil` parent renumbers the
+    /// top-level accounts.
+    public func renumberChildren(of parentID: GncGUID?, prefix: String = "", interval: Int = 10) {
+        guard let book else { return }
+        let parent = parentID.flatMap { book.account(with: $0) } ?? book.rootAccount
+        let children = parent.children.sorted {
+            ($0.code, $0.name) < ($1.code, $1.name)
+        }
+        guard !children.isEmpty else { return }
+        let width = String((children.count) * max(interval, 1)).count
+        for (index, child) in children.enumerated() {
+            let number = (index + 1) * max(interval, 1)
+            child.code = prefix + String(format: "%0\(width)d", number)
+        }
+        markDirtyAndRefresh()
+    }
+
     /// Records a simple two-account transaction moving `amount` from `sourceID`
     /// into `destinationID` (positive `amount` credits the destination).
     @discardableResult

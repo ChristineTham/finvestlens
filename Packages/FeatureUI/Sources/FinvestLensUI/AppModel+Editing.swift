@@ -52,6 +52,7 @@ public struct TransactionEdit: Sendable {
     public var description: String
     public var currency: Commodity
     public var splits: [SplitInput]
+    public var tags: [String] = []
 }
 
 /// A snapshot of an account's editable fields.
@@ -73,7 +74,7 @@ extension AppModel {
     /// (`FR-REG-02`). Throws ``TransactionEntryError`` otherwise.
     @discardableResult
     public func addTransaction(date: Date, description: String, currency: Commodity,
-                               splits: [SplitInput]) throws -> GncGUID {
+                               splits: [SplitInput], tags: [String] = []) throws -> GncGUID {
         guard let book else { throw TransactionEntryError.noBook }
         let realSplits = splits.filter { $0.accountID != nil }
         guard realSplits.count >= 2 else { throw TransactionEntryError.tooFewSplits }
@@ -85,6 +86,7 @@ extension AppModel {
             }
             txn.addSplit(account: account, value: input.value, quantity: input.quantity, memo: input.memo)
         }
+        txn.tags = tags
         guard txn.isBalanced else {
             throw TransactionEntryError.unbalanced(txn.imbalance.rounded.amount)
         }
@@ -105,7 +107,8 @@ extension AppModel {
                 // (security / foreign-currency legs).
                 SplitInput(accountID: $0.account?.guid, value: $0.value,
                            quantity: $0.quantity == $0.value ? nil : $0.quantity, memo: $0.memo)
-            }
+            },
+            tags: txn.tags
         )
     }
 
@@ -113,7 +116,8 @@ extension AppModel {
     /// double-entry invariant (`FR-REG-02`).
     @discardableResult
     public func updateTransaction(id: GncGUID, date: Date, description: String,
-                                  currency: Commodity, splits: [SplitInput]) throws -> GncGUID {
+                                  currency: Commodity, splits: [SplitInput],
+                                  tags: [String]? = nil) throws -> GncGUID {
         guard let book, let txn = book.transaction(with: id) else { throw TransactionEntryError.notFound }
         let realSplits = splits.filter { $0.accountID != nil }
         guard realSplits.count >= 2 else { throw TransactionEntryError.tooFewSplits }
@@ -124,6 +128,7 @@ extension AppModel {
         txn.dateEntered = date
         txn.transactionDescription = description
         txn.currency = currency
+        if let tags { txn.tags = tags }
         for existing in Array(txn.splits) { txn.removeSplit(existing) }
         for input in realSplits {
             guard let accountID = input.accountID, let account = book.account(with: accountID) else {
@@ -277,13 +282,54 @@ extension AppModel {
             searchResults = []
             return
         }
-        let needle = searchQuery.lowercased()
-        searchResults = book.transactions.filter { matches($0, needle) }
+        searchResults = transactionsMatching(searchQuery, in: book)
             .sorted { $0.datePosted > $1.datePosted }
             .map { summary(for: $0) }
     }
 
-    private func matches(_ txn: Transaction, _ needle: String) -> Bool {
+    /// Transactions matching an operator query. Whitespace-separated tokens are
+    /// ANDed. A `key:value` token filters a field (`tag:`, `account:`, `memo:`,
+    /// `desc:`, `amount:>N` / `amount:<N` / `amount:N`); any other token is
+    /// free text matched against description / number / memo / account name
+    /// (`FR-FIND-01`).
+    func transactionsMatching(_ query: String, in book: Book) -> [Transaction] {
+        let tokens = query.split(separator: " ").map(String.init).filter { !$0.isEmpty }
+        return book.transactions.filter { txn in
+            tokens.allSatisfy { matchesToken($0, txn) }
+        }
+    }
+
+    private func matchesToken(_ token: String, _ txn: Transaction) -> Bool {
+        if let colon = token.firstIndex(of: ":") {
+            let key = token[..<colon].lowercased()
+            let value = String(token[token.index(after: colon)...]).lowercased()
+            switch key {
+            case "tag":
+                return txn.tags.contains { $0.lowercased().contains(value) }
+            case "account", "acct":
+                return txn.splits.contains { $0.account?.name.lowercased().contains(value) ?? false }
+            case "memo":
+                return txn.splits.contains { $0.memo.lowercased().contains(value) }
+            case "desc", "description":
+                return txn.transactionDescription.lowercased().contains(value)
+            case "amount":
+                return matchesAmount(value, txn)
+            default:
+                break
+            }
+        }
+        return matchesFreeText(token.lowercased(), txn)
+    }
+
+    private func matchesAmount(_ spec: String, _ txn: Transaction) -> Bool {
+        let magnitude = txn.splits.map(\.value).map(abs).max() ?? 0
+        if spec.hasPrefix(">"), let n = Decimal(string: String(spec.dropFirst())) { return magnitude > n }
+        if spec.hasPrefix("<"), let n = Decimal(string: String(spec.dropFirst())) { return magnitude < n }
+        if let n = Decimal(string: spec) { return magnitude == n }
+        return false
+    }
+
+    private func matchesFreeText(_ needle: String, _ txn: Transaction) -> Bool {
         if txn.transactionDescription.lowercased().contains(needle) { return true }
         if txn.number.lowercased().contains(needle) { return true }
         for split in txn.splits {

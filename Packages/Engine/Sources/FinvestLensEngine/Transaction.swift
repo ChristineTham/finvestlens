@@ -37,6 +37,22 @@ public final class Transaction {
     /// The legs of the transaction, owned strongly.
     public private(set) var splits: [Split]
 
+    /// Free-form tags, stored in a preserved KVP slot so they survive save and
+    /// GnuCash round-trips (`FR-TAG-01`).
+    public var tags: [String] {
+        get {
+            guard case let .list(values)? = kvp[Self.tagsKey] else { return [] }
+            return values.compactMap { if case let .string(tag) = $0 { return tag } else { return nil } }
+        }
+        set {
+            let cleaned = newValue
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            kvp[Self.tagsKey] = cleaned.isEmpty ? nil : .list(cleaned.map { .string($0) })
+        }
+    }
+    private static let tagsKey = "finvestlens/tags"
+
     public init(
         guid: GncGUID = .random(),
         currency: Commodity,
