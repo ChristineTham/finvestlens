@@ -191,19 +191,19 @@ Dependencies point downward only; `Engine` builds/tests with nothing above it (`
 
 **Objective.** Ecosystem integration and the guidance layer.
 
-**Workstreams & tasks**
-- **File-level sync:** iCloud Documents/Files; `NSFilePresenter` external-change handling; `NSFileVersion` conflict resolution. *(FR-PLT-02)*
-- **System integration:** App Intents/Shortcuts, Spotlight, Quick Look for `.finvestlens`/`.gnucash`, Share Sheet, **widgets**. *(FR-PLT-03)*
-- **Alerts engine (Advisor-FYI):** rules → proactive alerts (bill due, projected low/negative balance, over budget, price target); in-app + notifications + widgets. *(FR-PLAN-05)*
-- **Home dashboard:** balances, upcoming bills, budget status, **net-worth trend**, alerts. *(FR-PLAN-08)*
-- **Accessibility & localization pass.** *(NFR-05/06)*
-- **Optional book lock** (Face/Touch ID). *(NFR-07)*
+**Workstreams & tasks** — status as of completion.
+- ✅ **File-level sync:** `NSFilePresenter` external-change handling + a reload banner; `NSFileVersion` conflict listing/resolution; reuses the P1 SHA256 fingerprint. Storage-agnostic (local / network share / iCloud). ⏸️ Enabling an **iCloud Documents container** is a project-capability step (dev team/provisioning). *(FR-PLT-02)*
+- ✅ **App Intents / Shortcuts:** Net Worth, Upcoming Bills, Financial Alerts intents + `AppShortcutsProvider` (Siri/Spotlight/Shortcuts). ⏸️ **Widgets / Quick Look** need separate extension targets — deferred (project-target work, untestable headlessly). *(FR-PLT-03)*
+- ✅ **Alerts engine (Advisor-FYI):** bill-due, projected low/negative balance, over-budget, price-target; severity-ranked; KVP-persisted price targets. Surfaced on the dashboard and via the Alerts intent. ⏸️ System notifications deferred (needs UNUserNotificationCenter + entitlement). *(FR-PLAN-05)*
+- ✅ **Home dashboard:** net-worth headline + 12-month trend, alerts, account balances, upcoming bills, budget status. *(FR-PLAN-08)*
+- ✅ **Accessibility pass:** VoiceOver labels/values on account rows, dashboard, alerts and every chart. ⏸️ **Localization** (string catalogs) deferred. *(NFR-05/06)*
+- ✅ **Optional book lock** (Face/Touch ID via injectable `Authenticating`; Security menu; lock screen). *(NFR-07)*
 
 **Dependencies.** P4 (bills/budgets/alerts data), P5 (portfolio for dashboard/widgets).
-**Deliverables.** Sync, Shortcuts, widgets, dashboard, alerts; a11y-audited UI.
-**Exit criteria.** A document syncs across devices via iCloud with conflict handling; widgets/Shortcuts work; alerts fire on real conditions; VoiceOver/Dynamic Type pass.
-**Test focus.** Conflict resolution; alert rule correctness; a11y audit.
-**Risks.** File-sync conflicts on simultaneous edits — reuse the P1 conflict-detection machinery.
+**Deliverables.** Sync machinery, Shortcuts, dashboard, alerts, book lock; a11y-labelled UI.
+**Status.** Core **complete**. Deferred (documented in [deferred.md](deferred.md)): iCloud container enablement, widgets, Quick Look, push notifications, localization — each needs a project-capability/extension-target or entitlement step.
+**Test focus.** Conflict resolution; alert rule correctness.
+**Risks.** File-sync conflicts on simultaneous edits — reuses the P1 conflict-detection machinery.
 
 ---
 

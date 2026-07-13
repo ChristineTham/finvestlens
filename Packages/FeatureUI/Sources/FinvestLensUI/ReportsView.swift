@@ -233,6 +233,7 @@ private struct NetWorthChartView: View {
                                                      startPoint: .top, endPoint: .bottom))
             }
             .padding()
+            .accessibilityLabel("Net worth trend")
         } else {
             ContentUnavailableView("Not enough history", systemImage: "chart.line.uptrend.xyaxis")
         }
@@ -356,6 +357,7 @@ private struct AllocationChart: View {
         }
         .frame(height: 180)
         .padding(.vertical, 4)
+        .accessibilityLabel("Portfolio allocation by security")
     }
 }
 
@@ -400,6 +402,7 @@ private struct PriceHistorySection: View {
                     }
                     .frame(height: 160)
                     .padding(.vertical, 4)
+                    .accessibilityLabel("Price history for \(commodity.mnemonic)")
                 }
             }
         }
@@ -542,6 +545,7 @@ private struct PriceScatterView: View {
                 }
                 .frame(minHeight: 260)
                 .padding()
+                .accessibilityLabel("Price scatter of all securities over time")
             }
         }
     }
@@ -667,6 +671,7 @@ private struct CashFlowView: View {
                     }
                     .frame(height: 170)
                     .padding()
+                    .accessibilityLabel("Projected cash-flow balance")
                     Divider()
                     List(events) { event in
                         HStack {

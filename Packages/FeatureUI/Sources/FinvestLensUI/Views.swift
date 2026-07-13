@@ -337,6 +337,9 @@ struct AccountsSidebar: View {
                         .foregroundStyle(node.balance < 0 ? .red : .secondary)
                 }
                 .tag(node.id)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(node.name)
+                .accessibilityValue(AmountFormat.string(node.balance, code: node.currencyCode))
                 .contextMenu {
                     Button("Edit…") { sheet = .edit(node.id) }
                     Button("Reconcile…") { sheet = .reconcile(node.id) }

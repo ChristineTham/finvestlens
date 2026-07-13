@@ -45,6 +45,8 @@ struct DashboardView: View {
             Text(AmountFormat.string(current, code: code))
                 .font(.system(size: 30, weight: .bold)).monospacedDigit()
                 .foregroundStyle(current < 0 ? .red : .primary)
+                .accessibilityLabel("Net worth")
+                .accessibilityValue(AmountFormat.string(current, code: code))
             if series.count >= 2 {
                 Chart(series) { point in
                     AreaMark(x: .value("Month", point.date), y: .value("Net worth", asDouble(point.netWorth)))
@@ -53,6 +55,7 @@ struct DashboardView: View {
                 }
                 .frame(height: 120)
                 .chartXAxis { AxisMarks(values: .stride(by: .month, count: 3)) }
+                .accessibilityLabel("Net worth trend over the last 12 months")
             }
         }
     }
@@ -76,6 +79,8 @@ struct DashboardView: View {
                         }
                         Spacer()
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(severityWord(alert.severity)) alert. \(alert.title). \(alert.message)")
                 }
             }
         }
@@ -162,6 +167,9 @@ struct DashboardView: View {
     }
     private func color(for s: AlertSeverity) -> Color {
         switch s { case .critical: .red; case .warning: .orange; case .info: .blue }
+    }
+    private func severityWord(_ s: AlertSeverity) -> String {
+        switch s { case .critical: "Critical"; case .warning: "Warning"; case .info: "Information" }
     }
 }
 
