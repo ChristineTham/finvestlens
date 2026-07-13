@@ -136,6 +136,60 @@ public final class FinvestLensDocument {
     /// Refreshes the lock heartbeat (drive from a timer while open).
     public func heartbeat() { try? lock.refreshHeartbeat() }
 
+    // MARK: External changes / sync (`FR-PLT-02`)
+
+    private var presenter: DocumentPresenter?
+
+    /// `true` if the shared file changed since open / last save — e.g. an
+    /// external writer or an iCloud sync from another device.
+    public func hasExternalChanges() -> Bool {
+        guard FileManager.default.fileExists(atPath: fileURL.path),
+              let current = try? Self.fingerprint(of: fileURL) else { return false }
+        return current != baselineFingerprint
+    }
+
+    /// Reloads the book from the shared file, adopting external changes and
+    /// discarding unsaved local edits (alias for ``revert()``).
+    public func reloadFromDisk() throws { try revert() }
+
+    /// Observes the shared file for external changes; `handler` fires (on an
+    /// arbitrary queue) whenever the file changes underneath us. Guard with
+    /// ``hasExternalChanges()`` to ignore our own writes.
+    public func startObservingExternalChanges(_ handler: @escaping @Sendable () -> Void) {
+        stopObservingExternalChanges()
+        let presenter = DocumentPresenter(url: fileURL, onChange: handler)
+        NSFileCoordinator.addFilePresenter(presenter)
+        self.presenter = presenter
+    }
+
+    /// Stops observing external changes.
+    public func stopObservingExternalChanges() {
+        if let presenter {
+            NSFileCoordinator.removeFilePresenter(presenter)
+            self.presenter = nil
+        }
+    }
+
+    /// iCloud conflict versions of this document awaiting resolution.
+    public func unresolvedConflictVersions() -> [NSFileVersion] {
+        NSFileVersion.unresolvedConflictVersionsOfItem(at: fileURL) ?? []
+    }
+
+    /// Resolves conflicts by keeping the current on-disk version.
+    public func resolveConflictsKeepingCurrent() throws {
+        for version in unresolvedConflictVersions() { version.isResolved = true }
+        try? NSFileVersion.removeOtherVersionsOfItem(at: fileURL)
+        baselineFingerprint = try Self.fingerprint(of: fileURL)
+    }
+
+    /// Adopts a specific conflict version as the file contents and reloads.
+    public func adoptConflictVersion(_ version: NSFileVersion) throws {
+        try version.replaceItem(at: fileURL)
+        for other in unresolvedConflictVersions() { other.isResolved = true }
+        try? NSFileVersion.removeOtherVersionsOfItem(at: fileURL)
+        try reloadFromDisk()
+    }
+
     // MARK: File helpers
 
     private static func makeWorkingCopyURL() -> URL {
@@ -182,4 +236,24 @@ public final class FinvestLensDocument {
         let data = try Data(contentsOf: url)
         return Data(SHA256.hash(data: data))
     }
+}
+
+/// Bridges `NSFilePresenter` change notifications to a callback (`FR-PLT-02`).
+final class DocumentPresenter: NSObject, NSFilePresenter, @unchecked Sendable {
+    let presentedItemURL: URL?
+    private let queue: OperationQueue
+    private let onChange: @Sendable () -> Void
+
+    init(url: URL, onChange: @escaping @Sendable () -> Void) {
+        self.presentedItemURL = url
+        self.onChange = onChange
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
+        self.queue = queue
+        super.init()
+    }
+
+    var presentedItemOperationQueue: OperationQueue { queue }
+
+    func presentedItemDidChange() { onChange() }
 }

@@ -127,6 +127,20 @@ public struct FinvestLensRootView: View {
             }
         }
         .searchable(text: $model.searchQuery, prompt: "Search transactions")
+        .safeAreaInset(edge: .top) {
+            if model.externalChangePending {
+                HStack(spacing: 12) {
+                    Image(systemName: "arrow.triangle.2.circlepath.icloud")
+                    Text("This book changed on another device.")
+                    Spacer()
+                    Button("Reload") { model.reloadFromDisk() }
+                        .buttonStyle(.borderedProminent)
+                    Button("Dismiss") { model.externalChangePending = false }
+                }
+                .padding(10)
+                .background(.yellow.opacity(0.25))
+            }
+        }
         .toolbar {
             ToolbarItemGroup {
                 Button("Dashboard", systemImage: "house") {

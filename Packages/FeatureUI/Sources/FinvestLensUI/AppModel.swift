@@ -109,6 +109,10 @@ public final class AppModel {
     /// `true` when the open book is locked behind authentication (`NFR-07`).
     public internal(set) var isLocked = false
 
+    /// `true` when the shared file changed externally (another device via
+    /// iCloud) since we opened it (`FR-PLT-02`).
+    public internal(set) var externalChangePending = false
+
     /// `true` when a document is open.
     public var isOpen: Bool { document != nil }
     /// `true` when there are unsaved changes.
@@ -206,6 +210,28 @@ public final class AppModel {
         startQuoteAutoRefresh()
         lockIfNeeded()
         Self.recordLastBook(url)
+        observeExternalChanges()
+    }
+
+    /// Watches the shared file for external changes (iCloud sync from another
+    /// device) and raises ``externalChangePending`` (`FR-PLT-02`).
+    private func observeExternalChanges() {
+        document?.startObservingExternalChanges { [weak self] in
+            Task { @MainActor in
+                guard let self, let document = self.document else { return }
+                if document.hasExternalChanges() { self.externalChangePending = true }
+            }
+        }
+    }
+
+    /// Reloads the book from the shared file, adopting external changes and
+    /// discarding unsaved local edits.
+    public func reloadFromDisk() {
+        guard let document else { return }
+        try? document.reloadFromDisk()
+        externalChangePending = false
+        reloadKvpCollections()
+        refreshAll()
     }
 
     /// Remembers the last-opened book so App Intents / Shortcuts can read it.
@@ -247,7 +273,9 @@ public final class AppModel {
 
     public func close() {
         stopQuoteAutoRefresh()
+        document?.stopObservingExternalChanges()
         isLocked = false
+        externalChangePending = false
         document?.discard()
         document = nil
         accountTree = []
