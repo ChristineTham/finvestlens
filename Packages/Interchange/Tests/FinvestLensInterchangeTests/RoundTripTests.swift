@@ -180,6 +180,32 @@ struct DocumentLinkRoundTripTests {
         #expect(result.book.transactions.first?.tags == ["holiday", "reimbursable"])
     }
 
+    @Test("Commodity quote config, xcode, and slots survive export → import")
+    func commodityFidelity() throws {
+        let book = makeBook()
+        var stock = Commodity(namespace: .security("ASX"), mnemonic: "PPT.AX",
+                              fullName: "Perpetual Limited", smallestFraction: 10000)
+        stock.exchangeCode = "PPT.AX"
+        stock.getQuotes = true
+        stock.quoteSource = "yahoo_json"
+        stock.quoteTimezone = ""            // present-but-empty, GnuCash's usual form
+        stock.kvp["user_symbol"] = .string("PPT")
+        book.registerCommodity(stock)
+
+        let result = try GnuCashXMLImporter.importBook(from: GnuCashXMLExporter.export(book))
+        let imported = try #require(result.book.commodities.first { $0.mnemonic == "PPT.AX" })
+        #expect(imported.fullName == "Perpetual Limited")
+        #expect(imported.exchangeCode == "PPT.AX")
+        #expect(imported.getQuotes)
+        #expect(imported.quoteSource == "yahoo_json")
+        #expect(imported.quoteTimezone == "")
+        #expect(imported.kvp["user_symbol"] == .string("PPT"))
+        // A plain currency stays plain: no quote elements invented.
+        let aud = try #require(result.book.commodities.first { $0.mnemonic == "AUD" })
+        #expect(!aud.getQuotes && aud.quoteSource == nil
+                && aud.quoteTimezone == nil && aud.exchangeCode == nil)
+    }
+
     @Test("Book GUID survives export → import")
     func bookGUID() throws {
         let book = makeBook()

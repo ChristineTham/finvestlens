@@ -64,13 +64,29 @@ public struct Commodity: Hashable, Codable, Sendable {
     public var smallestFraction: Int
     /// Rounding policy applied when quantising to ``smallestFraction``.
     public var roundingMode: MoneyRoundingMode
+    /// Exchange-specific code — ISIN or ticker (GnuCash `cmdty:xcode`).
+    public var exchangeCode: String?
+    /// Whether GnuCash's online quoting is enabled (`cmdty:get_quotes`).
+    public var getQuotes: Bool
+    /// GnuCash quote source, e.g. `"yahoo_json"` (`cmdty:quote_source`).
+    public var quoteSource: String?
+    /// GnuCash quote timezone (`cmdty:quote_tz`); an empty string means the
+    /// element was present but empty, which is GnuCash's usual form.
+    public var quoteTimezone: String?
+    /// Preserved slots (`cmdty:slots`, e.g. `user_symbol`).
+    public var kvp: KvpFrame
 
     public init(
         namespace: CommodityNamespace,
         mnemonic: String,
         fullName: String,
         smallestFraction: Int,
-        roundingMode: MoneyRoundingMode = .plain
+        roundingMode: MoneyRoundingMode = .plain,
+        exchangeCode: String? = nil,
+        getQuotes: Bool = false,
+        quoteSource: String? = nil,
+        quoteTimezone: String? = nil,
+        kvp: KvpFrame = KvpFrame()
     ) {
         precondition(smallestFraction >= 1, "smallestFraction must be >= 1")
         self.namespace = namespace
@@ -78,6 +94,32 @@ public struct Commodity: Hashable, Codable, Sendable {
         self.fullName = fullName
         self.smallestFraction = smallestFraction
         self.roundingMode = roundingMode
+        self.exchangeCode = exchangeCode
+        self.getQuotes = getQuotes
+        self.quoteSource = quoteSource
+        self.quoteTimezone = quoteTimezone
+        self.kvp = kvp
+    }
+
+    // Custom Codable: the quote/xcode/kvp fields default when absent, so
+    // documents saved before they existed still decode.
+    private enum CodingKeys: String, CodingKey {
+        case namespace, mnemonic, fullName, smallestFraction, roundingMode
+        case exchangeCode, getQuotes, quoteSource, quoteTimezone, kvp
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        namespace = try container.decode(CommodityNamespace.self, forKey: .namespace)
+        mnemonic = try container.decode(String.self, forKey: .mnemonic)
+        fullName = try container.decode(String.self, forKey: .fullName)
+        smallestFraction = try container.decode(Int.self, forKey: .smallestFraction)
+        roundingMode = try container.decodeIfPresent(MoneyRoundingMode.self, forKey: .roundingMode) ?? .plain
+        exchangeCode = try container.decodeIfPresent(String.self, forKey: .exchangeCode)
+        getQuotes = try container.decodeIfPresent(Bool.self, forKey: .getQuotes) ?? false
+        quoteSource = try container.decodeIfPresent(String.self, forKey: .quoteSource)
+        quoteTimezone = try container.decodeIfPresent(String.self, forKey: .quoteTimezone)
+        kvp = try container.decodeIfPresent(KvpFrame.self, forKey: .kvp) ?? KvpFrame()
     }
 
     /// Rounds `value` to the nearest multiple of `1 / smallestFraction`

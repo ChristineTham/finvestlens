@@ -106,6 +106,15 @@ public final class SQLiteDocumentStore {
                 t.column("type", .text).notNull().defaults(to: "")
             }
         }
+        migrator.registerMigration("v2-commodity-fidelity") { db in
+            try db.alter(table: "commodity") { t in
+                t.add(column: "exchangeCode", .text)
+                t.add(column: "getQuotes", .boolean).notNull().defaults(to: false)
+                t.add(column: "quoteSource", .text)
+                t.add(column: "quoteTimezone", .text)
+                t.add(column: "kvp", .text)
+            }
+        }
         return migrator
     }
 
@@ -122,11 +131,15 @@ public final class SQLiteDocumentStore {
             for commodity in book.commodities {
                 try db.execute(sql: """
                     INSERT OR REPLACE INTO commodity
-                    (namespace, mnemonic, fullName, smallestFraction, roundingMode)
-                    VALUES (?, ?, ?, ?, ?)
+                    (namespace, mnemonic, fullName, smallestFraction, roundingMode,
+                     exchangeCode, getQuotes, quoteSource, quoteTimezone, kvp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, arguments: [
                         Serialize.namespace(commodity.namespace), commodity.mnemonic,
                         commodity.fullName, commodity.smallestFraction, commodity.roundingMode.rawValue,
+                        commodity.exchangeCode, commodity.getQuotes,
+                        commodity.quoteSource, commodity.quoteTimezone,
+                        Serialize.kvp(commodity.kvp),
                     ])
             }
 
@@ -210,7 +223,12 @@ public final class SQLiteDocumentStore {
                     mnemonic: row["mnemonic"],
                     fullName: row["fullName"],
                     smallestFraction: row["smallestFraction"],
-                    roundingMode: MoneyRoundingMode(rawValue: row["roundingMode"]) ?? .plain
+                    roundingMode: MoneyRoundingMode(rawValue: row["roundingMode"]) ?? .plain,
+                    exchangeCode: row["exchangeCode"],
+                    getQuotes: row["getQuotes"] ?? false,
+                    quoteSource: row["quoteSource"],
+                    quoteTimezone: row["quoteTimezone"],
+                    kvp: Serialize.parseKvp(row["kvp"])
                 )
                 commodities.append(commodity)
                 commodityByKey[Serialize.commodityKey(commodity)] = commodity

@@ -24,6 +24,50 @@ import FinvestLensEngine
 
 private let livePath = ProcessInfo.processInfo.environment["FL_ROUNDTRIP_FILE"]
 
+/// Removes the scheduled-transaction and budget sections (documented
+/// non-goals of the XML round-trip) before inventory comparison.
+private func stripped(_ xml: String) -> String {
+    var out = xml
+    for (open, close) in [("<gnc:template-transactions>", "</gnc:template-transactions>"),
+                          ("<gnc:schedxaction", "</gnc:schedxaction>"),
+                          ("<gnc:budget", "</gnc:budget>")] {
+        while let start = out.range(of: open),
+              let end = out.range(of: close, range: start.upperBound..<out.endIndex) {
+            out.removeSubrange(start.lowerBound..<end.upperBound)
+        }
+    }
+    return out
+}
+
+private func occurrences(of needle: String, in text: String) -> Int {
+    var count = 0
+    var cursor = text.startIndex
+    while let found = text.range(of: needle, range: cursor..<text.endIndex) {
+        count += 1
+        cursor = found.upperBound
+    }
+    return count
+}
+
+/// Multiset of `<slot:key>` values in the document, entity-decoded so raw
+/// and escaped forms of the same key compare equal.
+private func slotKeyCounts(in text: String) -> [String: Int] {
+    var counts: [String: Int] = [:]
+    var cursor = text.startIndex
+    while let open = text.range(of: "<slot:key>", range: cursor..<text.endIndex) {
+        guard let close = text.range(of: "</slot:key>", range: open.upperBound..<text.endIndex) else { break }
+        let key = String(text[open.upperBound..<close.lowerBound])
+            .replacingOccurrences(of: "&apos;", with: "'")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
+        counts[key, default: 0] += 1
+        cursor = close.upperBound
+    }
+    return counts
+}
+
 @Suite("Live file round-trip")
 struct LiveFileRoundTripTests {
 
@@ -63,8 +107,25 @@ struct LiveFileRoundTripTests {
         // ── Deep graph comparison ──────────────────────────────────────
         check(b1.guid == b2.guid, "book GUID")
         check(b1.kvp == b2.kvp, "book KVP")
-        check(Set(b1.commodities) == Set(b2.commodities),
-              "commodities (\(b1.commodities.count) vs \(b2.commodities.count))")
+
+        // Commodity == is identity (namespace+mnemonic), so compare fields.
+        let c1 = Dictionary(uniqueKeysWithValues: b1.commodities.map { ("\($0.namespace)|\($0.mnemonic)", $0) })
+        let c2 = Dictionary(uniqueKeysWithValues: b2.commodities.map { ("\($0.namespace)|\($0.mnemonic)", $0) })
+        check(c1.count == c2.count, "commodity count (\(c1.count) vs \(c2.count))")
+        var commodityDiffs = 0
+        for (key, x) in c1 {
+            guard let y = c2[key],
+                  x.fullName == y.fullName, x.smallestFraction == y.smallestFraction,
+                  x.exchangeCode == y.exchangeCode, x.getQuotes == y.getQuotes,
+                  x.quoteSource == y.quoteSource, x.quoteTimezone == y.quoteTimezone,
+                  x.kvp == y.kvp
+            else {
+                commodityDiffs += 1
+                if commodityDiffs <= 5 { print("  ✗ commodity \(key)") }
+                continue
+            }
+        }
+        check(commodityDiffs == 0, "commodities identical (\(commodityDiffs) differ)")
 
         // Accounts by GUID.
         let a1 = Dictionary(uniqueKeysWithValues: b1.accounts.map { ($0.guid, $0) })
@@ -145,6 +206,37 @@ struct LiveFileRoundTripTests {
         // ── Determinism: export pass 2 must be byte-identical ──────────
         let xml2 = GnuCashXMLExporter.export(b2)
         check(xml1 == xml2, "double export byte-identical (\(xml1.count) vs \(xml2.count) bytes)")
+
+        // ── Faithfulness to the ORIGINAL file ──────────────────────────
+        // Import-vs-import comparison can't see data dropped at import time,
+        // so also compare content inventories between the original XML and
+        // the export. Scheduled-transaction (template + sx) and budget
+        // sections are stripped from the original first — they are a
+        // documented non-goal (kept in FinvestLens' own KVP form instead).
+        let t4 = Date()
+        let originalXML = stripped(String(decoding: try Gzip.decompressIfNeeded(Data(contentsOf: url)),
+                                          as: UTF8.self))
+        let exportedXML = stripped(String(decoding: xml1, as: UTF8.self))
+
+        for tag in ["<gnc:account version", "<gnc:transaction version", "<price>",
+                    "<cmdty:get_quotes", "<cmdty:xcode", "<cmdty:quote_source",
+                    "<cmdty:quote_tz"] {
+            let inOriginal = occurrences(of: tag, in: originalXML)
+            let inExport = occurrences(of: tag, in: exportedXML)
+            check(inOriginal == inExport, "\(tag) count (\(inOriginal) vs \(inExport))")
+        }
+        let originalKeys = slotKeyCounts(in: originalXML)
+        let exportedKeys = slotKeyCounts(in: exportedXML)
+        if originalKeys != exportedKeys {
+            let allKeys = Set(originalKeys.keys).union(exportedKeys.keys)
+            for key in allKeys.sorted() where originalKeys[key] != exportedKeys[key] {
+                print("  ✗ slot '\(key)': original \(originalKeys[key] ?? 0), export \(exportedKeys[key] ?? 0)")
+            }
+        }
+        check(originalKeys == exportedKeys,
+              "slot-key inventory (\(originalKeys.values.reduce(0, +)) vs \(exportedKeys.values.reduce(0, +)) slots)")
+        print("INVENTORY \(String(format: "%.1f", Date().timeIntervalSince(t4)))s — " +
+              "\(originalKeys.values.reduce(0, +)) slots compared against the original")
 
         print(failures.isEmpty
               ? "ROUND-TRIP CLEAN — all checks passed"

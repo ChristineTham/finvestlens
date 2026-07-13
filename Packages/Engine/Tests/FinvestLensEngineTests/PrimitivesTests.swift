@@ -114,5 +114,42 @@ struct CommodityTests {
     func identity() {
         #expect(Commodity.currency("AUD") == Commodity.aud)
         #expect(Commodity.aud != Commodity.usd)
+        // Quote config and slots are descriptive, not identity.
+        var configured = Commodity.aud
+        configured.getQuotes = true
+        configured.kvp["user_symbol"] = .string("$")
+        #expect(configured == Commodity.aud)
+    }
+
+    @Test("JSON from before the quote fields still decodes")
+    func legacyDecode() throws {
+        // Encoded by the pre-quote-fields Commodity (no exchangeCode /
+        // getQuotes / quoteSource / quoteTimezone / kvp keys).
+        let legacy = """
+        {"namespace":{"currency":{}},"mnemonic":"AUD","fullName":"Australian Dollar",
+         "smallestFraction":100,"roundingMode":"plain"}
+        """
+        let decoded = try JSONDecoder().decode(Commodity.self, from: Data(legacy.utf8))
+        #expect(decoded == .aud)
+        #expect(decoded.fullName == "Australian Dollar")
+        #expect(!decoded.getQuotes && decoded.exchangeCode == nil && decoded.kvp.isEmpty)
+    }
+
+    @Test("Quote fields survive a Codable round-trip")
+    func quoteFieldsCodable() throws {
+        var stock = Commodity(namespace: .security("ASX"), mnemonic: "BHP",
+                              fullName: "BHP Group", smallestFraction: 10000)
+        stock.exchangeCode = "BHP.AX"
+        stock.getQuotes = true
+        stock.quoteSource = "yahoo_json"
+        stock.quoteTimezone = ""
+        stock.kvp["user_symbol"] = .string("BHP")
+        let decoded = try JSONDecoder().decode(
+            Commodity.self, from: JSONEncoder().encode(stock))
+        #expect(decoded.exchangeCode == "BHP.AX")
+        #expect(decoded.getQuotes)
+        #expect(decoded.quoteSource == "yahoo_json")
+        #expect(decoded.quoteTimezone == "")
+        #expect(decoded.kvp["user_symbol"] == .string("BHP"))
     }
 }

@@ -100,10 +100,26 @@ public enum GnuCashXMLExporter {
         var block = "<gnc:commodity version=\"2.0.0\">\n"
         block += "  <cmdty:space>\(escape(namespace(commodity.namespace)))</cmdty:space>\n"
         block += "  <cmdty:id>\(escape(commodity.mnemonic))</cmdty:id>\n"
-        if !commodity.fullName.isEmpty && commodity.fullName != commodity.mnemonic {
+        if !commodity.fullName.isEmpty {
             block += "  <cmdty:name>\(escape(commodity.fullName))</cmdty:name>\n"
         }
+        if let xcode = commodity.exchangeCode {
+            block += "  <cmdty:xcode>\(escape(xcode))</cmdty:xcode>\n"
+        }
         block += "  <cmdty:fraction>\(commodity.smallestFraction)</cmdty:fraction>\n"
+        if commodity.getQuotes {
+            block += "  <cmdty:get_quotes/>\n"
+        }
+        if let source = commodity.quoteSource {
+            block += "  <cmdty:quote_source>\(escape(source))</cmdty:quote_source>\n"
+        }
+        if let timezone = commodity.quoteTimezone {
+            block += timezone.isEmpty
+                ? "  <cmdty:quote_tz/>\n"
+                : "  <cmdty:quote_tz>\(escape(timezone))</cmdty:quote_tz>\n"
+        }
+        block += slotsBlock(commodity.kvp.slots.sorted { $0.key < $1.key },
+                            container: "cmdty:slots", indent: "  ")
         block += "</gnc:commodity>\n"
         return block
     }
@@ -315,6 +331,9 @@ public enum GnuCashXMLExporter {
         return nil
     }
 
+    /// Escapes element text content. Only `& < >` need escaping there —
+    /// quotes and apostrophes stay literal, matching GnuCash's own output
+    /// (we never emit user text inside attribute values).
     private static func escape(_ text: String) -> String {
         var result = ""
         result.reserveCapacity(text.count)
@@ -323,8 +342,6 @@ public enum GnuCashXMLExporter {
             case "&": result += "&amp;"
             case "<": result += "&lt;"
             case ">": result += "&gt;"
-            case "\"": result += "&quot;"
-            case "'": result += "&apos;"
             default: result.append(character)
             }
         }

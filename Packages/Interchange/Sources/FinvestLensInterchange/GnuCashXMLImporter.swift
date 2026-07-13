@@ -20,10 +20,10 @@ import FinvestLensEngine
 /// are counted as warnings (FinvestLens keeps its own in KVP slots).
 ///
 /// Slots (KVP) are captured **verbatim** into the engine's `KvpFrame`s on
-/// book, account, transaction, and split (ADR-4), so unknown GnuCash keys
-/// (colours, online ids, reconcile info, …) survive a round-trip untouched.
-/// `placeholder`/`hidden`/`notes` are lifted into their engine properties.
-/// Commodity slots (`cmdty:slots`, e.g. `user_symbol`) are not yet kept.
+/// book, commodity, account, transaction, and split (ADR-4), so unknown
+/// GnuCash keys (colours, online ids, user symbols, reconcile info, …)
+/// survive a round-trip untouched. `placeholder`/`hidden`/`notes` are lifted
+/// into their engine properties, as are the commodity quote fields.
 public enum GnuCashXMLImporter {
 
     /// Imports from raw file `data`, transparently decompressing gzip.
@@ -127,6 +127,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "act:slots" where account != nil,
              "trn:slots" where transaction != nil && split == nil,
              "split:slots" where split != nil,
+             "cmdty:slots" where commodity != nil,
              "book:slots":
             slotContainer = name
         case "slot":
@@ -165,6 +166,10 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "cmdty:id": setCommodityField(id: value)
         case "cmdty:name": commodity?.name = value
         case "cmdty:fraction": commodity?.fraction = Int(value)
+        case "cmdty:xcode": commodity?.xcode = value
+        case "cmdty:get_quotes": commodity?.getQuotes = true   // presence flag
+        case "cmdty:quote_source": commodity?.quoteSource = value
+        case "cmdty:quote_tz": commodity?.quoteTimezone = value // "" when empty
         case "gnc:commodity": finishCommodityDefinition()
 
         // Account fields.
@@ -217,7 +222,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
             if slotContainer != nil, !value.isEmpty { slotStack.last?.scalar = value }
         case "slot":
             if slotContainer != nil, !slotStack.isEmpty { slotStack.removeLast() }
-        case "act:slots", "trn:slots", "split:slots", "book:slots":
+        case "act:slots", "trn:slots", "split:slots", "cmdty:slots", "book:slots":
             finishSlotContainer(name)
 
         default: break
@@ -290,6 +295,8 @@ private final class Delegate: NSObject, XMLParserDelegate {
             transaction?.kvp = frame
         case "split:slots":
             split?.kvp = frame
+        case "cmdty:slots":
+            commodity?.kvp = frame
         case "book:slots":
             bookKvp = frame
         default:
@@ -332,7 +339,8 @@ private final class Delegate: NSObject, XMLParserDelegate {
 
     private func finishAccount() {
         defer { account = nil }
-        guard let builder = account, let guid = builder.guid else {
+        guard let builder = account else { return }   // template section — already counted
+        guard let guid = builder.guid else {
             summary.warnings.append("Skipped an account with no GUID")
             return
         }
@@ -382,7 +390,8 @@ private final class Delegate: NSObject, XMLParserDelegate {
 
     private func finishTransaction() {
         defer { transaction = nil }
-        guard let builder = transaction, let guid = builder.guid else {
+        guard let builder = transaction else { return }   // template section — already counted
+        guard let guid = builder.guid else {
             summary.warnings.append("Skipped a transaction with no GUID")
             return
         }
@@ -500,6 +509,11 @@ private struct CommodityBuilder {
     var id: String?
     var name: String?
     var fraction: Int?
+    var xcode: String?
+    var getQuotes = false
+    var quoteSource: String?
+    var quoteTimezone: String?
+    var kvp = KvpFrame()
 
     func makeCommodity() -> Commodity {
         let namespace: CommodityNamespace = (space == "CURRENCY") ? .currency : .security(space ?? "")
@@ -507,7 +521,12 @@ private struct CommodityBuilder {
             namespace: namespace,
             mnemonic: id ?? "",
             fullName: name ?? id ?? "",
-            smallestFraction: fraction ?? (space == "CURRENCY" ? 100 : 1)
+            smallestFraction: fraction ?? (space == "CURRENCY" ? 100 : 1),
+            exchangeCode: xcode,
+            getQuotes: getQuotes,
+            quoteSource: quoteSource,
+            quoteTimezone: quoteTimezone,
+            kvp: kvp
         )
     }
 }

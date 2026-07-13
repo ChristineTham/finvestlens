@@ -56,6 +56,31 @@ struct StoreRoundTripTests {
         #expect(aud.namespace == .currency)
     }
 
+    @Test("Commodity quote config and slots survive a store round-trip")
+    func commodityFieldsPersist() throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let (book, _) = makeBook()
+        var stock = Commodity(namespace: .security("ASX"), mnemonic: "BHP",
+                              fullName: "BHP Group", smallestFraction: 10000)
+        stock.exchangeCode = "BHP.AX"
+        stock.getQuotes = true
+        stock.quoteSource = "yahoo_json"
+        stock.quoteTimezone = ""
+        stock.kvp["user_symbol"] = .string("BHP")
+        book.registerCommodity(stock)
+
+        try SQLiteDocumentStore(path: url.path).write(book)
+        let reloaded = try SQLiteDocumentStore(path: url.path).read()
+        let bhp = try #require(reloaded.commodities.first { $0.mnemonic == "BHP" })
+        #expect(bhp.exchangeCode == "BHP.AX")
+        #expect(bhp.getQuotes)
+        #expect(bhp.quoteSource == "yahoo_json")
+        #expect(bhp.quoteTimezone == "")
+        #expect(bhp.kvp["user_symbol"] == .string("BHP"))
+    }
+
     @Test("Change counter increments per write")
     func changeCounter() throws {
         let url = tempURL()
