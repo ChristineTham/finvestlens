@@ -146,10 +146,17 @@ struct AutoCategorizeSheet: View {
 
 // MARK: - Dividend statement import (FR-AI-04)
 
-/// A dividend statement PDF picked for import.
+/// A dividend statement PDF picked for import. Smart Import passes
+/// already-extracted details so the sheet opens pre-filled.
 struct DividendPayload: Identifiable {
     let id = UUID()
     let data: Data
+    var prefilled: DividendStatementDetails?
+
+    init(data: Data, prefilled: DividendStatementDetails? = nil) {
+        self.data = data
+        self.prefilled = prefilled
+    }
 }
 
 /// Reads a dividend statement with the on-device model, then lets the user
@@ -253,20 +260,28 @@ struct DividendImportSheet: View {
 
     private func extract() async {
         defer { extracting = false }
+        if let prefilled = payload.prefilled {
+            populate(from: prefilled)
+            return
+        }
         do {
             let details = try await model.extractDividendStatement(payload.data)
-            securityName = details.securityName
-            ticker = details.ticker
-            if let date = details.paymentDate { paymentDate = date }
-            frankedText = plain(details.frankedAmount)
-            unfrankedText = plain(details.unfrankedAmount)
-            creditsText = plain(details.frankingCredits)
-            netText = plain(details.netPayment)
-            recordCredits = details.frankingCredits != 0
-            if cashAccountID == nil { cashAccountID = cashAccounts.first?.id }
+            populate(from: details)
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func populate(from details: DividendStatementDetails) {
+        securityName = details.securityName
+        ticker = details.ticker
+        if let date = details.paymentDate { paymentDate = date }
+        frankedText = plain(details.frankedAmount)
+        unfrankedText = plain(details.unfrankedAmount)
+        creditsText = plain(details.frankingCredits)
+        netText = plain(details.netPayment)
+        recordCredits = details.frankingCredits != 0
+        if cashAccountID == nil { cashAccountID = cashAccounts.first?.id }
     }
 
     private func record() {

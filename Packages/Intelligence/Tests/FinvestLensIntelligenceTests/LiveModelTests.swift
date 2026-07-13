@@ -82,6 +82,32 @@ struct LiveModelTests {
     }
 
     @available(macOS 26.0, *)
+    @Test("The model classifies statement, dividend, and invoice documents")
+    func classification() async throws {
+        let statement = """
+            EXAMPLE BANK — Everyday Account
+            Period 1 May 2026 to 31 May 2026, opening 4,120.55
+            04/05/2026 WOOLWORTHS 82.45 4,038.10
+            07/05/2026 SALARY 5,200.00 9,238.10
+            Closing 9,238.10
+            """
+        let dividend = """
+            BHP GROUP LIMITED — DIVIDEND STATEMENT
+            ASX Code: BHP — payment date 12 June 2026
+            Fully franked dividend 412.30, franking credits 176.70
+            Net dividend paid to your nominated account 412.30
+            """
+        let invoice = """
+            OFFICEWORKS — TAX INVOICE #IN-559023
+            1 Brother Laser Printer 499.00
+            TOTAL (inc GST) 499.00
+            """
+        #expect(await DocumentClassifier.classify(text: statement) == .bankStatement)
+        #expect(await DocumentClassifier.classify(text: dividend) == .dividendStatement)
+        #expect(await DocumentClassifier.classify(text: invoice) == .invoice)
+    }
+
+    @available(macOS 26.0, *)
     @Test("Transactions categorise onto the offered accounts")
     func categorization() async throws {
         let candidates = [

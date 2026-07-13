@@ -132,5 +132,7 @@ Known limits:
 | Scanned-statement OCR quality | FR-AI-01 | Vision OCR fallback is untested against real bank scans; digital-PDF reflow is solid. | P8 |
 | Statement sign inference without balance column | FR-AI-01 | Signs are re-derived from the running balance; statements with unsigned debit/credit columns *and* no balance column may import with wrong signs (review screen catches). | P8 |
 | Invoice → attachment link | FR-AI-03 | Splits are created from the invoice, but the PDF itself is not attached (FR-REG-10 attachments not implemented). | P8 |
-| iOS file pickers | FR-AI-01/03/04 | iOS keeps `.fileImporter`; not yet exercised on-device. | P8 |
+| iOS file pickers | FR-AI-01/03/04/07 | iOS keeps `.fileImporter`; not yet exercised on-device. | P8 |
+| Smart Import: create transaction from unmatched invoice | FR-AI-07 | An invoice with no matching register transaction reports "import the bank statement first"; direct creation (with funding-account picker) not offered yet. | P8 |
+| statementDate in GnuCash XML | FR-AI-07 | The preserved bank date lives in the native document only; XML export carries the adjusted datePosted (GnuCash has no second-date field). Exporting + reimporting the XML then re-importing an old statement can re-flag re-dated rows as new. | P8 |
 | Live-model tests under load | — | `LiveModelTests` can time out when the model daemon is busy; they self-skip without Apple Intelligence. Not in CI. | monitor |

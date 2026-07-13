@@ -28,6 +28,16 @@ enum MacFilePanel {
         panel.allowsMultipleSelection = false
         return panel.runModal() == .OK ? panel.url : nil
     }
+
+    static func openMultiple(types: [UTType], title: String) -> [URL] {
+        let panel = NSOpenPanel()
+        panel.title = title
+        panel.message = title
+        panel.allowedContentTypes = types
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        return panel.runModal() == .OK ? panel.urls : []
+    }
 }
 #endif
 
@@ -122,7 +132,7 @@ public struct FinvestLensRootView: View {
     @State private var exportDocument: GnuCashFileDocument?
     @State private var importPayload: ImportPayload?
     @State private var offeredOnboarding = false
-    @State private var dividendPayload: DividendPayload?
+    @State private var smartPayload: SmartImportPayload?
     @State private var statementProgress: (done: Int, total: Int)?
     @State private var statementError: String?
 
@@ -204,18 +214,12 @@ public struct FinvestLensRootView: View {
                     }
                     Divider()
                     // Apple Intelligence (on-device model) features.
-                    Button("Import PDF Statement…", systemImage: "doc.viewfinder") {
-                        model.bankImportRequested = true
+                    Button("Smart Import PDFs…", systemImage: "doc.viewfinder") {
+                        model.smartImportRequested = true
                     }
                     .disabled(!model.isIntelligenceAvailable)
                     .help(model.intelligenceUnavailableReason
-                          ?? "Read a PDF bank statement with Apple Intelligence")
-                    Button("Import Dividend Statement…", systemImage: "banknote") {
-                        model.dividendImportRequested = true
-                    }
-                    .disabled(!model.isIntelligenceAvailable)
-                    .help(model.intelligenceUnavailableReason
-                          ?? "Read a dividend statement, including franking credits")
+                          ?? "Import bank statements, dividend statements, and invoices — each PDF is identified and handled automatically")
                     Button("Auto-Categorise…", systemImage: "sparkles") {
                         model.presentedPanel = .autoCategorize
                     }
@@ -278,14 +282,19 @@ public struct FinvestLensRootView: View {
                 }
             }
         }
-        .onChange(of: model.dividendImportRequested) {
-            guard model.dividendImportRequested else { return }
-            model.dividendImportRequested = false
+        .onChange(of: model.smartImportRequested) {
+            guard model.smartImportRequested else { return }
+            model.smartImportRequested = false
             Task { @MainActor in
-                if let url = MacFilePanel.open(types: [.pdf],
-                                               title: "Choose a dividend statement (PDF)"),
-                   let data = readScoped(url) {
-                    dividendPayload = DividendPayload(data: data)
+                let urls = MacFilePanel.openMultiple(
+                    types: [.pdf],
+                    title: "Choose statements, dividend statements, or invoices (PDF)")
+                let files = urls.compactMap { url -> (String, Data)? in
+                    guard let data = readScoped(url) else { return nil }
+                    return (url.lastPathComponent, data)
+                }
+                if !files.isEmpty {
+                    smartPayload = SmartImportPayload(files: files)
                 }
             }
         }
@@ -298,11 +307,17 @@ public struct FinvestLensRootView: View {
         // clobber each other's presentation.
         .background {
             Color.clear
-                .fileImporter(isPresented: $model.dividendImportRequested,
-                              allowedContentTypes: [.pdf]) { result in
-                    if case .success(let url) = result,
-                       let data = readScoped(url) {
-                        dividendPayload = DividendPayload(data: data)
+                .fileImporter(isPresented: $model.smartImportRequested,
+                              allowedContentTypes: [.pdf],
+                              allowsMultipleSelection: true) { result in
+                    if case .success(let urls) = result {
+                        let files = urls.compactMap { url -> (String, Data)? in
+                            guard let data = readScoped(url) else { return nil }
+                            return (url.lastPathComponent, data)
+                        }
+                        if !files.isEmpty {
+                            smartPayload = SmartImportPayload(files: files)
+                        }
                     }
                 }
         }
@@ -310,8 +325,8 @@ public struct FinvestLensRootView: View {
         .sheet(item: $importPayload) { payload in
             ImportView(model: model, payload: payload)
         }
-        .sheet(item: $dividendPayload) { payload in
-            DividendImportSheet(model: model, payload: payload)
+        .sheet(item: $smartPayload) { payload in
+            SmartImportSheet(model: model, payload: payload)
         }
         .overlay {
             if let statementProgress {

@@ -119,8 +119,8 @@ public final class AppModel {
     public var bankImportRequested = false
     /// Set by menu commands to trigger the GnuCash XML exporter in the root view.
     public var exportRequested = false
-    /// Set by menu commands to trigger the dividend-statement (PDF) importer.
-    public var dividendImportRequested = false
+    /// Set by menu commands to trigger the Smart Import multi-PDF picker.
+    public var smartImportRequested = false
 
     /// A user-facing document error (open/new/import failed). When
     /// ``DocumentError/lockedURL`` is set the UI offers "Break Lock" recovery.

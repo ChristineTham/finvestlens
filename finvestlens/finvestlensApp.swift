@@ -152,12 +152,11 @@ struct finvestlensApp: App {
                 Divider()
                 // Apple Intelligence features — disabled (with the reason as
                 // a tooltip) when the on-device model isn't available.
-                Button("Import PDF Statement…") { model.bankImportRequested = true }
+                Button("Smart Import PDFs…") { model.smartImportRequested = true }
+                    .keyboardShortcut("i", modifiers: [.command, .shift])
                     .disabled(!model.isOpen || !model.isIntelligenceAvailable)
-                    .help(model.intelligenceUnavailableReason ?? "Read a PDF bank statement with Apple Intelligence")
-                Button("Import Dividend Statement…") { model.dividendImportRequested = true }
-                    .disabled(!model.isOpen || !model.isIntelligenceAvailable)
-                    .help(model.intelligenceUnavailableReason ?? "Read a dividend statement, including franking credits")
+                    .help(model.intelligenceUnavailableReason
+                          ?? "Import bank statements, dividend statements, and invoices — each PDF is identified and handled automatically")
                 Button("Auto-Categorise Transactions…") { model.presentedPanel = .autoCategorize }
                     .disabled(!model.isOpen)
                 Divider()

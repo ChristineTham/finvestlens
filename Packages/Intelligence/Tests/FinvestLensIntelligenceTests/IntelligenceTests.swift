@@ -110,6 +110,33 @@ struct DividendDetailsTests {
     }
 }
 
+@Suite("Document classification keywords")
+struct ClassifierKeywordTests {
+
+    @Test("Dividend statements are recognised before generic statements")
+    func dividend() {
+        let text = "BHP GROUP LIMITED — DIVIDEND STATEMENT\nFranking credits 176.70"
+        #expect(DocumentClassifier.classifyByKeywords(text) == .dividendStatement)
+    }
+
+    @Test("Bank statements are recognised by statement/balance wording")
+    func statement() {
+        let text = "EXAMPLE BANK — Everyday Account Statement\nOpening balance 4,120.55"
+        #expect(DocumentClassifier.classifyByKeywords(text) == .bankStatement)
+    }
+
+    @Test("Invoices are recognised by invoice/receipt wording")
+    func invoice() {
+        #expect(DocumentClassifier.classifyByKeywords("OFFICEWORKS — TAX INVOICE #IN-1") == .invoice)
+        #expect(DocumentClassifier.classifyByKeywords("Subtotal 90.00\nGST 9.00\nTotal 99.00") == .invoice)
+    }
+
+    @Test("Unrelated text is unknown")
+    func unknown() {
+        #expect(DocumentClassifier.classifyByKeywords("Meeting notes for Tuesday") == .unknown)
+    }
+}
+
 @Suite("Budget advisor fallback")
 struct BudgetFallbackTests {
 

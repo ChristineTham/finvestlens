@@ -338,6 +338,16 @@ follow one contract:
 | Dividend statements | FR-AI-04 | `DividendExtractor` (franked/unfranked/franking credits) → reviewed booking incl. gross-up (Income:Dividends:Franking Credits ↔ Assets:Franking Credits Receivable) |
 | Budget suggestion | FR-AI-05 | Deterministic 6-month spending stats → `BudgetAdvisor` → reviewed per-line apply |
 | Forecast outlook | FR-AI-06 | Computed `cashFlowForecast` facts → `ForecastNarrator` headline + insights in the Cash Flow report |
+| Smart Import (multi-PDF) | FR-AI-07 | `DocumentClassifier` triages each PDF (model + keyword fallback), then routes: statements → FR-AI-01 review; dividend statements → **verified against the register** (matching deposit found, franking credits checked, one-click fix rebuilds the gross-up in place, preserving the cash split's reconcile state); invoices → **matched to their transaction** (amount + date-window, banks post late) then split by line items and re-dated to the invoice date. Match results refresh as earlier documents in the batch are applied. |
+
+**Dual dates (FR-AI-07).** When Smart Import adopts a document's true economic
+date, the bank's posted date moves to a preserved KVP slot
+(`Transaction.statementDate`, `finvestlens/statement-date`) — matching (the
+import matcher's duplicate detection and Smart Import's own windows) considers
+*both* dates, so re-importing the same bank statement never duplicates a
+re-dated transaction. The slot lives in the native document; GnuCash XML
+export simply carries the adjusted `datePosted` (no schema breakage — GnuCash
+sees the economic date).
 
 Testing: deterministic parts are unit-tested; `LiveModelTests` exercises the
 real on-device model end-to-end (PDF fixtures rendered in-test) and self-skips

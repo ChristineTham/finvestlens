@@ -83,10 +83,17 @@ public enum ImportMatcher {
                     return split
                 }
                 if split.account?.commodity.round(split.quantity) == target {
-                    let days = abs(calendar.dateComponents([.day],
-                                                           from: transaction.datePosted,
-                                                           to: row.date).day ?? .max)
-                    if days <= dayWindow { return split }
+                    // Check the statement date too: when a transaction's
+                    // posted date was adjusted to its invoice date, the bank's
+                    // date lives in `statementDate` — a re-imported statement
+                    // must still recognise it.
+                    let dates = [transaction.datePosted, transaction.statementDate].compactMap { $0 }
+                    let withinWindow = dates.contains { date in
+                        let days = abs(calendar.dateComponents([.day], from: date,
+                                                               to: row.date).day ?? .max)
+                        return days <= dayWindow
+                    }
+                    if withinWindow { return split }
                 }
             }
             return nil

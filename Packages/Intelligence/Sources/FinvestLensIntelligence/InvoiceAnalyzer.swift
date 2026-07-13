@@ -33,6 +33,13 @@ public struct InvoiceAnalysis: Sendable {
     public var total: Decimal
     public var lineItems: [InvoiceLineItem]
 
+    public init(vendor: String, date: Date?, total: Decimal, lineItems: [InvoiceLineItem]) {
+        self.vendor = vendor
+        self.date = date
+        self.total = total
+        self.lineItems = lineItems
+    }
+
     /// Sum of line items — compare with `total` to surface OCR/extraction
     /// discrepancies in review UI rather than silently posting them.
     public var lineItemSum: Decimal {

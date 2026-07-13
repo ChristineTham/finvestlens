@@ -53,6 +53,25 @@ public final class Transaction {
     }
     private static let tagsKey = "finvestlens/tags"
 
+    /// The date the transaction appeared on a bank statement, kept when
+    /// ``datePosted`` is adjusted to the true economic date (e.g. an invoice
+    /// date — banks often post a few days later). Stored in a preserved KVP
+    /// slot so it survives save; import matching checks both dates so a
+    /// re-imported statement still recognises the transaction (`FR-AI-07`).
+    ///
+    /// Not part of GnuCash's schema: it persists in the native document and
+    /// is omitted from GnuCash XML export (GnuCash sees only `datePosted`).
+    public var statementDate: Date? {
+        get {
+            guard case let .date(date)? = kvp[Self.statementDateKey] else { return nil }
+            return date
+        }
+        set {
+            kvp[Self.statementDateKey] = newValue.map { .date($0) }
+        }
+    }
+    private static let statementDateKey = "finvestlens/statement-date"
+
     public init(
         guid: GncGUID = .random(),
         currency: Commodity,
