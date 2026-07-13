@@ -90,6 +90,8 @@ public struct FinvestLensRootView: View {
         } detail: {
             if !model.searchResults.isEmpty {
                 SearchResultsView(model: model)
+            } else if model.selectedAccountID == nil {
+                DashboardView(model: model)
             } else {
                 RegisterView(model: model)
             }
@@ -97,6 +99,9 @@ public struct FinvestLensRootView: View {
         .searchable(text: $model.searchQuery, prompt: "Search transactions")
         .toolbar {
             ToolbarItemGroup {
+                Button("Dashboard", systemImage: "house") {
+                    model.selectedAccountID = nil
+                }
                 Button("New Account", systemImage: "plus.rectangle.on.folder") {
                     showingNewAccount = true
                 }
