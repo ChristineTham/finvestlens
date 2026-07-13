@@ -41,7 +41,7 @@ struct ReconcileView: View {
                 .multilineTextAlignment(.trailing)
         }
         .navigationTitle("Reconcile")
-        .onExitCommand { dismiss() }
+        .onEscapeCommand { dismiss() }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -89,7 +89,7 @@ struct ReconcileView: View {
             }
         }
         .navigationTitle("Reconcile \(session.accountName)")
-        .onExitCommand { model.cancelReconcile(); dismiss() }
+        .onEscapeCommand { model.cancelReconcile(); dismiss() }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { model.cancelReconcile(); dismiss() }.keyboardShortcut(.cancelAction)

@@ -75,7 +75,7 @@ struct SmartImportSheet: View {
                 }
             }
             .navigationTitle("Smart Import")
-            .onExitCommand { dismiss() }
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

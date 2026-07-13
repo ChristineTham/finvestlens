@@ -164,7 +164,7 @@ struct AddRuleSheet: View {
                 }
             }
             .navigationTitle("New Rule")
-            .onExitCommand { dismiss() }
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)

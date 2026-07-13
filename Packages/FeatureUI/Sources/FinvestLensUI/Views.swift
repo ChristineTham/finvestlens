@@ -789,7 +789,7 @@ struct SaveSearchSheet: View {
                 TextField("Name", text: $name).focused($focused)
             }
             .navigationTitle("Save Search")
-            .onExitCommand { dismiss() }
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
@@ -869,7 +869,7 @@ struct NewAccountSheet: View {
                 }
             }
             .navigationTitle("New Account")
-            .onExitCommand { dismiss() }
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -1030,7 +1030,7 @@ struct TransactionEditorSheet: View {
             .navigationTitle(isEditing ? "Edit Transaction" : "New Transaction")
             // Esc cancels even while a text field has focus (cancelOperation
             // bubbles up the responder chain; .cancelAction alone doesn't).
-            .onExitCommand { dismiss() }
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -1173,7 +1173,7 @@ struct EditAccountSheet: View {
                 }
             }
             .navigationTitle("Edit Account")
-            .onExitCommand { dismiss() }
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)

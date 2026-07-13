@@ -68,7 +68,7 @@ struct AutoCategorizeSheet: View {
                 }
             }
             .navigationTitle("Auto-Categorise")
-            .onExitCommand { dismiss() }
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -247,7 +247,7 @@ struct DividendImportSheet: View {
             }
             .formStyle(.grouped)
             .navigationTitle("Import Dividend Statement")
-            .onExitCommand { dismiss() }
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -365,7 +365,7 @@ struct BudgetSuggestSheet: View {
             }
             .formStyle(.grouped)
             .navigationTitle("Suggest Budget")
-            .onExitCommand { dismiss() }
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)

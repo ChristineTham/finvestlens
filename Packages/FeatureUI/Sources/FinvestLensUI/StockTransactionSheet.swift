@@ -66,7 +66,7 @@ struct StockTransactionSheet: View {
             }
             .formStyle(.grouped)
             .navigationTitle("Stock Transaction")
-            .onExitCommand { dismiss() }
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {

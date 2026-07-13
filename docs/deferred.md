@@ -65,7 +65,7 @@ Still deferred:
 | Item | Notes |
 | --- | --- |
 | App Sandbox | Disabled by decision (13 Jul 2026): sibling `.lock` files at user-selected locations are denied by the sandbox; related-item declaration + coordinated I/O are in place but macOS still refused. Direct (notarized) distribution doesn't need the sandbox. Revisit before any Mac App Store submission. |
-| iOS document flows | New/Open/Import panels are AppKit; iOS uses fileImporter fallbacks, untested. |
+| iOS document flows | New/Open/Import panels are AppKit; iOS uses fileImporter fallbacks, untested. The iOS target now *compiles* (14 Jul 2026 — `primaryPresentedItemURL` and `.onExitCommand` were macOS-only and broke the build since 1.0), but it has never been run on-device/simulator. |
 
 ## HIG review (13 Jul 2026)
 

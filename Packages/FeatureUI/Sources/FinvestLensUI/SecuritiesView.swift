@@ -118,7 +118,7 @@ private struct EditSecuritySheet: View {
                 TextField("Full name", text: $fullName)
             }
             .navigationTitle("Edit Security")
-            .onExitCommand { dismiss() }
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
@@ -167,7 +167,7 @@ private struct PriceTargetSheet: View {
                     .scaledFont(.caption).foregroundStyle(.secondary)
             }
             .navigationTitle("Price Target")
-            .onExitCommand { dismiss() }
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 if hasExisting {
@@ -215,7 +215,7 @@ private struct AddWatchSheet: View {
                 TextField("Full name (optional)", text: $name)
             }
             .navigationTitle("Watch Security")
-            .onExitCommand { dismiss() }
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {

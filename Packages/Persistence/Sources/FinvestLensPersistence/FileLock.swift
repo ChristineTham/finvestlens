@@ -34,12 +34,18 @@ public struct LockHolder: Codable, Equatable, Sendable {
 /// `NSIsRelatedItemType` in its Info.plist).
 private final class LockFilePresenter: NSObject, NSFilePresenter {
     let presentedItemURL: URL?
+    #if os(macOS)
+    // Unavailable on iOS, where documents live in the app container and no
+    // related-item grant is needed.
     let primaryPresentedItemURL: URL?
+    #endif
     let presentedItemOperationQueue = OperationQueue()
 
     init(lockURL: URL, documentURL: URL) {
         self.presentedItemURL = lockURL
+        #if os(macOS)
         self.primaryPresentedItemURL = documentURL
+        #endif
         super.init()
         presentedItemOperationQueue.maxConcurrentOperationCount = 1
     }

@@ -155,7 +155,7 @@ struct AddScheduledSheet: View {
                 }
             }
             .navigationTitle("New Scheduled Transaction")
-            .onExitCommand { dismiss() }
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
