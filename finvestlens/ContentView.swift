@@ -26,11 +26,11 @@ import SwiftUI
 import UniformTypeIdentifiers
 import FinvestLensUI
 
-/// Hosts either the welcome screen or an open document.
+/// Hosts either the welcome screen or an open document, and surfaces
+/// document-operation errors (with stale-lock recovery) and confirmations.
 struct RootHost: View {
     @Bindable var model: AppModel
     @State private var importing = false
-    @State private var errorMessage: String?
 
     static var documentType: UTType {
         UTType(exportedAs: "com.hellotham.finvestlens.document", conformingTo: .database)
@@ -43,27 +43,51 @@ struct RootHost: View {
             } else if model.isOpen {
                 FinvestLensRootView(model: model)
             } else {
-                WelcomeView(onNew: newTemporary) { importing = true }
+                WelcomeView(model: model, onNew: newBook, onOpen: openBook)
             }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [Self.documentType, .data]) { result in
-            if case .success(let url) = result {
-                do { try model.open(at: url) }
-                catch { errorMessage = error.localizedDescription }
-            }
+            if case .success(let url) = result { model.openBook(at: url) }
         }
-        .alert("Couldn’t open document",
-               isPresented: Binding(get: { errorMessage != nil },
-                                    set: { if !$0 { errorMessage = nil } })) {
-            Button("OK", role: .cancel) { errorMessage = nil }
+        .alert("Couldn’t open book",
+               isPresented: Binding(get: { model.documentError != nil },
+                                    set: { if !$0 { model.documentError = nil } }),
+               presenting: model.documentError) { error in
+            if let lockedURL = error.lockedURL {
+                Button("Break Lock and Open") {
+                    model.openBook(at: lockedURL, breakStaleLock: true)
+                }
+                Button("Cancel", role: .cancel) {}
+            } else {
+                Button("OK", role: .cancel) {}
+            }
+        } message: { error in
+            Text(error.message)
+        }
+        .alert("Import Complete",
+               isPresented: Binding(get: { model.infoMessage != nil },
+                                    set: { if !$0 { model.infoMessage = nil } })) {
+            Button("OK", role: .cancel) { model.infoMessage = nil }
         } message: {
-            Text(errorMessage ?? "")
+            Text(model.infoMessage ?? "")
         }
     }
 
-    private func newTemporary() {
+    private func newBook() {
+        #if os(macOS)
+        DocumentDialogs.newBook(model)
+        #else
         let name = "Untitled-\(UUID().uuidString.prefix(6)).finvestlens"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
-        try? model.newDocument(at: url)
+        model.newBook(at: url)
+        #endif
+    }
+
+    private func openBook() {
+        #if os(macOS)
+        DocumentDialogs.openBook(model)
+        #else
+        importing = true
+        #endif
     }
 }

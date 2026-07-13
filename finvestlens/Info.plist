@@ -20,6 +20,21 @@
 			<key>NSUbiquitousDocumentUserActivityType</key>
 			<string>$(PRODUCT_BUNDLE_IDENTIFIER).document</string>
 		</dict>
+		<dict>
+			<!-- The sibling .lock file is a "related item" of the book: the
+			     sandbox extends user-selected access to it (FileLock uses
+			     NSFileCoordinator with a related-item presenter). -->
+			<key>CFBundleTypeName</key>
+			<string>FinvestLens Lock File</string>
+			<key>CFBundleTypeRole</key>
+			<string>None</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>lock</string>
+			</array>
+			<key>NSIsRelatedItemType</key>
+			<true/>
+		</dict>
 	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>

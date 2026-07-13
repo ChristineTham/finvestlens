@@ -50,3 +50,19 @@ left for later.
 | Rules apply-to-historical + preview | FR-RULE-02 | P5 | (done earlier in P5) |
 | What-if scenarios on cash flow | FR-PLAN-03 | P5 | (done earlier in P5) |
 | UTI / document-type registration | FR-PLT-04 | P1 | document type + onOpenURL |
+
+## Usability review (July 2026)
+
+Resolved in the usability pass: File/Book menu bar (New/Open/Open Recent/
+Import GnuCash/Export/Close/Revert + every tool panel with shortcuts), lean
+toolbar with a Tools menu, GnuCash import UI (File menu + welcome screen),
+price-target editor, account re-parenting, stale-lock Break-Lock recovery,
+iCloud conflict-version resolution in the external-change banner, welcome
+recents.
+
+Still deferred:
+
+| Item | Notes |
+| --- | --- |
+| App Sandbox | Disabled by decision (13 Jul 2026): sibling `.lock` files at user-selected locations are denied by the sandbox; related-item declaration + coordinated I/O are in place but macOS still refused. Direct (notarized) distribution doesn't need the sandbox. Revisit before any Mac App Store submission. |
+| iOS document flows | New/Open/Import panels are AppKit; iOS uses fileImporter fallbacks, untested. |

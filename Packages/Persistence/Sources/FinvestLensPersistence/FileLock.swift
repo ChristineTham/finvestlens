@@ -16,6 +16,33 @@ public struct LockHolder: Codable, Equatable, Sendable {
     public var pid: Int32
     public var acquiredAt: Date
     public var heartbeatAt: Date
+
+    public init(host: String, user: String, instanceID: String, pid: Int32,
+                acquiredAt: Date, heartbeatAt: Date) {
+        self.host = host
+        self.user = user
+        self.instanceID = instanceID
+        self.pid = pid
+        self.acquiredAt = acquiredAt
+        self.heartbeatAt = heartbeatAt
+    }
+}
+
+/// Declares the sibling lock file as a *related item* of the document, so a
+/// sandboxed app's user-selected access to `Book.finvestlens` extends to
+/// `Book.lock` (the app also declares the `lock` extension with
+/// `NSIsRelatedItemType` in its Info.plist).
+private final class LockFilePresenter: NSObject, NSFilePresenter {
+    let presentedItemURL: URL?
+    let primaryPresentedItemURL: URL?
+    let presentedItemOperationQueue = OperationQueue()
+
+    init(lockURL: URL, documentURL: URL) {
+        self.presentedItemURL = lockURL
+        self.primaryPresentedItemURL = documentURL
+        super.init()
+        presentedItemOperationQueue.maxConcurrentOperationCount = 1
+    }
 }
 
 /// An application-level advisory lock guarding a document on shared storage
@@ -26,6 +53,10 @@ public struct LockHolder: Codable, Equatable, Sendable {
 /// metadata and a heartbeat. A lock whose heartbeat has gone stale (holder
 /// crashed) can be broken. Creation uses an atomic "write-if-absent" so two
 /// machines cannot both acquire.
+///
+/// All lock-file I/O goes through `NSFileCoordinator` with a related-item
+/// presenter, which is what lets a sandboxed app touch the sibling file at a
+/// user-selected location.
 public final class FileLock {
 
     public enum LockError: Error, Equatable {
@@ -45,6 +76,7 @@ public final class FileLock {
 
     private let instanceID = UUID().uuidString
     private var held = false
+    private let presenter: LockFilePresenter
 
     public init(
         documentURL: URL,
@@ -52,17 +84,51 @@ public final class FileLock {
         staleAfter: TimeInterval = 90
     ) {
         self.documentURL = documentURL
-        self.lockURL = URL(fileURLWithPath: documentURL.path + ".lock")
+        // Same base name, different extension ("Book.finvestlens" →
+        // "Book.lock") — required for the sandbox related-item grant.
+        self.lockURL = documentURL.deletingPathExtension().appendingPathExtension("lock")
         self.heartbeatInterval = heartbeatInterval
         self.staleAfter = staleAfter
+        self.presenter = LockFilePresenter(lockURL: lockURL, documentURL: documentURL)
+        NSFileCoordinator.addFilePresenter(presenter)
+    }
+
+    deinit {
+        NSFileCoordinator.removeFilePresenter(presenter)
     }
 
     /// `true` if this instance currently holds the lock.
     public var isHeldByUs: Bool { held }
 
+    // MARK: Coordinated lock-file I/O
+
+    private func coordinatedRead() -> Data? {
+        var data: Data?
+        var coordError: NSError?
+        NSFileCoordinator(filePresenter: presenter)
+            .coordinate(readingItemAt: lockURL, options: [.withoutChanges],
+                        error: &coordError) { url in
+                data = try? Data(contentsOf: url)
+            }
+        return data
+    }
+
+    private func coordinatedWrite(options: NSFileCoordinator.WritingOptions,
+                                  _ body: (URL) throws -> Void) throws {
+        var coordError: NSError?
+        var bodyError: Error?
+        NSFileCoordinator(filePresenter: presenter)
+            .coordinate(writingItemAt: lockURL, options: options,
+                        error: &coordError) { url in
+                do { try body(url) } catch { bodyError = error }
+            }
+        if let bodyError { throw bodyError }
+        if let coordError { throw coordError }
+    }
+
     /// The current holder, or `nil` if the lock file is absent/unreadable.
     public func currentHolder() -> LockHolder? {
-        guard let data = try? Data(contentsOf: lockURL) else { return nil }
+        guard let data = coordinatedRead() else { return nil }
         return try? JSONDecoder().decode(LockHolder.self, from: data)
     }
 
@@ -79,7 +145,9 @@ public final class FileLock {
         let data = try JSONEncoder().encode(holder)
         do {
             // Atomic create-if-absent: fails if the file already exists.
-            try data.write(to: lockURL, options: [.withoutOverwriting])
+            try coordinatedWrite(options: []) { url in
+                try data.write(to: url, options: [.withoutOverwriting])
+            }
             held = true
         } catch {
             if let existing = currentHolder() {
@@ -95,7 +163,9 @@ public final class FileLock {
         if let holder = currentHolder(), now.timeIntervalSince(holder.heartbeatAt) <= staleAfter {
             throw LockError.alreadyLocked(holder)
         }
-        try? FileManager.default.removeItem(at: lockURL)
+        try? coordinatedWrite(options: [.forDeleting]) { url in
+            try FileManager.default.removeItem(at: url)
+        }
         try acquire(now: now)
     }
 
@@ -104,14 +174,18 @@ public final class FileLock {
         guard held else { throw LockError.notHeldByUs }
         let holder = makeHolder(now: now)
         let data = try JSONEncoder().encode(holder)
-        try data.write(to: lockURL, options: [.atomic])
+        try coordinatedWrite(options: [.forReplacing]) { url in
+            try data.write(to: url, options: [.atomic])
+        }
     }
 
     /// Releases the lock if we hold it (removes the lock file).
     public func release() {
         guard held else { return }
         if let holder = currentHolder(), holder.instanceID == instanceID {
-            try? FileManager.default.removeItem(at: lockURL)
+            try? coordinatedWrite(options: [.forDeleting]) { url in
+                try FileManager.default.removeItem(at: url)
+            }
         }
         held = false
     }

@@ -70,8 +70,10 @@ private struct RisingMark: View {
 // MARK: - Splash / welcome
 
 /// Adobe-style splash shown when no document is open: branded hero matching the
-/// app icon, a tagline, actions, and a version / copyright credits strip.
+/// app icon, a tagline, actions (including GnuCash migration and recent books),
+/// and a version / copyright credits strip.
 struct WelcomeView: View {
+    @Bindable var model: AppModel
     let onNew: () -> Void
     let onOpen: () -> Void
 
@@ -90,6 +92,7 @@ struct WelcomeView: View {
                 hero
                 Spacer(minLength: 20)
                 actions
+                recents
                 Spacer(minLength: 22)
                 credits
             }
@@ -192,22 +195,58 @@ struct WelcomeView: View {
     // MARK: Actions
 
     private var actions: some View {
-        HStack(spacing: 14) {
-            Button(action: onNew) {
-                Label("New Book", systemImage: "plus")
-                    .fontWeight(.semibold).frame(minWidth: 120)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Brand.mauve)
+        VStack(spacing: 12) {
+            HStack(spacing: 14) {
+                Button(action: onNew) {
+                    Label("New Book", systemImage: "plus")
+                        .fontWeight(.semibold).frame(minWidth: 120)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Brand.mauve)
 
-            Button(action: onOpen) {
-                Label("Open…", systemImage: "folder").frame(minWidth: 96)
+                Button(action: onOpen) {
+                    Label("Open…", systemImage: "folder").frame(minWidth: 96)
+                }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.bordered)
+            .controlSize(.large)
+            #if os(macOS)
+            Button("Migrating from GnuCash? Import your file…") {
+                DocumentDialogs.importGnuCash(model)
+            }
+            .buttonStyle(.link)
+            .font(.system(size: 12.5 * appFontScale, design: .rounded))
+            #endif
         }
-        .controlSize(.large)
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 16)
+    }
+
+    /// Up to three recently opened books, one click away.
+    @ViewBuilder
+    private var recents: some View {
+        if !model.recentBooks.isEmpty {
+            VStack(spacing: 4) {
+                Text("Recent")
+                    .font(.system(size: 11 * appFontScale, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                ForEach(model.recentBooks.prefix(3), id: \.self) { url in
+                    Button {
+                        model.openBook(at: url)
+                    } label: {
+                        Label(url.deletingPathExtension().lastPathComponent,
+                              systemImage: "clock.arrow.circlepath")
+                            .font(.system(size: 12.5 * appFontScale, design: .rounded))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Brand.mauve)
+                    .help(url.path)
+                }
+            }
+            .padding(.top, 16)
+            .opacity(appeared ? 1 : 0)
+        }
     }
 
     // MARK: Credits

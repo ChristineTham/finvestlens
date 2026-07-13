@@ -35,15 +35,85 @@ struct finvestlensApp: App {
                 .onOpenURL { url in
                     // Opened from Finder / another app via the .finvestlens type.
                     guard url.pathExtension == "finvestlens" else { return }
-                    try? model.open(at: url)
+                    model.openBook(at: url)
                 }
                 .finvestLensAppearance()
         }
         .commands {
+            #if os(macOS)
+            // File ▸ New/Open/Open Recent (replaces the stock New Window item).
+            CommandGroup(replacing: .newItem) {
+                Button("New Book…") { DocumentDialogs.newBook(model) }
+                    .keyboardShortcut("n", modifiers: .command)
+                Button("Open…") { DocumentDialogs.openBook(model) }
+                    .keyboardShortcut("o", modifiers: .command)
+                Menu("Open Recent") {
+                    ForEach(model.recentBooks, id: \.self) { url in
+                        Button(url.deletingPathExtension().lastPathComponent) {
+                            model.openBook(at: url)
+                        }
+                    }
+                    if model.recentBooks.isEmpty {
+                        Text("No recent books")
+                    }
+                }
+            }
+            #endif
             CommandGroup(after: .saveItem) {
                 Button("Save") { try? model.save() }
                     .keyboardShortcut("s", modifiers: .command)
                     .disabled(!model.hasUnsavedChanges)
+                Button("Revert to Saved") { try? model.revert() }
+                    .disabled(!model.isOpen || !model.hasUnsavedChanges)
+                Divider()
+                #if os(macOS)
+                Button("Import GnuCash…") { DocumentDialogs.importGnuCash(model) }
+                #endif
+                Button("Export GnuCash…") { model.exportRequested = true }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
+                    .disabled(!model.isOpen)
+                Divider()
+                Button("Close Book") { model.saveAndCloseIfOpen() }
+                    .keyboardShortcut("w", modifiers: [.command, .shift])
+                    .disabled(!model.isOpen)
+            }
+            // Book: every tool panel, so all functionality is reachable (and
+            // discoverable, with shortcuts) from the menu bar.
+            CommandMenu("Book") {
+                Button("New Transaction…") { model.presentedPanel = .newTransaction }
+                    .keyboardShortcut("t", modifiers: .command)
+                    .disabled(!model.isOpen || model.postableAccounts.count < 2)
+                Button("New Account…") { model.presentedPanel = .newAccount }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                    .disabled(!model.isOpen)
+                Button("Stock Transaction…") { model.presentedPanel = .stockTransaction }
+                    .disabled(!model.isOpen || model.securityAccountNodes.isEmpty)
+                Button("Currency Transfer…") { model.presentedPanel = .currencyTransfer }
+                    .disabled(!model.isOpen || model.currencyCommodities.count < 2)
+                Divider()
+                Button("Import Bank File…") { model.bankImportRequested = true }
+                    .keyboardShortcut("i", modifiers: .command)
+                    .disabled(!model.isOpen)
+                Button("Reconcile Account…") { model.presentedPanel = .reconcile }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                    .disabled(!model.isOpen || model.selectedAccountID == nil)
+                Divider()
+                Button("Reports…") { model.presentedPanel = .reports }
+                    .keyboardShortcut("r", modifiers: .command)
+                    .disabled(!model.isOpen)
+                Button("Budget…") { model.presentedPanel = .budget }
+                    .keyboardShortcut("b", modifiers: .command)
+                    .disabled(!model.isOpen)
+                Button("Rules…") { model.presentedPanel = .rules }
+                    .disabled(!model.isOpen)
+                Button("Scheduled Transactions…") { model.presentedPanel = .scheduled }
+                    .disabled(!model.isOpen)
+                Button("Prices & Quotes…") { model.presentedPanel = .prices }
+                    .disabled(!model.isOpen)
+                Divider()
+                Button("Dashboard") { model.selectedAccountID = nil }
+                    .keyboardShortcut("d", modifiers: .command)
+                    .disabled(!model.isOpen)
             }
             CommandMenu("Security") {
                 Button(model.requireAuthentication

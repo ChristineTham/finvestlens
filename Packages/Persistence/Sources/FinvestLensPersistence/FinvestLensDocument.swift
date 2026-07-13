@@ -54,15 +54,25 @@ public final class FinvestLensDocument {
     // MARK: Open / create
 
     /// Creates a new, empty document at `fileURL` and opens it.
+    ///
+    /// The document file is written *before* the lock is acquired: in a
+    /// sandboxed app the sibling `.lock` file is reachable only through the
+    /// related-item grant, which needs the primary document to exist.
     public static func create(at fileURL: URL, baseCurrency: Commodity = .aud) throws -> FinvestLensDocument {
-        let lock = FileLock(documentURL: fileURL)
-        try lock.acquire()
-
         let workingCopyURL = Self.makeWorkingCopyURL()
         let store = try SQLiteDocumentStore(path: workingCopyURL.path)
         let book = Book(baseCurrency: baseCurrency)
         try store.write(book)
         try Self.copyItem(from: workingCopyURL, to: fileURL)
+
+        let lock = FileLock(documentURL: fileURL)
+        do {
+            try lock.acquire()
+        } catch {
+            // Don't leave an unlockable orphan behind.
+            try? FileManager.default.removeItem(at: fileURL)
+            throw error
+        }
 
         let fingerprint = try Self.fingerprint(of: fileURL)
         return FinvestLensDocument(fileURL: fileURL, book: book, lock: lock,

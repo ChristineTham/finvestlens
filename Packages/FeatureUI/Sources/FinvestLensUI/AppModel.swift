@@ -40,6 +40,16 @@ public struct RegisterRow: Identifiable, Hashable, Sendable {
     public var runningBalance: Decimal
 }
 
+/// A tool panel presented over the root view. Routed through
+/// ``AppModel/presentedPanel`` so both menu-bar commands and toolbar buttons
+/// can open any panel.
+public enum RootPanel: String, Identifiable, Sendable {
+    case newAccount, newTransaction, stockTransaction, currencyTransfer
+    case reports, rules, scheduled, budget, prices, saveSearch, onboarding
+    case reconcile
+    public var id: String { rawValue }
+}
+
 /// The observable application/document model driving the UI.
 ///
 /// The engine ``Book`` is the source of truth but is not itself observable, so
@@ -95,6 +105,31 @@ public final class AppModel {
 
     /// Hypothetical events layered onto the cash-flow forecast (session-only).
     public internal(set) var whatIfEvents: [WhatIfEvent] = []
+
+    /// The tool panel currently presented over the root view. Views bind a
+    /// sheet to this; menu commands and toolbar buttons set it, so every panel
+    /// is reachable from the menu bar as well as the toolbar.
+    public var presentedPanel: RootPanel?
+
+    /// Books opened recently (most recent first), for Open Recent / welcome.
+    public private(set) var recentBooks: [URL] = AppModel.loadRecents()
+
+    /// Set by menu commands to trigger the bank-file importer in the root view.
+    public var bankImportRequested = false
+    /// Set by menu commands to trigger the GnuCash XML exporter in the root view.
+    public var exportRequested = false
+
+    /// A user-facing document error (open/new/import failed). When
+    /// ``DocumentError/lockedURL`` is set the UI offers "Break Lock" recovery.
+    public struct DocumentError: Identifiable, Sendable {
+        public let id = UUID()
+        public var message: String
+        public var lockedURL: URL?
+    }
+    /// The most recent document-operation failure, surfaced as an alert.
+    public var documentError: DocumentError?
+    /// A user-facing confirmation (e.g. GnuCash import summary).
+    public var infoMessage: String?
 
     /// API-key store (Keychain in production; injectable for tests/previews).
     let apiKeys: APIKeyStoring
@@ -200,7 +235,7 @@ public final class AppModel {
         reloadKvpCollections()
         refreshAll()
         startQuoteAutoRefresh()
-        Self.recordLastBook(url)
+        recordLastBook(url)
     }
 
     public func open(at url: URL, breakStaleLock: Bool = false) throws {
@@ -209,7 +244,7 @@ public final class AppModel {
         refreshAll()
         startQuoteAutoRefresh()
         lockIfNeeded()
-        Self.recordLastBook(url)
+        recordLastBook(url)
         observeExternalChanges()
     }
 
@@ -234,9 +269,106 @@ public final class AppModel {
         refreshAll()
     }
 
-    /// Remembers the last-opened book so App Intents / Shortcuts can read it.
-    static func recordLastBook(_ url: URL) {
+    // MARK: Version conflicts (iCloud "edited in two places")
+
+    /// `true` when the shared file has unresolved NSFileVersion conflicts.
+    public var hasVersionConflicts: Bool {
+        !(document?.unresolvedConflictVersions().isEmpty ?? true)
+    }
+
+    /// Keeps the local version: marks all conflict versions resolved and
+    /// re-saves our copy over the shared file.
+    public func resolveConflictsKeepingMine() {
+        guard let document else { return }
+        try? document.resolveConflictsKeepingCurrent()
+        try? document.save()
+        externalChangePending = false
+        refreshAll()
+    }
+
+    /// Adopts the most recent conflicting version and reloads from it.
+    public func resolveConflictsUsingOther() {
+        guard let document else { return }
+        let versions = document.unresolvedConflictVersions()
+        if let newest = versions.max(by: {
+            ($0.modificationDate ?? .distantPast) < ($1.modificationDate ?? .distantPast)
+        }) {
+            try? document.adoptConflictVersion(newest)
+        }
+        reloadFromDisk()
+    }
+
+    /// Remembers the last-opened book so App Intents / Shortcuts can read it,
+    /// and maintains the recents list (most recent first, capped at 5).
+    func recordLastBook(_ url: URL) {
         UserDefaults.standard.set(url.path, forKey: "finvestlens.lastBookPath")
+        var paths = UserDefaults.standard.stringArray(forKey: "finvestlens.recentBookPaths") ?? []
+        paths.removeAll { $0 == url.path }
+        paths.insert(url.path, at: 0)
+        paths = Array(paths.prefix(5))
+        UserDefaults.standard.set(paths, forKey: "finvestlens.recentBookPaths")
+        recentBooks = paths.map { URL(fileURLWithPath: $0) }
+    }
+
+    static func loadRecents() -> [URL] {
+        (UserDefaults.standard.stringArray(forKey: "finvestlens.recentBookPaths") ?? [])
+            .map { URL(fileURLWithPath: $0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// `true` when `error` means the book is locked by another instance —
+    /// offer "Break Lock" recovery (safe when the other instance crashed).
+    public static func isLockedError(_ error: Error) -> Bool {
+        if case FileLock.LockError.alreadyLocked = error { return true }
+        return false
+    }
+
+    // MARK: Safe document operations (error-surfacing wrappers)
+
+    /// Saves any open book, then opens `url`; failures land in
+    /// ``documentError`` (with Break-Lock recovery for stale locks).
+    public func openBook(at url: URL, breakStaleLock: Bool = false) {
+        saveAndCloseIfOpen()
+        do {
+            try open(at: url, breakStaleLock: breakStaleLock)
+        } catch {
+            documentError = DocumentError(
+                message: Self.isLockedError(error)
+                    ? "“\(url.lastPathComponent)” is locked by another FinvestLens instance. If that instance crashed, you can break the lock and open anyway."
+                    : error.localizedDescription,
+                lockedURL: Self.isLockedError(error) ? url : nil)
+        }
+    }
+
+    /// Saves any open book, then creates a new one at `url`.
+    public func newBook(at url: URL, baseCurrency: Commodity = .aud) {
+        saveAndCloseIfOpen()
+        do {
+            try newDocument(at: url, baseCurrency: baseCurrency)
+        } catch {
+            documentError = DocumentError(message: error.localizedDescription)
+        }
+    }
+
+    /// Imports a GnuCash XML file as a new native book, reporting the summary
+    /// (or the failure) through ``infoMessage`` / ``documentError``.
+    public func importGnuCashBook(from source: URL, saveAs destination: URL) {
+        saveAndCloseIfOpen()
+        do {
+            let summary = try importGnuCash(from: source, saveAs: destination)
+            recordLastBook(destination)
+            infoMessage = "Imported \(summary.accountCount) accounts and \(summary.transactionCount) transactions from “\(source.lastPathComponent)”."
+        } catch {
+            documentError = DocumentError(message: "Couldn’t import “\(source.lastPathComponent)”: \(error.localizedDescription)")
+        }
+    }
+
+    /// Saves and closes the current book, if any — switching books never
+    /// silently discards work.
+    public func saveAndCloseIfOpen() {
+        guard isOpen else { return }
+        if hasUnsavedChanges { try? save() }
+        close()
     }
 
     /// Imports a GnuCash file and saves it as a new native document.
@@ -276,6 +408,8 @@ public final class AppModel {
         document?.stopObservingExternalChanges()
         isLocked = false
         externalChangePending = false
+        presentedPanel = nil
+        searchQuery = ""
         document?.discard()
         document = nil
         accountTree = []

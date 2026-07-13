@@ -274,6 +274,25 @@ extension AppModel {
 
     // MARK: Account structure
 
+    /// The current parent of `id` (`nil` when it sits at the top level).
+    public func parentID(ofAccount id: GncGUID) -> GncGUID? {
+        guard let book, let account = book.account(with: id),
+              let parent = account.parent, parent !== book.rootAccount
+        else { return nil }
+        return parent.guid
+    }
+
+    /// Valid re-parent destinations for `id`: every account except itself and
+    /// its own descendants (which would create a cycle).
+    public func validParents(forAccount id: GncGUID) -> [AccountNode] {
+        guard let book, let account = book.account(with: id) else { return [] }
+        let excluded = Set([account.guid] + account.descendants.map(\.guid))
+        func flatten(_ nodes: [AccountNode]) -> [AccountNode] {
+            nodes.flatMap { [$0] + flatten($0.children ?? []) }
+        }
+        return flatten(accountTree).filter { !excluded.contains($0.id) }
+    }
+
     /// Reparents an account, refusing moves that would create a cycle
     /// (`FR-COA-02`). Returns `false` if the move is invalid.
     @discardableResult

@@ -92,23 +92,13 @@ public struct LockView: View {
 // MARK: - Root
 
 /// The main document view: accounts sidebar + register (or search results).
+/// Tool panels are routed through ``AppModel/presentedPanel`` so the menu bar
+/// and toolbar share one entry point per panel.
 public struct FinvestLensRootView: View {
     @Bindable var model: AppModel
-    @State private var showingNewAccount = false
-    @State private var showingNewTransaction = false
     @State private var showingExport = false
     @State private var exportDocument: GnuCashFileDocument?
-    @State private var showingReports = false
-    @State private var showingBankImport = false
     @State private var importPayload: ImportPayload?
-    @State private var showingRules = false
-    @State private var showingScheduled = false
-    @State private var showingBudget = false
-    @State private var showingPrices = false
-    @State private var showingStockTxn = false
-    @State private var showingCurrencyTransfer = false
-    @State private var showingSaveSearch = false
-    @State private var showingOnboarding = false
     @State private var offeredOnboarding = false
 
     public init(model: AppModel) {
@@ -131,16 +121,7 @@ public struct FinvestLensRootView: View {
         .searchable(text: $model.searchQuery, prompt: "Search transactions")
         .safeAreaInset(edge: .top) {
             if model.externalChangePending {
-                HStack(spacing: 12) {
-                    Image(systemName: "arrow.triangle.2.circlepath.icloud")
-                    Text("This book changed on another device.")
-                    Spacer()
-                    Button("Reload") { model.reloadFromDisk() }
-                        .buttonStyle(.borderedProminent)
-                    Button("Dismiss") { model.externalChangePending = false }
-                }
-                .padding(10)
-                .background(.yellow.opacity(0.25))
+                ExternalChangeBanner(model: model)
             }
         }
         .toolbar {
@@ -148,38 +129,48 @@ public struct FinvestLensRootView: View {
                 Button("Dashboard", systemImage: "house") {
                     model.selectedAccountID = nil
                 }
-                Button("New Account", systemImage: "plus.rectangle.on.folder") {
-                    showingNewAccount = true
-                }
                 Button("New Transaction", systemImage: "plus.circle") {
-                    showingNewTransaction = true
+                    model.presentedPanel = .newTransaction
                 }
                 .disabled(model.postableAccounts.count < 2)
-                Button("Stock Transaction", systemImage: "chart.line.uptrend.xyaxis") {
-                    showingStockTxn = true
+                Button("New Account", systemImage: "plus.rectangle.on.folder") {
+                    model.presentedPanel = .newAccount
                 }
-                .disabled(model.securityAccountNodes.isEmpty)
-                Button("Currency Transfer", systemImage: "dollarsign.arrow.circlepath") {
-                    showingCurrencyTransfer = true
-                }
-                .disabled(model.currencyCommodities.count < 2)
                 Button("Reports", systemImage: "chart.pie") {
-                    showingReports = true
+                    model.presentedPanel = .reports
                 }
-                Button("Import Bank File…", systemImage: "square.and.arrow.down.on.square") {
-                    showingBankImport = true
-                }
-                Button("Rules", systemImage: "wand.and.stars") {
-                    showingRules = true
-                }
-                Button("Scheduled", systemImage: "calendar.badge.clock") {
-                    showingScheduled = true
-                }
-                Button("Budget", systemImage: "chart.bar.doc.horizontal") {
-                    showingBudget = true
-                }
-                Button("Prices", systemImage: "tag") {
-                    showingPrices = true
+                Menu {
+                    Button("Import Bank File…", systemImage: "square.and.arrow.down.on.square") {
+                        model.bankImportRequested = true
+                    }
+                    Button("Reconcile Account…", systemImage: "checkmark.seal") {
+                        model.presentedPanel = .reconcile
+                    }
+                    .disabled(model.selectedAccountID == nil)
+                    Divider()
+                    Button("Stock Transaction…", systemImage: "chart.line.uptrend.xyaxis") {
+                        model.presentedPanel = .stockTransaction
+                    }
+                    .disabled(model.securityAccountNodes.isEmpty)
+                    Button("Currency Transfer…", systemImage: "dollarsign.arrow.circlepath") {
+                        model.presentedPanel = .currencyTransfer
+                    }
+                    .disabled(model.currencyCommodities.count < 2)
+                    Divider()
+                    Button("Rules…", systemImage: "wand.and.stars") {
+                        model.presentedPanel = .rules
+                    }
+                    Button("Scheduled…", systemImage: "calendar.badge.clock") {
+                        model.presentedPanel = .scheduled
+                    }
+                    Button("Budget…", systemImage: "chart.bar.doc.horizontal") {
+                        model.presentedPanel = .budget
+                    }
+                    Button("Prices & Quotes…", systemImage: "tag") {
+                        model.presentedPanel = .prices
+                    }
+                } label: {
+                    Label("Tools", systemImage: "wrench.and.screwdriver")
                 }
                 Menu {
                     if model.savedSearches.isEmpty {
@@ -193,63 +184,48 @@ public struct FinvestLensRootView: View {
                         }
                     }
                     Divider()
-                    Button("Save current search…") { showingSaveSearch = true }
+                    Button("Save current search…") { model.presentedPanel = .saveSearch }
                         .disabled(model.searchQuery.trimmingCharacters(in: .whitespaces).isEmpty)
                 } label: {
                     Label("Saved Searches", systemImage: "bookmark")
                 }
-                Button("Save", systemImage: "square.and.arrow.down") {
-                    try? model.save()
-                }
-                .disabled(!model.hasUnsavedChanges)
-                Button("Export GnuCash…", systemImage: "arrow.up.doc") {
-                    if let data = model.gnuCashExportData() {
-                        exportDocument = GnuCashFileDocument(data: data)
-                        showingExport = true
-                    }
+            }
+        }
+        .sheet(item: $model.presentedPanel) { panel in
+            switch panel {
+            case .newAccount: NewAccountSheet(model: model)
+            case .newTransaction: TransactionEditorSheet(model: model)
+            case .stockTransaction: StockTransactionSheet(model: model)
+            case .currencyTransfer: CurrencyTransferSheet(model: model)
+            case .reports: ReportsView(model: model)
+            case .rules: RulesView(model: model)
+            case .scheduled: ScheduledView(model: model)
+            case .budget: BudgetView(model: model)
+            case .prices: PricesView(model: model)
+            case .saveSearch: SaveSearchSheet(model: model)
+            case .onboarding: OnboardingSheet(model: model)
+            case .reconcile:
+                if let id = model.selectedAccountID {
+                    ReconcileView(model: model, accountID: id)
                 }
             }
         }
-        .sheet(isPresented: $showingNewAccount) {
-            NewAccountSheet(model: model)
-        }
-        .sheet(isPresented: $showingNewTransaction) {
-            TransactionEditorSheet(model: model)
-        }
-        .sheet(isPresented: $showingReports) {
-            ReportsView(model: model)
-        }
-        .fileImporter(isPresented: $showingBankImport, allowedContentTypes: [.commaSeparatedText, .text, .data]) { result in
+        .fileImporter(isPresented: $model.bankImportRequested,
+                      allowedContentTypes: [.commaSeparatedText, .text, .data]) { result in
             if case .success(let url) = result { loadBankFile(url) }
         }
         .sheet(item: $importPayload) { payload in
             ImportView(model: model, payload: payload)
         }
-        .sheet(isPresented: $showingRules) {
-            RulesView(model: model)
-        }
-        .sheet(isPresented: $showingScheduled) {
-            ScheduledView(model: model)
-        }
-        .sheet(isPresented: $showingBudget) {
-            BudgetView(model: model)
-        }
-        .sheet(isPresented: $showingPrices) {
-            PricesView(model: model)
-        }
-        .sheet(isPresented: $showingStockTxn) {
-            StockTransactionSheet(model: model)
-        }
-        .sheet(isPresented: $showingCurrencyTransfer) {
-            CurrencyTransferSheet(model: model)
-        }
-        .sheet(isPresented: $showingSaveSearch) {
-            SaveSearchSheet(model: model)
-        }
-        .sheet(isPresented: $showingOnboarding) {
-            OnboardingSheet(model: model)
-        }
         .onAppear(perform: offerOnboardingIfEmpty)
+        .onChange(of: model.exportRequested) {
+            guard model.exportRequested else { return }
+            model.exportRequested = false
+            if let data = model.gnuCashExportData() {
+                exportDocument = GnuCashFileDocument(data: data)
+                showingExport = true
+            }
+        }
         .fileExporter(isPresented: $showingExport, document: exportDocument,
                       contentType: GnuCashFileDocument.contentType, defaultFilename: "Book") { _ in
             exportDocument = nil
@@ -269,8 +245,39 @@ public struct FinvestLensRootView: View {
         guard !offeredOnboarding else { return }
         offeredOnboarding = true
         if model.isOpen && model.accountTree.isEmpty {
-            showingOnboarding = true
+            model.presentedPanel = .onboarding
         }
+    }
+}
+
+/// Banner shown when the shared file changed on another device. Offers a plain
+/// reload, and — when the change produced NSFileVersion conflicts — explicit
+/// "keep mine" / "use other" resolution (`FR-PLT-02`).
+struct ExternalChangeBanner: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        let conflicted = model.hasVersionConflicts
+        HStack(spacing: 12) {
+            Image(systemName: conflicted
+                  ? "exclamationmark.triangle.fill"
+                  : "arrow.triangle.2.circlepath.icloud")
+            Text(conflicted
+                 ? "This book was edited in two places at once."
+                 : "This book changed on another device.")
+            Spacer()
+            if conflicted {
+                Button("Keep My Version") { model.resolveConflictsKeepingMine() }
+                Button("Use Other Version") { model.resolveConflictsUsingOther() }
+                    .buttonStyle(.borderedProminent)
+            } else {
+                Button("Reload") { model.reloadFromDisk() }
+                    .buttonStyle(.borderedProminent)
+                Button("Dismiss") { model.externalChangePending = false }
+            }
+        }
+        .padding(10)
+        .background(.yellow.opacity(0.25))
     }
 }
 
@@ -863,6 +870,8 @@ struct EditAccountSheet: View {
     @State private var notes = ""
     @State private var isPlaceholder = false
     @State private var isHidden = false
+    @State private var parentID: GncGUID?
+    @State private var originalParentID: GncGUID?
     @FocusState private var nameFocused: Bool
 
     var body: some View {
@@ -873,6 +882,12 @@ struct EditAccountSheet: View {
                 TextField("Code", text: $code)
                 TextField("Description", text: $description)
                 TextField("Notes", text: $notes, axis: .vertical)
+                Picker("Parent", selection: $parentID) {
+                    Text("Top level").tag(GncGUID?.none)
+                    ForEach(model.validParents(forAccount: accountID)) { node in
+                        Text(node.fullName).tag(GncGUID?.some(node.id))
+                    }
+                }
                 Toggle("Placeholder", isOn: $isPlaceholder)
                 Toggle("Hidden", isOn: $isHidden)
 
@@ -894,6 +909,9 @@ struct EditAccountSheet: View {
                         model.updateAccount(id: accountID, name: name, code: code,
                                             description: description, notes: notes,
                                             isPlaceholder: isPlaceholder, isHidden: isHidden)
+                        if parentID != originalParentID {
+                            model.moveAccount(accountID, under: parentID)
+                        }
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -904,6 +922,8 @@ struct EditAccountSheet: View {
                     loaded = true
                     name = edit.name; code = edit.code; description = edit.description
                     notes = edit.notes; isPlaceholder = edit.isPlaceholder; isHidden = edit.isHidden
+                    parentID = model.parentID(ofAccount: accountID)
+                    originalParentID = parentID
                 }
                 focusSoon { nameFocused = true }
             }
