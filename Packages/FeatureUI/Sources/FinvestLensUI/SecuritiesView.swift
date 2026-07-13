@@ -35,11 +35,11 @@ struct SecuritiesView: View {
                                 HStack {
                                     Text(commodity.mnemonic).fontWeight(.medium)
                                     if model.isWatchOnly(commodity) {
-                                        Text("watch").font(.caption2)
+                                        Text("watch").scaledFont(.caption2)
                                             .padding(.horizontal, 4).background(.blue.opacity(0.2)).clipShape(Capsule())
                                     }
                                 }
-                                Text(commodity.fullName).font(.caption).foregroundStyle(.secondary)
+                                Text(commodity.fullName).scaledFont(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
                             if let price = model.book?.latestPrice(of: commodity, in: model.reportCurrency)?.value {
@@ -51,6 +51,7 @@ struct SecuritiesView: View {
                                 Button(role: .destructive) { model.removeWatchSecurity(commodity) } label: {
                                     Image(systemName: "trash")
                                 }.buttonStyle(.borderless)
+                                .accessibilityLabel("Remove \(commodity.mnemonic) from watch list")
                             }
                         }
                     }

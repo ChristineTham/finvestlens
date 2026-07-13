@@ -15,6 +15,7 @@ struct ReconcileView: View {
     @Bindable var model: AppModel
     let accountID: GncGUID
     @Environment(\.dismiss) private var dismiss
+    @ScaledMetric private var dateWidth: CGFloat = 96
 
     @State private var statementDate = Date()
     @State private var endingBalanceText = ""
@@ -67,14 +68,17 @@ struct ReconcileView: View {
                         HStack {
                             Image(systemName: item.isCleared ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(item.isCleared ? Color.accentColor : Color.secondary)
+                                .accessibilityHidden(true)
                             Text(item.date, format: .dateTime.year().month().day())
                                 .foregroundStyle(.secondary)
-                                .frame(width: 96, alignment: .leading)
+                                .frame(width: dateWidth, alignment: .leading)
                             Text(item.description)
                             Spacer()
                             Text(AmountFormat.string(item.amount, code: session.currencyCode))
                                 .monospacedDigit()
                         }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityValue(item.isCleared ? "Cleared" : "Not cleared")
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -109,7 +113,7 @@ struct ReconcileView: View {
     private func stat(_ label: String, _ amount: Decimal, _ code: String,
                       highlight: Color = .primary) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(label).scaledFont(.caption).foregroundStyle(.secondary)
             Text(AmountFormat.string(amount, code: code))
                 .monospacedDigit()
                 .foregroundStyle(highlight)

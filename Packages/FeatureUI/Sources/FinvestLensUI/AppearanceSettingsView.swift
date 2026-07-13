@@ -39,7 +39,7 @@ public struct AppearanceSettingsView: View {
                     Slider(value: Binding(
                         get: { Double(textStep) },
                         set: { textStep = Int($0.rounded()) }),
-                        in: 0...Double(TextSize.steps.count - 1), step: 1)
+                        in: 0...Double(TextSize.stepCount - 1), step: 1)
                     .accessibilityLabel("Text size")
                     .accessibilityValue(textSizeLabel)
                     Text("A").font(.title2)
@@ -90,9 +90,9 @@ public struct AppearanceSettingsView: View {
 
     private var previewCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("The quick brown fox").font(.headline)
+            Text("The quick brown fox").scaledFont(.headline)
             Text("Accent-tinted controls and text scale with your settings.")
-                .font(.callout).foregroundStyle(.secondary)
+                .scaledFont(.callout).foregroundStyle(.secondary)
             HStack {
                 Button("Primary") {}.buttonStyle(.borderedProminent)
                 Button("Secondary") {}.buttonStyle(.bordered)

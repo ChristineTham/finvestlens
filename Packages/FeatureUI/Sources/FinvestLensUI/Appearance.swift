@@ -64,14 +64,85 @@ public enum AppAccent: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// The stepped text-size scale (small … large, default in the middle).
+///
+/// macOS has no Dynamic Type: SwiftUI text does not respond to
+/// `dynamicTypeSize` there. So text size is driven by an explicit multiplier
+/// applied to font point sizes (see ``ScaledFont`` and `\.appFontScale`), which
+/// works identically on every platform.
 public enum TextSize {
-    /// Five steps; index 2 (`.large`) is the system default and the slider's
-    /// mid-point.
-    public static let steps: [DynamicTypeSize] = [.small, .medium, .large, .xLarge, .xxLarge]
+    /// Five slider steps; index 2 is the (1.0×) default and the mid-point.
+    public static let stepCount = 5
     public static let defaultStep = 2
 
-    public static func dynamicType(_ step: Int) -> DynamicTypeSize {
-        steps[min(max(step, 0), steps.count - 1)]
+    /// Font-size multiplier for a slider step. Clamps out-of-range steps.
+    public static func scale(_ step: Int) -> CGFloat {
+        let factors: [CGFloat] = [0.85, 0.92, 1.0, 1.15, 1.30]
+        return factors[min(max(step, 0), factors.count - 1)]
+    }
+}
+
+/// Base point sizes for the semantic text styles (macOS metrics). Used by
+/// ``ScaledFont`` to produce a crisp, explicitly-scaled font.
+enum TextStyleMetrics {
+    static func size(_ style: Font.TextStyle) -> CGFloat {
+        switch style {
+        case .largeTitle: 26
+        case .title: 22
+        case .title2: 17
+        case .title3: 15
+        case .headline: 13
+        case .body: 13
+        case .callout: 12
+        case .subheadline: 11
+        case .footnote: 10
+        case .caption: 10
+        case .caption2: 10
+        @unknown default: 13
+        }
+    }
+
+    static func weight(_ style: Font.TextStyle) -> Font.Weight {
+        style == .headline ? .semibold : .regular
+    }
+}
+
+/// The app-wide font-size multiplier, published through the environment so
+/// text re-scales when the user moves the Text Size slider.
+private struct AppFontScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1
+}
+
+public extension EnvironmentValues {
+    var appFontScale: CGFloat {
+        get { self[AppFontScaleKey.self] }
+        set { self[AppFontScaleKey.self] = newValue }
+    }
+}
+
+/// Applies a semantic text style as an explicitly-scaled system font, so it
+/// grows/shrinks with the user's Text Size preference on every platform
+/// (including macOS, which ignores Dynamic Type).
+struct ScaledFont: ViewModifier {
+    @Environment(\.appFontScale) private var scale
+    let style: Font.TextStyle
+    let weight: Font.Weight?
+    let design: Font.Design?
+
+    func body(content: Content) -> some View {
+        content.font(.system(
+            size: TextStyleMetrics.size(style) * scale,
+            weight: weight ?? TextStyleMetrics.weight(style),
+            design: design ?? .default))
+    }
+}
+
+public extension View {
+    /// Drop-in replacement for `.font(.<style>)` that honours the app's Text
+    /// Size preference. Optional `weight`/`design` mirror `.font(.system(...))`.
+    func scaledFont(_ style: Font.TextStyle,
+                    weight: Font.Weight? = nil,
+                    design: Font.Design? = nil) -> some View {
+        modifier(ScaledFont(style: style, weight: weight, design: design))
     }
 }
 
@@ -105,10 +176,16 @@ public struct AppearanceModifier: ViewModifier {
 
     private var scheme: ColorSchemePreference { ColorSchemePreference(rawValue: schemeRaw) ?? .system }
 
+    private var fontScale: CGFloat { TextSize.scale(textStep) }
+
     public func body(content: Content) -> some View {
         content
             .tint((AppAccent(rawValue: accentRaw) ?? .lavender).color)
-            .dynamicTypeSize(TextSize.dynamicType(textStep))
+            // Explicit scaling — macOS ignores Dynamic Type. Publish the factor
+            // for `.scaledFont(...)` and scale the default font so text that
+            // relies on the body style (lists, forms, labels) scales too.
+            .environment(\.appFontScale, fontScale)
+            .environment(\.font, .system(size: TextStyleMetrics.size(.body) * fontScale))
         #if canImport(AppKit)
             // Drive NSApp.appearance directly: unlike preferredColorScheme(nil),
             // this reliably reverts to the system appearance when switching back

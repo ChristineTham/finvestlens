@@ -78,7 +78,7 @@ struct QuotesView: View {
         case .failure(let message):
             Label(message, systemImage: "exclamationmark.triangle")
                 .foregroundStyle(.orange)
-                .font(.callout)
+                .scaledFont(.callout)
         }
     }
 
@@ -107,7 +107,7 @@ struct QuotesView: View {
                 }
                 Spacer()
                 if let url = kind.signupURL {
-                    Link("Get key", destination: url).font(.caption)
+                    Link("Get key", destination: url).scaledFont(.caption)
                 }
             }
             HStack {
@@ -139,7 +139,7 @@ struct QuotesView: View {
                     HStack {
                         VStack(alignment: .leading) {
                             Text(commodity.mnemonic).fontWeight(.medium)
-                            Text(commodity.fullName).font(.caption).foregroundStyle(.secondary)
+                            Text(commodity.fullName).scaledFont(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                         TextField(commodity.mnemonic, text: Binding(

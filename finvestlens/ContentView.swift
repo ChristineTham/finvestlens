@@ -72,14 +72,16 @@ struct RootHost: View {
 struct WelcomeView: View {
     let onNew: () -> Void
     let onOpen: () -> Void
+    @ScaledMetric private var iconSize: CGFloat = 56
 
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "building.columns")
-                .font(.system(size: 56))
+                .font(.system(size: iconSize))
                 .foregroundStyle(.tint)
+                .accessibilityHidden(true)
             Text("FinvestLens")
-                .font(.largeTitle.bold())
+                .scaledFont(.largeTitle, weight: .bold)
             Text("Native double-entry accounting")
                 .foregroundStyle(.secondary)
             HStack(spacing: 12) {

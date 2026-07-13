@@ -24,6 +24,7 @@ struct ImportView: View {
     @Bindable var model: AppModel
     let payload: ImportPayload
     @Environment(\.dismiss) private var dismiss
+    @ScaledMetric private var dateWidth: CGFloat = 96
 
     @State private var targetID: GncGUID?
     @State private var results: [MatchResult] = []
@@ -106,10 +107,10 @@ struct ImportView: View {
             HStack {
                 Text(staged.date, format: .dateTime.year().month().day())
                     .foregroundStyle(.secondary)
-                    .frame(width: 96, alignment: .leading)
+                    .frame(width: dateWidth, alignment: .leading)
                 Text(staged.payee.isEmpty ? staged.memo : staged.payee)
                 if result.isDuplicate {
-                    Text("duplicate").font(.caption2).padding(.horizontal, 6).padding(.vertical, 1)
+                    Text("duplicate").scaledFont(.caption2).padding(.horizontal, 6).padding(.vertical, 1)
                         .background(.yellow.opacity(0.3), in: Capsule())
                 }
                 Spacer()

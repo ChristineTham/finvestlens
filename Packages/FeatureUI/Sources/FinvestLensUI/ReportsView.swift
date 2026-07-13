@@ -300,31 +300,31 @@ private struct HoldingRow: View {
                 Text(holding.symbol).fontWeight(.medium)
                 if let allocation = holding.allocation {
                     Text(allocation.formatted(.percent.precision(.fractionLength(0))))
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .scaledFont(.caption2).foregroundStyle(.secondary)
                         .padding(.horizontal, 4).background(.secondary.opacity(0.15)).clipShape(Capsule())
                 }
                 Spacer()
                 if let value = holding.marketValue {
                     Text(AmountFormat.string(value, code: code)).monospacedDigit()
                 } else {
-                    Text("no price").font(.caption).foregroundStyle(.secondary)
+                    Text("no price").scaledFont(.caption).foregroundStyle(.secondary)
                 }
             }
             HStack {
                 Text("\(holding.shares.formatted()) @ \(holding.averageCost.map { AmountFormat.string($0, code: code) } ?? "—") avg")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .scaledFont(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if let gain = holding.unrealizedGain {
                     Text(gainText(gain, fraction: holding.unrealizedFraction, code: code))
-                        .font(.caption).foregroundStyle(gain < 0 ? .red : .green)
+                        .scaledFont(.caption).foregroundStyle(gain < 0 ? .red : .green)
                 }
             }
             if holding.realizedGain != 0 {
                 HStack {
-                    Text("Realized").font(.caption2).foregroundStyle(.secondary)
+                    Text("Realized").scaledFont(.caption2).foregroundStyle(.secondary)
                     Spacer()
                     Text(AmountFormat.string(holding.realizedGain, code: code))
-                        .font(.caption2).monospacedDigit()
+                        .scaledFont(.caption2).monospacedDigit()
                         .foregroundStyle(holding.realizedGain < 0 ? .red : .green)
                 }
             }
@@ -391,7 +391,7 @@ private struct PriceHistorySection: View {
                 }
                 let points = model.priceHistory(for: commodity)
                 if points.count < 2 {
-                    Text("Add more prices to chart a trend.").font(.caption).foregroundStyle(.secondary)
+                    Text("Add more prices to chart a trend.").scaledFont(.caption).foregroundStyle(.secondary)
                 } else {
                     Chart(points) { point in
                         LineMark(x: .value("Date", point.date),
@@ -414,6 +414,8 @@ private struct TransactionReportView: View {
     @State private var accountID: GncGUID?
     @State private var from = Calendar.current.date(byAdding: .month, value: -3, to: Date()) ?? Date()
     @State private var to = Date()
+    @ScaledMetric private var dateWidth: CGFloat = 90
+    @ScaledMetric private var amountWidth: CGFloat = 90
 
     private var accounts: [AccountNode] { model.postableAccounts }
 
@@ -438,16 +440,16 @@ private struct TransactionReportView: View {
                         ForEach(report.rows) { row in
                             HStack {
                                 Text(row.date, format: .dateTime.year().month().day())
-                                    .foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
+                                    .foregroundStyle(.secondary).frame(width: dateWidth, alignment: .leading)
                                 VStack(alignment: .leading) {
                                     Text(row.description)
-                                    Text(row.transfer).font(.caption).foregroundStyle(.secondary)
+                                    Text(row.transfer).scaledFont(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 Text(AmountFormat.string(row.amount, code: report.currencyCode))
                                     .monospacedDigit().foregroundStyle(row.amount < 0 ? .red : .primary)
                                 Text(AmountFormat.string(row.balance, code: report.currencyCode))
-                                    .monospacedDigit().frame(width: 90, alignment: .trailing)
+                                    .monospacedDigit().frame(width: amountWidth, alignment: .trailing)
                             }
                         }
                         Section {
@@ -487,7 +489,7 @@ private struct InvestmentLotsView: View {
                                 Text(lot.symbol).fontWeight(.medium)
                                 if let date = lot.acquisitionDate {
                                     Text(date, format: .dateTime.year().month().day())
-                                        .font(.caption).foregroundStyle(.secondary)
+                                        .scaledFont(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 Text(lot.marketValue.map { AmountFormat.string($0, code: model.reportCurrency.mnemonic) } ?? "no price")
@@ -495,11 +497,11 @@ private struct InvestmentLotsView: View {
                             }
                             HStack {
                                 Text("\(lot.quantity.formatted()) · cost \(AmountFormat.string(lot.costBasis, code: model.reportCurrency.mnemonic))")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .scaledFont(.caption).foregroundStyle(.secondary)
                                 Spacer()
                                 if let gain = lot.unrealizedGain {
                                     Text(AmountFormat.string(gain, code: model.reportCurrency.mnemonic))
-                                        .font(.caption).monospacedDigit()
+                                        .scaledFont(.caption).monospacedDigit()
                                         .foregroundStyle(gain < 0 ? .red : .green)
                                 }
                             }
@@ -578,10 +580,10 @@ private struct CapitalGainsView: View {
                                 }
                                 HStack {
                                     Text("\(line.quantity.formatted()) sold \(line.disposalDate, format: .dateTime.year().month().day())")
-                                        .font(.caption).foregroundStyle(.secondary)
+                                        .scaledFont(.caption).foregroundStyle(.secondary)
                                     Spacer()
                                     Text("proceeds \(AmountFormat.string(line.proceeds, code: report.currencyCode)) − cost \(AmountFormat.string(line.costBasis, code: report.currencyCode))")
-                                        .font(.caption).foregroundStyle(.secondary)
+                                        .scaledFont(.caption).foregroundStyle(.secondary)
                                 }
                             }
                             .padding(.vertical, 2)
@@ -609,11 +611,11 @@ private struct CapitalGainsView: View {
                                 Text(lot.symbol).fontWeight(.medium)
                                 if let date = lot.acquisitionDate {
                                     Text(date, format: .dateTime.year().month().day())
-                                        .font(.caption).foregroundStyle(.secondary)
+                                        .scaledFont(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 Text("\(lot.quantity.formatted()) · \(AmountFormat.string(lot.costBasis, code: report.currencyCode))")
-                                    .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                                    .scaledFont(.caption).monospacedDigit().foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -629,9 +631,9 @@ private struct CapitalGainsView: View {
     private func termBadge(_ longTerm: Bool?) -> some View {
         switch longTerm {
         case .some(true):
-            Text("LT").font(.caption2).padding(.horizontal, 4).background(.green.opacity(0.2)).clipShape(Capsule())
+            Text("LT").scaledFont(.caption2).padding(.horizontal, 4).background(.green.opacity(0.2)).clipShape(Capsule())
         case .some(false):
-            Text("ST").font(.caption2).padding(.horizontal, 4).background(.orange.opacity(0.2)).clipShape(Capsule())
+            Text("ST").scaledFont(.caption2).padding(.horizontal, 4).background(.orange.opacity(0.2)).clipShape(Capsule())
         case .none:
             EmptyView()
         }
@@ -644,6 +646,8 @@ private struct CashFlowView: View {
     @State private var wiDate = Date()
     @State private var wiAmount = ""
     @State private var wiLabel = ""
+    @ScaledMetric private var dateWidth: CGFloat = 96
+    @ScaledMetric private var balanceWidth: CGFloat = 96
 
     var body: some View {
         if let accountID = model.defaultForecastAccountID {
@@ -677,10 +681,10 @@ private struct CashFlowView: View {
                         HStack {
                             Text(event.date, format: .dateTime.year().month().day())
                                 .foregroundStyle(.secondary)
-                                .frame(width: 96, alignment: .leading)
+                                .frame(width: dateWidth, alignment: .leading)
                             Text(event.label)
                             if event.isWhatIf {
-                                Text("what-if").font(.caption2)
+                                Text("what-if").scaledFont(.caption2)
                                     .padding(.horizontal, 4).background(.orange.opacity(0.2)).clipShape(Capsule())
                             }
                             Spacer()
@@ -689,7 +693,7 @@ private struct CashFlowView: View {
                                 .foregroundStyle(event.change < 0 ? .red : .green)
                             Text(AmountFormat.string(event.balance, code: model.reportCurrency.mnemonic))
                                 .monospacedDigit()
-                                .frame(width: 96, alignment: .trailing)
+                                .frame(width: balanceWidth, alignment: .trailing)
                                 .foregroundStyle(event.balance < 0 ? .red : .primary)
                         }
                     }
@@ -704,12 +708,12 @@ private struct CashFlowView: View {
     private var whatIfBar: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("What-if scenario").font(.subheadline).fontWeight(.medium)
+                Text("What-if scenario").scaledFont(.subheadline).fontWeight(.medium)
                 Spacer()
                 Button(showAddWhatIf ? "Close" : "Add event", systemImage: "plus") {
                     showAddWhatIf.toggle()
                 }
-                .font(.caption)
+                .scaledFont(.caption)
             }
             if showAddWhatIf {
                 HStack {
@@ -719,7 +723,7 @@ private struct CashFlowView: View {
                     TextField("Label", text: $wiLabel).frame(width: 120)
                     Button("Add") { addWhatIf() }.disabled(Decimal(string: wiAmount) == nil)
                 }
-                .font(.caption)
+                .scaledFont(.caption)
             }
             ForEach(model.whatIfEvents) { event in
                 HStack(spacing: 4) {
@@ -727,8 +731,9 @@ private struct CashFlowView: View {
                         Image(systemName: "xmark.circle.fill")
                     }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .accessibilityLabel("Remove what-if event \(event.label)")
                     Text("\(event.label): \(AmountFormat.string(event.amount, code: model.reportCurrency.mnemonic)) on \(event.date, format: .dateTime.year().month().day())")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .scaledFont(.caption2).foregroundStyle(.secondary)
                 }
             }
         }

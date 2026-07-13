@@ -63,13 +63,14 @@ public extension AppModel {
 public struct LockView: View {
     @Bindable var model: AppModel
     @State private var failed = false
+    @ScaledMetric private var iconSize: CGFloat = 48
 
     public init(model: AppModel) { self.model = model }
 
     public var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "lock.fill").font(.system(size: 48)).foregroundStyle(.tint)
-            Text("This book is locked").font(.title2.bold())
+            Image(systemName: "lock.fill").font(.system(size: iconSize)).foregroundStyle(.tint)
+            Text("This book is locked").scaledFont(.title2, weight: .bold)
             Text("Authenticate to view your accounts.").foregroundStyle(.secondary)
             Button {
                 Task { failed = !(await model.unlock()) }
@@ -78,7 +79,7 @@ public struct LockView: View {
             }
             .buttonStyle(.borderedProminent)
             if failed {
-                Text("Authentication failed. Try again.").font(.caption).foregroundStyle(.red)
+                Text("Authentication failed. Try again.").scaledFont(.caption).foregroundStyle(.red)
             }
         }
         .padding(48)
@@ -277,13 +278,14 @@ public struct FinvestLensRootView: View {
 struct OnboardingSheet: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @ScaledMetric private var iconSize: CGFloat = 44
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 16) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 44)).foregroundStyle(.tint)
-                Text("Welcome to your new book").font(.title2.bold())
+                    .font(.system(size: iconSize)).foregroundStyle(.tint)
+                Text("Welcome to your new book").scaledFont(.title2, weight: .bold)
                 Text("Start with a ready-made personal chart of accounts — cheque, savings, credit card, income and common expense categories — or begin from scratch.")
                     .multilineTextAlignment(.center).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -330,9 +332,11 @@ struct AccountsSidebar: View {
             OutlineGroup(model.accountTree, children: \.children) { node in
                 HStack {
                     Text(node.name)
+                        .scaledFont(.body)
                         .foregroundStyle(node.isHidden ? .secondary : .primary)
                     Spacer()
                     Text(AmountFormat.string(node.balance, code: node.currencyCode))
+                        .scaledFont(.body)
                         .monospacedDigit()
                         .foregroundStyle(node.balance < 0 ? .red : .secondary)
                 }
@@ -410,21 +414,30 @@ struct RegisterView: View {
         Table(model.registerRows, selection: $selection) {
             TableColumn("Date") { row in
                 Text(row.date, format: .dateTime.year().month().day())
+                    .scaledFont(.body)
             }
-            TableColumn("Description", value: \.description)
-            TableColumn("Transfer", value: \.transfer)
+            TableColumn("Description") { row in
+                Text(row.description).scaledFont(.body)
+            }
+            TableColumn("Transfer") { row in
+                Text(row.transfer).scaledFont(.body)
+            }
             TableColumn("R") { row in
                 Button(row.reconcile) { model.cycleReconcileState(splitID: row.id) }
                     .buttonStyle(.plain)
-                    .frame(width: 16)
+                    .accessibilityLabel("Reconciliation status")
+                    .accessibilityValue(reconcileWord(row.reconcile))
+                    .accessibilityHint("Activate to change")
             }
             TableColumn("Amount") { row in
                 Text(AmountFormat.string(row.amount, code: currencyCode))
+                    .scaledFont(.body)
                     .monospacedDigit()
                     .foregroundStyle(row.amount < 0 ? .red : .primary)
             }
             TableColumn("Balance") { row in
                 Text(AmountFormat.string(row.runningBalance, code: currencyCode))
+                    .scaledFont(.body)
                     .monospacedDigit()
             }
         }
@@ -454,6 +467,16 @@ struct RegisterView: View {
     private var currencyCode: String {
         model.postableAccounts.first { $0.id == model.selectedAccountID }?.currencyCode ?? "AUD"
     }
+
+    private func reconcileWord(_ glyph: String) -> String {
+        switch glyph {
+        case "c": "Cleared"
+        case "y": "Reconciled"
+        case "f": "Frozen"
+        case "v": "Voided"
+        default: "Not reconciled"
+        }
+    }
 }
 
 /// Journal / general-ledger register: each transaction with all its legs.
@@ -474,9 +497,11 @@ struct JournalView: View {
                         ForEach(entry.lines) { line in
                             HStack {
                                 Text(line.accountName)
+                                    .scaledFont(.body)
                                     .fontWeight(line.isFocusAccount ? .semibold : .regular)
                                 Spacer()
                                 Text(AmountFormat.string(line.amount, code: entry.currencyCode))
+                                    .scaledFont(.body)
                                     .monospacedDigit()
                                     .foregroundStyle(line.amount < 0 ? .red : .primary)
                             }
@@ -484,10 +509,11 @@ struct JournalView: View {
                     } header: {
                         HStack {
                             Text(entry.date, format: .dateTime.year().month().day())
-                            Text(entry.description).fontWeight(.medium)
+                                .scaledFont(.body)
+                            Text(entry.description).scaledFont(.body).fontWeight(.medium)
                             Spacer()
                             Button("Edit") { editingTransactionID = entry.id }
-                                .buttonStyle(.borderless).font(.caption)
+                                .buttonStyle(.borderless).scaledFont(.caption)
                         }
                     }
                 }
@@ -508,11 +534,17 @@ struct SearchResultsView: View {
         Table(model.searchResults) {
             TableColumn("Date") { row in
                 Text(row.date, format: .dateTime.year().month().day())
+                    .scaledFont(.body)
             }
-            TableColumn("Description", value: \.description)
-            TableColumn("Accounts", value: \.accounts)
+            TableColumn("Description") { row in
+                Text(row.description).scaledFont(.body)
+            }
+            TableColumn("Accounts") { row in
+                Text(row.accounts).scaledFont(.body)
+            }
             TableColumn("Amount") { row in
                 Text(AmountFormat.string(row.amount, code: row.currencyCode))
+                    .scaledFont(.body)
                     .monospacedDigit()
             }
         }
@@ -699,6 +731,7 @@ struct TransactionEditorSheet: View {
     @State private var tagsText = ""
     @State private var lines: [EditableSplit] = [EditableSplit(), EditableSplit()]
     @FocusState private var descriptionFocused: Bool
+    @ScaledMetric private var amountWidth: CGFloat = 100
 
     private var parsedTags: [String] {
         tagsText.split(whereSeparator: { $0 == "," || $0 == " " })
@@ -740,7 +773,7 @@ struct TransactionEditorSheet: View {
                             .labelsHidden()
                             TextField("Amount", text: $line.amountText)
                                 .multilineTextAlignment(.trailing)
-                                .frame(width: 100)
+                                .frame(width: amountWidth)
                         }
                     }
                     .onDelete { lines.remove(atOffsets: $0) }

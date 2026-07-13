@@ -31,7 +31,7 @@ struct ScheduledView: View {
                                 billBadge(bill.status)
                                 Text(bill.name)
                                 Text(bill.dueDate, format: .dateTime.year().month().day())
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .scaledFont(.caption).foregroundStyle(.secondary)
                                 Spacer()
                                 Text(AmountFormat.string(bill.amount, code: model.reportCurrency.mnemonic))
                                     .monospacedDigit()
@@ -65,11 +65,11 @@ struct ScheduledView: View {
                             HStack {
                                 Text(sx.name).fontWeight(.medium)
                                 if !sx.isEnabled {
-                                    Text("paused").font(.caption2).foregroundStyle(.secondary)
+                                    Text("paused").scaledFont(.caption2).foregroundStyle(.secondary)
                                 }
                             }
                             Text(recurrenceSummary(sx.recurrence))
-                                .font(.caption).foregroundStyle(.secondary)
+                                .scaledFont(.caption).foregroundStyle(.secondary)
                         }
                     }
                     .onDelete { offsets in
@@ -112,7 +112,7 @@ struct ScheduledView: View {
         case .upcoming: ("Upcoming", .secondary)
         case .paid: ("Paid", .green)
         }
-        Text(label).font(.caption2)
+        Text(label).scaledFont(.caption2)
             .padding(.horizontal, 5).padding(.vertical, 1)
             .background(color.opacity(0.2)).foregroundStyle(color).clipShape(Capsule())
     }

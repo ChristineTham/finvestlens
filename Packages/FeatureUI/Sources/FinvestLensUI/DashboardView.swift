@@ -43,7 +43,7 @@ struct DashboardView: View {
         let current = series.last?.netWorth ?? 0
         return Card("Net Worth", systemImage: "chart.line.uptrend.xyaxis") {
             Text(AmountFormat.string(current, code: code))
-                .font(.system(.largeTitle, design: .rounded).weight(.bold)).monospacedDigit()
+                .scaledFont(.largeTitle, weight: .bold, design: .rounded).monospacedDigit()
                 .foregroundStyle(current < 0 ? .red : .primary)
                 .accessibilityLabel("Net worth")
                 .accessibilityValue(AmountFormat.string(current, code: code))
@@ -67,7 +67,7 @@ struct DashboardView: View {
         return Card("Alerts", systemImage: "bell.badge") {
             if alerts.isEmpty {
                 Label("Nothing needs attention", systemImage: "checkmark.circle")
-                    .foregroundStyle(.green).font(.callout)
+                    .foregroundStyle(.green).scaledFont(.callout)
             } else {
                 ForEach(alerts) { alert in
                     HStack(alignment: .top, spacing: 8) {
@@ -75,7 +75,7 @@ struct DashboardView: View {
                             .foregroundStyle(color(for: alert.severity))
                         VStack(alignment: .leading, spacing: 1) {
                             Text(alert.title).fontWeight(.medium)
-                            Text(alert.message).font(.caption).foregroundStyle(.secondary)
+                            Text(alert.message).scaledFont(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
                     }
@@ -91,7 +91,7 @@ struct DashboardView: View {
     private var accountsCard: some View {
         Card("Accounts", systemImage: "list.bullet") {
             if model.accountTree.isEmpty {
-                Text("No accounts yet.").font(.callout).foregroundStyle(.secondary)
+                Text("No accounts yet.").scaledFont(.callout).foregroundStyle(.secondary)
             } else {
                 ForEach(model.accountTree) { node in
                     Button {
@@ -117,14 +117,14 @@ struct DashboardView: View {
         let bills = model.billReminders().filter { $0.status != .paid }.prefix(6)
         return Card("Upcoming Bills", systemImage: "calendar") {
             if bills.isEmpty {
-                Text("No upcoming bills.").font(.callout).foregroundStyle(.secondary)
+                Text("No upcoming bills.").scaledFont(.callout).foregroundStyle(.secondary)
             } else {
                 ForEach(Array(bills)) { bill in
                     HStack {
                         Text(bill.name)
                         Spacer()
                         Text(bill.dueDate, format: .dateTime.month().day())
-                            .font(.caption).foregroundStyle(.secondary)
+                            .scaledFont(.caption).foregroundStyle(.secondary)
                         Text(AmountFormat.string(bill.amount, code: code)).monospacedDigit()
                     }
                 }
@@ -140,7 +140,7 @@ struct DashboardView: View {
             let actuals = model.budgetActuals(budget)
             Card("Budget", systemImage: "chart.bar.doc.horizontal") {
                 if actuals.isEmpty {
-                    Text("No budget lines set.").font(.callout).foregroundStyle(.secondary)
+                    Text("No budget lines set.").scaledFont(.callout).foregroundStyle(.secondary)
                 } else {
                     ForEach(actuals) { actual in
                         VStack(alignment: .leading, spacing: 2) {
@@ -148,7 +148,7 @@ struct DashboardView: View {
                                 Text(actual.accountName)
                                 Spacer()
                                 Text("\(AmountFormat.string(actual.actual, code: code)) / \(AmountFormat.string(actual.effectiveBudget, code: code))")
-                                    .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                                    .scaledFont(.caption).monospacedDigit().foregroundStyle(.secondary)
                             }
                             ProgressView(value: min(1, max(0, actual.fractionUsed ?? 0)))
                                 .tint(actual.isOverBudget ? .red : .accentColor)
@@ -188,7 +188,7 @@ private struct Card<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: systemImage)
-                .font(.headline).foregroundStyle(.secondary)
+                .scaledFont(.headline).foregroundStyle(.secondary)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)

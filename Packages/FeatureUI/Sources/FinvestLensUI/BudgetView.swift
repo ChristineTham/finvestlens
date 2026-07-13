@@ -94,7 +94,7 @@ private struct BudgetRow: View {
                 Text(actual.accountName)
                 if actual.carryover != 0 {
                     Text("rollover \(AmountFormat.string(actual.carryover, code: code))")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .scaledFont(.caption2).foregroundStyle(.secondary)
                         .padding(.horizontal, 4).background(.secondary.opacity(0.15)).clipShape(Capsule())
                 }
                 Spacer()
@@ -106,10 +106,10 @@ private struct BudgetRow: View {
                 .tint(actual.isOverBudget ? .red : .accentColor)
             if actual.isOverBudget {
                 Text("Over by \(AmountFormat.string(-actual.remaining, code: code))")
-                    .font(.caption).foregroundStyle(.red)
+                    .scaledFont(.caption).foregroundStyle(.red)
             } else {
                 Text("\(AmountFormat.string(actual.remaining, code: code)) remaining")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .scaledFont(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 2)
@@ -121,6 +121,7 @@ struct EditBudgetSheet: View {
     @Bindable var model: AppModel
     let budget: Budget
     @Environment(\.dismiss) private var dismiss
+    @ScaledMetric private var amountWidth: CGFloat = 100
 
     @State private var amounts: [GncGUID: String] = [:]
     @State private var rollovers: [GncGUID: Bool] = [:]
@@ -142,7 +143,7 @@ struct EditBudgetSheet: View {
                                 Text(node.name)
                                 Spacer()
                                 TextField("0", text: binding(for: node.id))
-                                    .multilineTextAlignment(.trailing).frame(width: 100)
+                                    .multilineTextAlignment(.trailing).frame(width: amountWidth)
                             }
                         }
                     }
@@ -158,7 +159,7 @@ struct EditBudgetSheet: View {
                             Toggle("Rollover", isOn: rolloverBinding(for: node.id))
                                 .labelsHidden().toggleStyle(.switch).controlSize(.mini)
                             TextField("0", text: binding(for: node.id))
-                                .multilineTextAlignment(.trailing).frame(width: 100)
+                                .multilineTextAlignment(.trailing).frame(width: amountWidth)
                         }
                     }
                 }

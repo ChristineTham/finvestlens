@@ -20,16 +20,19 @@ struct AppearanceTests {
         #expect(ColorSchemePreference.dark.colorScheme == .dark)
     }
 
-    @Test("Text-size steps: five, default is the middle and the system default")
+    @Test("Text-size steps: five, default is the middle at 1.0×")
     func textSize() {
-        #expect(TextSize.steps.count == 5)
+        #expect(TextSize.stepCount == 5)
         #expect(TextSize.defaultStep == 2)
-        #expect(TextSize.dynamicType(TextSize.defaultStep) == .large)   // SwiftUI default
-        #expect(TextSize.dynamicType(0) == .small)
-        #expect(TextSize.dynamicType(4) == .xxLarge)
-        // Out-of-range steps clamp.
-        #expect(TextSize.dynamicType(-3) == .small)
-        #expect(TextSize.dynamicType(99) == .xxLarge)
+        #expect(TextSize.scale(TextSize.defaultStep) == 1.0)
+        #expect(TextSize.scale(0) < 1.0)   // smaller
+        #expect(TextSize.scale(4) > 1.0)   // larger
+        // Monotonic increasing across the range.
+        #expect(TextSize.scale(0) < TextSize.scale(2))
+        #expect(TextSize.scale(2) < TextSize.scale(4))
+        // Out-of-range steps clamp to the ends.
+        #expect(TextSize.scale(-3) == TextSize.scale(0))
+        #expect(TextSize.scale(99) == TextSize.scale(4))
     }
 
     @Test("Accent palette includes the default lavender and is stable")

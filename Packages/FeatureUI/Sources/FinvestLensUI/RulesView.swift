@@ -30,7 +30,7 @@ struct RulesView: View {
                         ForEach(rules) { rule in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(rule.name).fontWeight(.medium)
-                                Text(summary(rule)).font(.caption).foregroundStyle(.secondary)
+                                Text(summary(rule)).scaledFont(.caption).foregroundStyle(.secondary)
                             }
                         }
                         .onDelete { offsets in
@@ -101,10 +101,10 @@ struct ApplyRulesSheet: View {
                             Text(item.description).fontWeight(.medium)
                             if let proposed = item.proposedCategory {
                                 Text("\(item.currentCategory ?? "—") → \(proposed)")
-                                    .font(.caption).foregroundStyle(.secondary)
+                                    .scaledFont(.caption).foregroundStyle(.secondary)
                             }
                             if let notes = item.proposedNotes {
-                                Text("Notes: \(notes)").font(.caption2).foregroundStyle(.secondary)
+                                Text("Notes: \(notes)").scaledFont(.caption2).foregroundStyle(.secondary)
                             }
                         }
                     }
