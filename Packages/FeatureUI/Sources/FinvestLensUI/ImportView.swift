@@ -24,7 +24,8 @@ struct ImportView: View {
     @Bindable var model: AppModel
     let payload: ImportPayload
     @Environment(\.dismiss) private var dismiss
-    @ScaledMetric private var dateWidth: CGFloat = 96
+    @Environment(\.appFontScale) private var appFontScale
+    private var dateWidth: CGFloat { 96 * appFontScale }
 
     @State private var targetID: GncGUID?
     @State private var results: [MatchResult] = []

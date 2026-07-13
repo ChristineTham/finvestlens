@@ -414,8 +414,9 @@ private struct TransactionReportView: View {
     @State private var accountID: GncGUID?
     @State private var from = Calendar.current.date(byAdding: .month, value: -3, to: Date()) ?? Date()
     @State private var to = Date()
-    @ScaledMetric private var dateWidth: CGFloat = 90
-    @ScaledMetric private var amountWidth: CGFloat = 90
+    @Environment(\.appFontScale) private var appFontScale
+    private var dateWidth: CGFloat { 90 * appFontScale }
+    private var amountWidth: CGFloat { 90 * appFontScale }
 
     private var accounts: [AccountNode] { model.postableAccounts }
 
@@ -646,8 +647,9 @@ private struct CashFlowView: View {
     @State private var wiDate = Date()
     @State private var wiAmount = ""
     @State private var wiLabel = ""
-    @ScaledMetric private var dateWidth: CGFloat = 96
-    @ScaledMetric private var balanceWidth: CGFloat = 96
+    @Environment(\.appFontScale) private var appFontScale
+    private var dateWidth: CGFloat { 96 * appFontScale }
+    private var balanceWidth: CGFloat { 96 * appFontScale }
 
     var body: some View {
         if let accountID = model.defaultForecastAccountID {

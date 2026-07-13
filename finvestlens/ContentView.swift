@@ -72,7 +72,8 @@ struct RootHost: View {
 struct WelcomeView: View {
     let onNew: () -> Void
     let onOpen: () -> Void
-    @ScaledMetric private var iconSize: CGFloat = 56
+    @Environment(\.appFontScale) private var appFontScale
+    private var iconSize: CGFloat { 56 * appFontScale }
 
     var body: some View {
         VStack(spacing: 16) {

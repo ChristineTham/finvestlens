@@ -63,7 +63,8 @@ public extension AppModel {
 public struct LockView: View {
     @Bindable var model: AppModel
     @State private var failed = false
-    @ScaledMetric private var iconSize: CGFloat = 48
+    @Environment(\.appFontScale) private var appFontScale
+    private var iconSize: CGFloat { 48 * appFontScale }
 
     public init(model: AppModel) { self.model = model }
 
@@ -278,7 +279,8 @@ public struct FinvestLensRootView: View {
 struct OnboardingSheet: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    @ScaledMetric private var iconSize: CGFloat = 44
+    @Environment(\.appFontScale) private var appFontScale
+    private var iconSize: CGFloat { 44 * appFontScale }
 
     var body: some View {
         NavigationStack {
@@ -326,6 +328,7 @@ enum AccountSheet: Identifiable {
 struct AccountsSidebar: View {
     @Bindable var model: AppModel
     @State private var sheet: AccountSheet?
+    @Environment(\.appFontScale) private var appFontScale
 
     var body: some View {
         List(selection: $model.selectedAccountID) {
@@ -353,6 +356,9 @@ struct AccountsSidebar: View {
                 }
             }
         }
+        .navigationSplitViewColumnWidth(min: 200 * appFontScale,
+                                        ideal: 240 * appFontScale,
+                                        max: 400 * appFontScale)
         .sheet(item: $sheet) { sheet in
             switch sheet {
             case .edit(let id): EditAccountSheet(model: model, accountID: id)
@@ -731,7 +737,8 @@ struct TransactionEditorSheet: View {
     @State private var tagsText = ""
     @State private var lines: [EditableSplit] = [EditableSplit(), EditableSplit()]
     @FocusState private var descriptionFocused: Bool
-    @ScaledMetric private var amountWidth: CGFloat = 100
+    @Environment(\.appFontScale) private var appFontScale
+    private var amountWidth: CGFloat { 100 * appFontScale }
 
     private var parsedTags: [String] {
         tagsText.split(whereSeparator: { $0 == "," || $0 == " " })

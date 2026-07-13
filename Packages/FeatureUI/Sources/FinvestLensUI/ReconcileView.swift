@@ -15,7 +15,8 @@ struct ReconcileView: View {
     @Bindable var model: AppModel
     let accountID: GncGUID
     @Environment(\.dismiss) private var dismiss
-    @ScaledMetric private var dateWidth: CGFloat = 96
+    @Environment(\.appFontScale) private var appFontScale
+    private var dateWidth: CGFloat { 96 * appFontScale }
 
     @State private var statementDate = Date()
     @State private var endingBalanceText = ""

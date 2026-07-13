@@ -121,7 +121,8 @@ struct EditBudgetSheet: View {
     @Bindable var model: AppModel
     let budget: Budget
     @Environment(\.dismiss) private var dismiss
-    @ScaledMetric private var amountWidth: CGFloat = 100
+    @Environment(\.appFontScale) private var appFontScale
+    private var amountWidth: CGFloat { 100 * appFontScale }
 
     @State private var amounts: [GncGUID: String] = [:]
     @State private var rollovers: [GncGUID: Bool] = [:]
