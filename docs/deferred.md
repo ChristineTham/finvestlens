@@ -66,6 +66,7 @@ Still deferred:
 | --- | --- |
 | App Sandbox | Disabled by decision (13 Jul 2026): sibling `.lock` files at user-selected locations are denied by the sandbox; related-item declaration + coordinated I/O are in place but macOS still refused. Direct (notarized) distribution doesn't need the sandbox. Revisit before any Mac App Store submission. |
 | iOS document flows | New/Open/Import panels are AppKit; iOS uses fileImporter fallbacks, untested. The iOS target now *compiles* (14 Jul 2026 — `primaryPresentedItemURL` and `.onExitCommand` were macOS-only and broke the build since 1.0), but it has never been run on-device/simulator. |
+| iOS: open a book from iCloud Drive / Files | Audited 14 Jul 2026 — does **not** work as written, for three reasons: (1) the book-open fileImporter path never calls `startAccessingSecurityScopedResource()` (needed for the whole session on iOS, plus security-scoped bookmarks for Open Recent); (2) `FileLock` writes a sibling `.lock` next to the book, but the picker grant covers only the picked file and the related-item mechanism (`primaryPresentedItemURL`) is macOS-only — `open()` throws at the first step; (3) dataless iCloud files are never materialised (no coordinated read / `startDownloadingUbiquitousItem`). The storage design itself is iCloud-safe (local working copy, atomic replace, fingerprint conflict detection, NSFileVersion resolution); macOS ↔ macOS via iCloud Drive works today. |
 
 ## HIG review (13 Jul 2026)
 
