@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7A5BF0"/>
+      <stop offset="0.52" stop-color="#C173A6"/>
+      <stop offset="1" stop-color="#F7A05F"/>
+    </linearGradient>
+    <radialGradient id="cool" cx="0.22" cy="0.18" r="0.62">
+      <stop offset="0" stop-color="#AC9BF7" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#AC9BF7" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="warm" cx="0.56" cy="0.92" r="0.8">
+      <stop offset="0" stop-color="#FFCF97" stop-opacity="0.62"/>
+      <stop offset="1" stop-color="#FFCF97" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FFEFDC"/>
+    </linearGradient>
+    <radialGradient id="nodeGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#cool)"/>
+  <rect width="1024" height="1024" fill="url(#warm)"/>
+  <!-- area under the growth curve -->
+  <path d="M280 652 L440 520 L570 586 L744 360 L744 732 L280 732 Z" fill="url(#area)"/>
+  <!-- soft cast shadow of the line -->
+  <path d="M280 658 L440 526 L570 592 L744 366" fill="none" stroke="#2E2154"
+        stroke-opacity="0.16" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- growth line -->
+  <path d="M280 652 L440 520 L570 586 L744 360" fill="none" stroke="url(#line)"
+        stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- focal lens node -->
+  <circle cx="744" cy="360" r="96" fill="url(#nodeGlow)"/>
+  <circle cx="744" cy="360" r="60" fill="none" stroke="#FFF7EE" stroke-width="14" stroke-opacity="0.92"/>
+  <circle cx="744" cy="360" r="33" fill="#FFFBF4"/>
+  <!-- sparkle -->
+  <path d="M812 232 C 817 266 830 279 864 284 C 830 289 817 302 812 336
+           C 807 302 794 289 760 284 C 794 279 807 266 812 232 Z" fill="#FFF6EA"/>
+  <!-- small ledger dots along the baseline (rhythm, budgeting cadence) -->
+  <circle cx="360" cy="792" r="9" fill="#FFFFFF" fill-opacity="0.5"/>
+  <circle cx="512" cy="792" r="9" fill="#FFFFFF" fill-opacity="0.5"/>
+  <circle cx="664" cy="792" r="9" fill="#FFFFFF" fill-opacity="0.5"/>
+</svg>
