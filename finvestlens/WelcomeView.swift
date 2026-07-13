@@ -79,10 +79,6 @@ struct WelcomeView: View {
 
     @Environment(\.appFontScale) private var appFontScale
     @Environment(\.colorScheme) private var scheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    @State private var appeared = false
-    @State private var glow = false
 
     var body: some View {
         ZStack {
@@ -100,7 +96,6 @@ struct WelcomeView: View {
             .padding(.vertical, 30)
         }
         .frame(minWidth: 560, minHeight: 520)
-        .onAppear(perform: animateIn)
     }
 
     // MARK: Backdrop
@@ -121,7 +116,6 @@ struct WelcomeView: View {
             // Warm apricot glow, lower-right — the sunrise from the icon.
             RadialGradient(colors: [Brand.apricot.opacity(scheme == .dark ? 0.34 : 0.30), .clear],
                            center: .init(x: 0.82, y: 0.9), startRadius: 1, endRadius: 520)
-                .scaleEffect(glow ? 1.06 : 0.94)
 
             // Faint oversized watermark of the mark, bottom-left.
             RisingMark(tint: (scheme == .dark ? Color.white : Brand.violet).opacity(0.05))
@@ -151,8 +145,6 @@ struct WelcomeView: View {
                     .font(.system(size: 16 * appFontScale, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
             }
-            .opacity(appeared ? 1 : 0)
-            .offset(y: appeared ? 0 : 12)
         }
     }
 
@@ -162,9 +154,9 @@ struct WelcomeView: View {
             ForEach(0..<2) { i in
                 Circle()
                     .strokeBorder(Brand.apricot.opacity(0.18), lineWidth: 1)
-                    .frame(width: size + CGFloat(i) * 48 + (glow ? 16 : 0),
-                           height: size + CGFloat(i) * 48 + (glow ? 16 : 0))
-                    .opacity(glow ? 0.3 : 0.6)
+                    .frame(width: size + CGFloat(i) * 48,
+                           height: size + CGFloat(i) * 48)
+                    .opacity(0.6)
             }
             RoundedRectangle(cornerRadius: 30, style: .continuous)
                 .fill(LinearGradient(colors: [Brand.violet, Brand.mauve, Brand.apricot],
@@ -186,9 +178,6 @@ struct WelcomeView: View {
                 .overlay(RisingMark().padding(size * 0.14))
                 .shadow(color: Brand.mauve.opacity(0.55), radius: 28, y: 16)
         }
-        .scaleEffect(appeared ? 1 : 0.82)
-        .opacity(appeared ? 1 : 0)
-        .offset(y: glow ? -4 : 4)
         .accessibilityHidden(true)
     }
 
@@ -218,8 +207,6 @@ struct WelcomeView: View {
             .font(.system(size: 12.5 * appFontScale, design: .rounded))
             #endif
         }
-        .opacity(appeared ? 1 : 0)
-        .offset(y: appeared ? 0 : 16)
     }
 
     /// Up to three recently opened books, one click away.
@@ -245,7 +232,6 @@ struct WelcomeView: View {
                 }
             }
             .padding(.top, 16)
-            .opacity(appeared ? 1 : 0)
         }
     }
 
@@ -265,16 +251,8 @@ struct WelcomeView: View {
                 .foregroundStyle(.tertiary)
         }
         .multilineTextAlignment(.center)
-        .opacity(appeared ? 1 : 0)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(BuildInfo.versionString), built \(BuildInfo.buildDate). Copyright 2026 Hello Tham, crafted by Chris Tham.")
     }
 
-    // MARK: Animation
-
-    private func animateIn() {
-        if reduceMotion { appeared = true; return }
-        withAnimation(.spring(response: 0.75, dampingFraction: 0.72)) { appeared = true }
-        withAnimation(.easeInOut(duration: 2.8).repeatForever(autoreverses: true)) { glow = true }
-    }
 }
