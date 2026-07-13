@@ -43,7 +43,7 @@ struct DashboardView: View {
         let current = series.last?.netWorth ?? 0
         return Card("Net Worth", systemImage: "chart.line.uptrend.xyaxis") {
             Text(AmountFormat.string(current, code: code))
-                .font(.system(size: 30, weight: .bold)).monospacedDigit()
+                .font(.system(.largeTitle, design: .rounded).weight(.bold)).monospacedDigit()
                 .foregroundStyle(current < 0 ? .red : .primary)
                 .accessibilityLabel("Net worth")
                 .accessibilityValue(AmountFormat.string(current, code: code))

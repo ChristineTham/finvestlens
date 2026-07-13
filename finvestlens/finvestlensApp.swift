@@ -37,6 +37,7 @@ struct finvestlensApp: App {
                     guard url.pathExtension == "finvestlens" else { return }
                     try? model.open(at: url)
                 }
+                .finvestLensAppearance()
         }
         .commands {
             CommandGroup(after: .saveItem) {
@@ -56,5 +57,12 @@ struct finvestlensApp: App {
                     .disabled(!model.isOpen || model.isLocked)
             }
         }
+
+        #if os(macOS)
+        Settings {
+            AppearanceSettingsView()
+                .finvestLensAppearance()
+        }
+        #endif
     }
 }
