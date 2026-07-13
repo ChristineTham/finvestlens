@@ -196,6 +196,7 @@ public final class AppModel {
         reloadKvpCollections()
         refreshAll()
         startQuoteAutoRefresh()
+        Self.recordLastBook(url)
     }
 
     public func open(at url: URL, breakStaleLock: Bool = false) throws {
@@ -204,6 +205,12 @@ public final class AppModel {
         refreshAll()
         startQuoteAutoRefresh()
         lockIfNeeded()
+        Self.recordLastBook(url)
+    }
+
+    /// Remembers the last-opened book so App Intents / Shortcuts can read it.
+    static func recordLastBook(_ url: URL) {
+        UserDefaults.standard.set(url.path, forKey: "finvestlens.lastBookPath")
     }
 
     /// Imports a GnuCash file and saves it as a new native document.
