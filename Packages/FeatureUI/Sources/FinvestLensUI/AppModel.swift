@@ -100,9 +100,14 @@ public final class AppModel {
     let apiKeys: APIKeyStoring
     /// HTTP transport for quote providers (injectable for tests).
     let quoteHTTP: HTTPFetching
+    /// Device authentication for the book lock (injectable for tests).
+    let authenticator: Authenticating
 
     /// The running periodic quote-refresh loop, if any.
     @ObservationIgnored var quoteRefreshTask: Task<Void, Never>?
+
+    /// `true` when the open book is locked behind authentication (`NFR-07`).
+    public internal(set) var isLocked = false
 
     /// `true` when a document is open.
     public var isOpen: Bool { document != nil }
@@ -111,9 +116,11 @@ public final class AppModel {
 
     var book: Book? { document?.book }
 
-    public init(apiKeys: APIKeyStoring? = nil, quoteHTTP: HTTPFetching? = nil) {
+    public init(apiKeys: APIKeyStoring? = nil, quoteHTTP: HTTPFetching? = nil,
+                authenticator: Authenticating? = nil) {
         self.apiKeys = apiKeys ?? KeychainAPIKeyStore()
         self.quoteHTTP = quoteHTTP ?? URLSessionHTTPClient()
+        self.authenticator = authenticator ?? BiometricAuthenticator()
     }
 
     // MARK: KVP-backed collections
@@ -196,6 +203,7 @@ public final class AppModel {
         reloadKvpCollections()
         refreshAll()
         startQuoteAutoRefresh()
+        lockIfNeeded()
     }
 
     /// Imports a GnuCash file and saves it as a new native document.
@@ -232,6 +240,7 @@ public final class AppModel {
 
     public func close() {
         stopQuoteAutoRefresh()
+        isLocked = false
         document?.discard()
         document = nil
         accountTree = []

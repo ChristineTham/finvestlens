@@ -38,7 +38,9 @@ struct RootHost: View {
 
     var body: some View {
         Group {
-            if model.isOpen {
+            if model.isOpen && model.isLocked {
+                LockView(model: model)
+            } else if model.isOpen {
                 FinvestLensRootView(model: model)
             } else {
                 WelcomeView(onNew: newTemporary) { importing = true }

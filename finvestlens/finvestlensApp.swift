@@ -44,6 +44,17 @@ struct finvestlensApp: App {
                     .keyboardShortcut("s", modifiers: .command)
                     .disabled(!model.hasUnsavedChanges)
             }
+            CommandMenu("Security") {
+                Button(model.requireAuthentication
+                       ? "Don’t Require Authentication"
+                       : "Require Authentication to Open") {
+                    model.requireAuthentication.toggle()
+                }
+                .disabled(!model.isOpen)
+                Button("Lock Now") { model.lockNow() }
+                    .keyboardShortcut("l", modifiers: [.command, .shift])
+                    .disabled(!model.isOpen || model.isLocked)
+            }
         }
     }
 }

@@ -57,6 +57,36 @@ public extension AppModel {
     }
 }
 
+// MARK: - Lock screen
+
+/// Gates a locked book behind device authentication (`NFR-07`).
+public struct LockView: View {
+    @Bindable var model: AppModel
+    @State private var failed = false
+
+    public init(model: AppModel) { self.model = model }
+
+    public var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "lock.fill").font(.system(size: 48)).foregroundStyle(.tint)
+            Text("This book is locked").font(.title2.bold())
+            Text("Authenticate to view your accounts.").foregroundStyle(.secondary)
+            Button {
+                Task { failed = !(await model.unlock()) }
+            } label: {
+                Label("Unlock", systemImage: "touchid").frame(minWidth: 160)
+            }
+            .buttonStyle(.borderedProminent)
+            if failed {
+                Text("Authentication failed. Try again.").font(.caption).foregroundStyle(.red)
+            }
+        }
+        .padding(48)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task { await model.unlock() }   // prompt immediately on appear
+    }
+}
+
 // MARK: - Root
 
 /// The main document view: accounts sidebar + register (or search results).
