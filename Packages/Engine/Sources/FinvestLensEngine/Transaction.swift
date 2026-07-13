@@ -72,6 +72,23 @@ public final class Transaction {
     }
     private static let statementDateKey = "finvestlens/statement-date"
 
+    /// Link to an attached source document — an invoice or dividend statement
+    /// PDF (`FR-AI-08`). Uses GnuCash's transaction-association slot key
+    /// (`assoc_uri`) so links round-trip with GnuCash: either an absolute
+    /// `file://` URI, or a path relative to the user's document folder
+    /// (GnuCash calls it the "path head").
+    public var documentLink: String? {
+        get {
+            guard case let .string(link)? = kvp[Self.documentLinkKey], !link.isEmpty else { return nil }
+            return link
+        }
+        set {
+            let cleaned = newValue?.trimmingCharacters(in: .whitespaces)
+            kvp[Self.documentLinkKey] = (cleaned?.isEmpty ?? true) ? nil : .string(cleaned!)
+        }
+    }
+    private static let documentLinkKey = "assoc_uri"
+
     public init(
         guid: GncGUID = .random(),
         currency: Commodity,

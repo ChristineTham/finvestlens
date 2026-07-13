@@ -115,3 +115,28 @@ struct RoundTripTests {
         #expect(twice.book.balance(of: bank).rounded.amount == dec("100.00"))
     }
 }
+
+@Suite("Document link round-trip")
+struct DocumentLinkRoundTripTests {
+
+    @Test("assoc_uri survives export → import (GnuCash association)")
+    func documentLink() throws {
+        let original = makeBook()
+        original.transactions.first?.documentLink = "invoices/officeworks-559023.pdf"
+
+        let data = GnuCashXMLExporter.export(original)
+        let xml = String(decoding: data, as: UTF8.self)
+        #expect(xml.contains("<slot:key>assoc_uri</slot:key>"))
+        #expect(xml.contains("invoices/officeworks-559023.pdf"))
+
+        let result = try GnuCashXMLImporter.importBook(from: data)
+        #expect(result.summary.isClean)
+        #expect(result.book.transactions.first?.documentLink == "invoices/officeworks-559023.pdf")
+    }
+
+    @Test("Transactions without a link export no trn:slots")
+    func noLink() {
+        let xml = String(decoding: GnuCashXMLExporter.export(makeBook()), as: UTF8.self)
+        #expect(!xml.contains("<trn:slots>"))
+    }
+}

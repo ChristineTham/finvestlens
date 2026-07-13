@@ -26,7 +26,9 @@
 > statements reconcile, dividend statements are verified against the register
 > (franking credits checked/fixed), invoices match their transaction, split by
 > line items, and adopt the invoice date (the bank date is preserved for
-> matching). See [Architecture §11](architecture.md).
+> matching). Applied invoice/dividend PDFs are stored in a configurable
+> document folder and linked to their transaction GnuCash-style (`assoc_uri`,
+> FR-AI-08). See [Architecture §11](architecture.md).
 
 This is the authoritative **delivery schedule**. It sequences the requirements from the [PRD](prd.md) (`FR-*`), the architecture decisions ([`ADR-*`](architecture.md)), and the porting map ([Porting §2](porting.md)) into ten releasable phases (P0–P9). Each phase lists its **objective, workstreams/tasks, dependencies, deliverables, exit criteria, test focus, and risks**.
 

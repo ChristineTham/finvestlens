@@ -147,6 +147,15 @@ public enum GnuCashXMLExporter {
         block += "  <trn:date-posted><ts:date>\(GnuCashDate.format(transaction.datePosted))</ts:date></trn:date-posted>\n"
         block += "  <trn:date-entered><ts:date>\(GnuCashDate.format(transaction.dateEntered))</ts:date></trn:date-entered>\n"
         block += "  <trn:description>\(escape(transaction.transactionDescription))</trn:description>\n"
+        // Document link (GnuCash transaction association, FR-AI-08).
+        if let link = transaction.documentLink {
+            block += "  <trn:slots>\n"
+            block += "    <slot>\n"
+            block += "      <slot:key>assoc_uri</slot:key>\n"
+            block += "      <slot:value type=\"string\">\(escape(link))</slot:value>\n"
+            block += "    </slot>\n"
+            block += "  </trn:slots>\n"
+        }
         block += "  <trn:splits>\n"
         for split in transaction.splits {
             block += splitBlock(split, currencyFraction: transaction.currency.smallestFraction)

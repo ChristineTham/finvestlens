@@ -141,7 +141,8 @@ struct SmartImportSheet: View {
     private func recordDividend(_ document: SmartDocument) {
         guard case .dividend(let details, _) = document.phase else { return }
         activeDocumentID = document.id
-        dividendPayload = DividendPayload(data: document.data, prefilled: details)
+        dividendPayload = DividendPayload(data: document.data, prefilled: details,
+                                          fileName: document.name)
     }
 
     private func markActiveDone(_ note: String) {
@@ -331,7 +332,7 @@ private struct SmartDocumentRow: View {
         guard let id = check.transactionID else { return }
         do {
             try model.applyDividendFix(details, to: id)
-            document.phase = .done("Fixed")
+            document.phase = .done(linkNote("Fixed", attachTo: id))
             onRegisterChanged()
         } catch {
             actionError = error.localizedDescription
@@ -341,10 +342,24 @@ private struct SmartDocumentRow: View {
     private func applyInvoice(_ analysis: InvoiceAnalysis, _ match: AppModel.InvoiceMatch) {
         do {
             try model.applyInvoiceSplit(analysis, to: match.transactionID, adjustDate: adjustDate)
-            document.phase = .done("Split applied")
+            document.phase = .done(linkNote("Split applied", attachTo: match.transactionID))
             onRegisterChanged()
         } catch {
             actionError = error.localizedDescription
+        }
+    }
+
+    /// Stores the PDF in the document folder and links it to the transaction
+    /// (`FR-AI-08`). Linking is auxiliary — a failure never rolls back the
+    /// applied change, it just shows in the row note.
+    private func linkNote(_ note: String, attachTo transactionID: GncGUID) -> String {
+        do {
+            _ = try model.attachDocument(named: document.name, data: document.data,
+                                         to: transactionID)
+            return "\(note) · linked"
+        } catch {
+            actionError = error.localizedDescription
+            return note
         }
     }
 }

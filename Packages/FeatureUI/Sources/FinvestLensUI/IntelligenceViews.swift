@@ -152,10 +152,14 @@ struct DividendPayload: Identifiable {
     let id = UUID()
     let data: Data
     var prefilled: DividendStatementDetails?
+    /// Original file name — when present, the PDF is stored in the document
+    /// folder and linked to the recorded transaction (FR-AI-08).
+    var fileName: String?
 
-    init(data: Data, prefilled: DividendStatementDetails? = nil) {
+    init(data: Data, prefilled: DividendStatementDetails? = nil, fileName: String? = nil) {
         self.data = data
         self.prefilled = prefilled
+        self.fileName = fileName
     }
 }
 
@@ -296,8 +300,12 @@ struct DividendImportSheet: View {
             netPayment: net
         )
         do {
-            _ = try model.recordDividend(details, cashAccountID: cashAccountID,
-                                         recordFrankingCredits: recordCredits)
+            let id = try model.recordDividend(details, cashAccountID: cashAccountID,
+                                              recordFrankingCredits: recordCredits)
+            // Link the statement PDF to the booked transaction (best-effort).
+            if let fileName = payload.fileName {
+                _ = try? model.attachDocument(named: fileName, data: payload.data, to: id)
+            }
             dismiss()
         } catch {
             errorMessage = error.localizedDescription

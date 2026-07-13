@@ -193,13 +193,18 @@ private final class Delegate: NSObject, XMLParserDelegate {
     }
 
     private func applySlot(_ value: String) {
-        guard let key = slotKey, account != nil else { slotKey = nil; return }
-        switch key {
-        case "placeholder": account?.isPlaceholder = (value == "true")
-        case "hidden": account?.isHidden = (value == "true")
-        default: break
+        defer { slotKey = nil }
+        guard let key = slotKey else { return }
+        if account != nil {
+            switch key {
+            case "placeholder": account?.isPlaceholder = (value == "true")
+            case "hidden": account?.isHidden = (value == "true")
+            default: break
+            }
+        } else if transaction != nil, split == nil, key == "assoc_uri" {
+            // GnuCash transaction association (document link, FR-AI-08).
+            transaction?.documentLink = value
         }
-        slotKey = nil
     }
 
     // MARK: Finishers
@@ -278,6 +283,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
             number: builder.number,
             description: builder.descriptionText
         )
+        txn.documentLink = builder.documentLink
         for split in builder.pendingSplits { txn.addSplit(split) }
         transactions.append(txn)
     }
@@ -407,6 +413,7 @@ private struct TransactionBuilder {
     var dateEntered: Date?
     var number = ""
     var descriptionText = ""
+    var documentLink: String?
     var pendingSplits: [Split] = []
 }
 

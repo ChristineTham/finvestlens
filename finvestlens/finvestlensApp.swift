@@ -186,7 +186,7 @@ struct finvestlensApp: App {
         .defaultSize(width: 760, height: 560)
 
         Settings {
-            AppearanceSettingsView()
+            FinvestLensSettingsView()
                 .finvestLensAppearance()
         }
         #endif

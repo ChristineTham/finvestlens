@@ -38,6 +38,17 @@ enum MacFilePanel {
         panel.allowsMultipleSelection = true
         return panel.runModal() == .OK ? panel.urls : []
     }
+
+    static func chooseDirectory(title: String) -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = title
+        panel.message = title
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        return panel.runModal() == .OK ? panel.url : nil
+    }
 }
 #endif
 
@@ -632,6 +643,11 @@ struct RegisterView: View {
             if let splitID = ids.first, let txnID = model.transactionID(ofSplit: splitID) {
                 Button("Edit…") { editingTransactionID = txnID }
                 Button("Go to Other Account") { model.jumpToOtherAccount(ofSplit: splitID) }
+                if model.hasLinkedDocument(txnID) {
+                    Button("Open Linked Document", systemImage: "paperclip") {
+                        model.openLinkedDocument(for: txnID)
+                    }
+                }
                 Divider()
                 Button("Duplicate") { model.duplicateTransaction(txnID) }
                 Button("Add Reversing Transaction") { _ = model.addReversingTransaction(txnID) }

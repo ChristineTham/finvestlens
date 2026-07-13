@@ -339,6 +339,7 @@ follow one contract:
 | Budget suggestion | FR-AI-05 | Deterministic 6-month spending stats → `BudgetAdvisor` → reviewed per-line apply |
 | Forecast outlook | FR-AI-06 | Computed `cashFlowForecast` facts → `ForecastNarrator` headline + insights in the Cash Flow report |
 | Smart Import (multi-PDF) | FR-AI-07 | `DocumentClassifier` triages each PDF (model + keyword fallback), then routes: statements → FR-AI-01 review; dividend statements → **verified against the register** (matching deposit found, franking credits checked, one-click fix rebuilds the gross-up in place, preserving the cash split's reconcile state); invoices → **matched to their transaction** (amount + date-window, banks post late) then split by line items and re-dated to the invoice date. Match results refresh as earlier documents in the batch are applied. |
+| Document links | FR-AI-08 | Applied dividend statements and invoices are copied into the document folder (Settings ▸ Documents; default: the book's folder — GnuCash's association "path head") and linked to their transaction via the `assoc_uri` KVP slot as a relative path (identical files reused, name collisions uniqued). Register context menu → "Open Linked Document". |
 
 **Dual dates (FR-AI-07).** When Smart Import adopts a document's true economic
 date, the bank's posted date moves to a preserved KVP slot
@@ -348,6 +349,13 @@ import matcher's duplicate detection and Smart Import's own windows) considers
 re-dated transaction. The slot lives in the native document; GnuCash XML
 export simply carries the adjusted `datePosted` (no schema breakage — GnuCash
 sees the economic date).
+
+**Document links (FR-AI-08).** `Transaction.documentLink` uses GnuCash's own
+slot key (`assoc_uri`), and the XML exporter/importer round-trips it in
+`trn:slots`, so links attached in FinvestLens open in GnuCash and vice versa.
+Resolution follows GnuCash semantics: absolute paths and `file://` URIs open
+as-is; anything else is relative to the configured document folder (or the
+book's folder when unset).
 
 Testing: deterministic parts are unit-tested; `LiveModelTests` exercises the
 real on-device model end-to-end (PDF fixtures rendered in-test) and self-skips
