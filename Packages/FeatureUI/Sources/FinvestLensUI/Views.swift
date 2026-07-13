@@ -96,6 +96,7 @@ public struct LockView: View {
 /// and toolbar share one entry point per panel.
 public struct FinvestLensRootView: View {
     @Bindable var model: AppModel
+    @Environment(\.openWindow) private var openWindow
     @State private var showingExport = false
     @State private var exportDocument: GnuCashFileDocument?
     @State private var importPayload: ImportPayload?
@@ -129,16 +130,24 @@ public struct FinvestLensRootView: View {
                 Button("Dashboard", systemImage: "house") {
                     model.selectedAccountID = nil
                 }
+                .help("Show the dashboard (⌘D)")
                 Button("New Transaction", systemImage: "plus.circle") {
                     model.presentedPanel = .newTransaction
                 }
+                .help("New transaction (⌘T)")
                 .disabled(model.postableAccounts.count < 2)
                 Button("New Account", systemImage: "plus.rectangle.on.folder") {
                     model.presentedPanel = .newAccount
                 }
+                .help("New account (⇧⌘N)")
                 Button("Reports", systemImage: "chart.pie") {
+                    #if os(macOS)
+                    openWindow(id: "reports")
+                    #else
                     model.presentedPanel = .reports
+                    #endif
                 }
+                .help("Reports (⌘R)")
                 Menu {
                     Button("Import Bank File…", systemImage: "square.and.arrow.down.on.square") {
                         model.bankImportRequested = true
@@ -172,6 +181,7 @@ public struct FinvestLensRootView: View {
                 } label: {
                     Label("Tools", systemImage: "wrench.and.screwdriver")
                 }
+                .help("Rules, scheduled, budget, prices and more")
                 Menu {
                     if model.savedSearches.isEmpty {
                         Text("No saved searches")
@@ -184,11 +194,12 @@ public struct FinvestLensRootView: View {
                         }
                     }
                     Divider()
-                    Button("Save current search…") { model.presentedPanel = .saveSearch }
+                    Button("Save Current Search…") { model.presentedPanel = .saveSearch }
                         .disabled(model.searchQuery.trimmingCharacters(in: .whitespaces).isEmpty)
                 } label: {
                     Label("Saved Searches", systemImage: "bookmark")
                 }
+                .help("Saved searches")
             }
         }
         .sheet(item: $model.presentedPanel) { panel in
@@ -302,11 +313,11 @@ struct OnboardingSheet: View {
                     model.createStarterAccounts()
                     dismiss()
                 } label: {
-                    Label("Create starter accounts", systemImage: "square.stack.3d.up")
+                    Label("Create Starter Accounts", systemImage: "square.stack.3d.up")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                Button("Start empty") { dismiss() }
+                Button("Start Empty") { dismiss() }
             }
             .padding(32)
             .frame(minWidth: 420)
@@ -599,8 +610,9 @@ struct SaveSearchSheet: View {
                 TextField("Name", text: $name).focused($focused)
             }
             .navigationTitle("Save Search")
+            .onExitCommand { dismiss() }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { model.saveCurrentSearch(name: name); dismiss() }
                 }
@@ -678,9 +690,10 @@ struct NewAccountSheet: View {
                 }
             }
             .navigationTitle("New Account")
+            .onExitCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") { add() }.disabled(!canAdd)
@@ -809,9 +822,12 @@ struct TransactionEditorSheet: View {
                 }
             }
             .navigationTitle(isEditing ? "Edit Transaction" : "New Transaction")
+            // Esc cancels even while a text field has focus (cancelOperation
+            // bubbles up the responder chain; .cancelAction alone doesn't).
+            .onExitCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isEditing ? "Save" : "Add") { commit() }
@@ -892,7 +908,7 @@ struct EditAccountSheet: View {
                 Toggle("Hidden", isOn: $isHidden)
 
                 Section {
-                    Button("Renumber sub-accounts") {
+                    Button("Renumber Sub-Accounts") {
                         model.renumberChildren(of: accountID)
                     }
                 } footer: {
@@ -900,9 +916,10 @@ struct EditAccountSheet: View {
                 }
             }
             .navigationTitle("Edit Account")
+            .onExitCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {

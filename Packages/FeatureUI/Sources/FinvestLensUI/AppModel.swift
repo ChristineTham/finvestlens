@@ -150,6 +150,8 @@ public final class AppModel {
 
     /// `true` when a document is open.
     public var isOpen: Bool { document != nil }
+    /// The open document's file URL (window title / titlebar proxy icon).
+    public var documentURL: URL? { document?.fileURL }
     /// `true` when there are unsaved changes.
     public var hasUnsavedChanges: Bool { document?.hasUnsavedChanges ?? false }
 
@@ -236,6 +238,7 @@ public final class AppModel {
         refreshAll()
         startQuoteAutoRefresh()
         recordLastBook(url)
+        resetUndoBaseline()
     }
 
     public func open(at url: URL, breakStaleLock: Bool = false) throws {
@@ -246,6 +249,7 @@ public final class AppModel {
         lockIfNeeded()
         recordLastBook(url)
         observeExternalChanges()
+        resetUndoBaseline()
     }
 
     /// Watches the shared file for external changes (iCloud sync from another
@@ -424,6 +428,7 @@ public final class AppModel {
         quoteSymbols = [:]
         quoteStatus = .idle
         whatIfEvents = []
+        resetUndoBaseline()
     }
 
     // MARK: Mutations
@@ -519,6 +524,51 @@ public final class AppModel {
     func markDirtyAndRefresh() {
         document?.markDirty()
         refreshAll()
+        registerUndoSnapshot()
+    }
+
+    // MARK: Undo / redo (HIG: every edit must be undoable)
+    //
+    // Snapshot-based: after every mutation the previous whole-book state (as
+    // GnuCash XML, which round-trips all data including KVP slots) is pushed
+    // onto the window's UndoManager. Undoing swaps the snapshot back in; the
+    // swap itself funnels through `markDirtyAndRefresh`, which is what makes
+    // redo work.
+
+    /// The focused window's undo manager, injected by the root view.
+    @ObservationIgnored public weak var undoManager: UndoManager? {
+        didSet { undoManager?.levelsOfUndo = 25 }
+    }
+    /// The book state after the previous mutation (== before the next one).
+    @ObservationIgnored var lastUndoSnapshot: Data?
+
+    /// Called from `markDirtyAndRefresh` after each mutation.
+    private func registerUndoSnapshot() {
+        guard isOpen else { return }
+        let previous = lastUndoSnapshot
+        lastUndoSnapshot = gnuCashExportData()
+        guard let previous, previous != lastUndoSnapshot else { return }
+        undoManager?.registerUndo(withTarget: self) { model in
+            model.restoreSnapshot(previous)
+        }
+        if undoManager?.isUndoing != true && undoManager?.isRedoing != true {
+            undoManager?.setActionName("Change")
+        }
+    }
+
+    /// Resets the undo baseline (call when a book is opened/created/closed).
+    func resetUndoBaseline() {
+        undoManager?.removeAllActions(withTarget: self)
+        lastUndoSnapshot = isOpen ? gnuCashExportData() : nil
+    }
+
+    /// Restores a whole-book snapshot (the undo/redo primitive).
+    func restoreSnapshot(_ data: Data) {
+        guard let document,
+              let result = try? GnuCashXMLImporter.importBook(from: data) else { return }
+        document.replaceBook(result.book)
+        reloadKvpCollections()
+        markDirtyAndRefresh()
     }
 
     private func rebuildAccountTree() {

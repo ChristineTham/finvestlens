@@ -25,9 +25,28 @@
 import SwiftUI
 import FinvestLensUI
 
+#if os(macOS)
+import AppKit
+
+/// Saves the open book (and releases its lock) on quit, so ⌘Q never loses
+/// data and never leaves a stale lock behind.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    var terminationHandler: (() -> Void)?
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        terminationHandler?()
+        return .terminateNow
+    }
+}
+#endif
+
 @main
 struct finvestlensApp: App {
     @State private var model = AppModel()
+    @Environment(\.openWindow) private var openWindow
+    #if os(macOS)
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #endif
 
     var body: some Scene {
         WindowGroup {
@@ -38,6 +57,17 @@ struct finvestlensApp: App {
                     model.openBook(at: url)
                 }
                 .finvestLensAppearance()
+            #if os(macOS)
+                // Save the open book (and release its lock) on ⌘Q, so quitting
+                // never loses data. Wired here because the adaptor instance —
+                // not NSApp.delegate, which is SwiftUI's proxy — is the real
+                // delegate object.
+                .onAppear {
+                    appDelegate.terminationHandler = { [weak model] in
+                        model?.saveAndCloseIfOpen()
+                    }
+                }
+            #endif
         }
         .commands {
             #if os(macOS)
@@ -98,9 +128,15 @@ struct finvestlensApp: App {
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                     .disabled(!model.isOpen || model.selectedAccountID == nil)
                 Divider()
-                Button("Reports…") { model.presentedPanel = .reports }
-                    .keyboardShortcut("r", modifiers: .command)
-                    .disabled(!model.isOpen)
+                Button("Reports…") {
+                    #if os(macOS)
+                    openWindow(id: "reports")
+                    #else
+                    model.presentedPanel = .reports
+                    #endif
+                }
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(!model.isOpen)
                 Button("Budget…") { model.presentedPanel = .budget }
                     .keyboardShortcut("b", modifiers: .command)
                     .disabled(!model.isOpen)
@@ -129,6 +165,13 @@ struct finvestlensApp: App {
         }
 
         #if os(macOS)
+        // Reports get their own window (HIG: workspaces aren't sheets).
+        WindowGroup("Reports", id: "reports") {
+            ReportsWindow(model: model)
+                .finvestLensAppearance()
+        }
+        .defaultSize(width: 760, height: 560)
+
         Settings {
             AppearanceSettingsView()
                 .finvestLensAppearance()

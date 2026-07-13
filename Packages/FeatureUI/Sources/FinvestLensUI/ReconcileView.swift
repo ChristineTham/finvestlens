@@ -41,15 +41,17 @@ struct ReconcileView: View {
                 .multilineTextAlignment(.trailing)
         }
         .navigationTitle("Reconcile")
+        .onExitCommand { dismiss() }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Start") {
                     model.beginReconcile(accountID: accountID, statementDate: statementDate,
                                          statementBalance: Decimal(string: endingBalanceText) ?? 0)
                 }
+                .keyboardShortcut(.defaultAction)
                 .disabled(Decimal(string: endingBalanceText) == nil)
             }
         }
@@ -87,14 +89,16 @@ struct ReconcileView: View {
             }
         }
         .navigationTitle("Reconcile \(session.accountName)")
+        .onExitCommand { model.cancelReconcile(); dismiss() }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { model.cancelReconcile(); dismiss() }
+                Button("Cancel") { model.cancelReconcile(); dismiss() }.keyboardShortcut(.cancelAction)
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Finish") {
                     if model.finishReconcile() { dismiss() }
                 }
+                .keyboardShortcut(.defaultAction)
                 .disabled(!session.isBalanced)
             }
         }

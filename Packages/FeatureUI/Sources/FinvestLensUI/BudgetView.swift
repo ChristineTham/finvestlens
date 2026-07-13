@@ -166,9 +166,10 @@ struct EditBudgetSheet: View {
                 }
             }
             .navigationTitle("Edit Budget")
+            .onExitCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }

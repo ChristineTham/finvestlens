@@ -117,9 +117,10 @@ struct AddPriceSheet: View {
                     .multilineTextAlignment(.trailing)
             }
             .navigationTitle("Add Price")
+            .onExitCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") { add() }
@@ -167,8 +168,9 @@ struct AddRateSheet: View {
                     .multilineTextAlignment(.trailing)
             }
             .navigationTitle("Add Exchange Rate")
+            .onExitCommand { dismiss() }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") { add() }.disabled(!isValid)
                 }

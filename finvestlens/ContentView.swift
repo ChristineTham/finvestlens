@@ -30,6 +30,7 @@ import FinvestLensUI
 /// document-operation errors (with stale-lock recovery) and confirmations.
 struct RootHost: View {
     @Bindable var model: AppModel
+    @Environment(\.undoManager) private var undoManager
     @State private var importing = false
 
     static var documentType: UTType {
@@ -40,12 +41,17 @@ struct RootHost: View {
         Group {
             if model.isOpen && model.isLocked {
                 LockView(model: model)
-            } else if model.isOpen {
+            } else if model.isOpen, let url = model.documentURL {
                 FinvestLensRootView(model: model)
+                    // HIG: name the window after the open document, with a
+                    // titlebar proxy icon (drag / reveal-in-Finder).
+                    .navigationDocument(url)
             } else {
                 WelcomeView(model: model, onNew: newBook, onOpen: openBook)
             }
         }
+        .onAppear { model.undoManager = undoManager }
+        .onChange(of: undoManager == nil) { model.undoManager = undoManager }
         .fileImporter(isPresented: $importing, allowedContentTypes: [Self.documentType, .data]) { result in
             if case .success(let url) = result { model.openBook(at: url) }
         }

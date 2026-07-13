@@ -12,6 +12,23 @@ import FinvestLensEngine
 import FinvestLensReports
 
 /// A tabbed reports view: Balance Sheet, Income Statement, and a Net-Worth chart.
+/// Wraps the reports workspace for presentation in its own window (HIG:
+/// sheets are for brief, focused tasks — an analytics workspace gets a
+/// window so it doesn't block the register).
+public struct ReportsWindow: View {
+    @Bindable var model: AppModel
+    public init(model: AppModel) { self.model = model }
+    public var body: some View {
+        if model.isOpen {
+            ReportsView(model: model)
+        } else {
+            ContentUnavailableView("No book open", systemImage: "chart.pie",
+                                   description: Text("Open a book to see its reports."))
+                .frame(minWidth: 520, minHeight: 440)
+        }
+    }
+}
+
 struct ReportsView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss

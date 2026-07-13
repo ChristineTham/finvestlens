@@ -79,9 +79,10 @@ struct ImportView: View {
                 }
             }
             .navigationTitle("Import \(payload.format.rawValue.uppercased())")
+            .onExitCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Import \(importCount)") {

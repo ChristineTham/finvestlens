@@ -153,3 +153,58 @@ struct UsabilityGapTests {
         #expect(Set(model.recentBooks).count == model.recentBooks.count)
     }
 }
+
+@MainActor
+@Suite("Undo / redo")
+struct UndoTests {
+
+    @Test("Mutations are undoable and redoable via whole-book snapshots")
+    func undoRedo() throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let model = AppModel()
+        let undo = UndoManager()
+        model.undoManager = undo
+
+        try model.newDocument(at: url)
+        defer { model.close() }
+        #expect(!undo.canUndo)   // opening isn't an edit
+
+        _ = model.addAccount(name: "Assets", type: .asset)
+        #expect(model.accountTree.count == 1)
+        #expect(undo.canUndo)
+
+        undo.undo()
+        #expect(model.accountTree.isEmpty)
+
+        undo.redo()
+        #expect(model.accountTree.count == 1)
+        #expect(model.accountTree.first?.name == "Assets")
+    }
+
+    @Test("Delete transaction is undoable")
+    func undoDelete() throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let model = AppModel()
+        let undo = UndoManager()
+        model.undoManager = undo
+        try model.newDocument(at: url)
+        defer { model.close() }
+
+        let a = try #require(model.addAccount(name: "Bank", type: .bank))
+        let b = try #require(model.addAccount(name: "Food", type: .expense))
+        model.addTransfer(from: a, to: b, amount: 25, date: Date(), description: "Lunch")
+        let txnID = try #require(model.book?.transactions.first?.guid)
+        // In tests every mutation lands in one implicit event group (no run
+        // loop); clear history so undo targets only the delete below.
+        undo.removeAllActions()
+
+        model.deleteTransaction(txnID)
+        #expect(model.book?.transactions.isEmpty == true)
+
+        undo.undo()
+        #expect(model.book?.transactions.count == 1)
+        #expect(model.book?.transactions.first?.transactionDescription == "Lunch")
+    }
+}

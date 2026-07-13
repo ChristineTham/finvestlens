@@ -106,6 +106,12 @@ public final class FinvestLensDocument {
     /// Marks the in-memory book as modified (call after mutating ``book``).
     public func markDirty() { hasUnsavedChanges = true }
 
+    /// Swaps in a different in-memory book (undo/redo snapshot restore).
+    public func replaceBook(_ newBook: Book) {
+        book = newBook
+        markDirty()
+    }
+
     // MARK: Save / discard
 
     /// Writes the working copy back to the shared file, atomically and under the

@@ -66,3 +66,19 @@ Still deferred:
 | --- | --- |
 | App Sandbox | Disabled by decision (13 Jul 2026): sibling `.lock` files at user-selected locations are denied by the sandbox; related-item declaration + coordinated I/O are in place but macOS still refused. Direct (notarized) distribution doesn't need the sandbox. Revisit before any Mac App Store submission. |
 | iOS document flows | New/Open/Import panels are AppKit; iOS uses fileImporter fallbacks, untested. |
+
+## HIG review (13 Jul 2026)
+
+Fixed: undo/redo (snapshot-based, Edit menu integrated), save-on-quit via
+NSApplicationDelegate (⌘Q never loses data, releases the lock), Reports in
+its own window, window titled with document proxy icon, Esc/⌘. cancels
+sheets (+ Return confirms reconcile), toolbar help tags, Title Case buttons.
+
+Known nuances / still deferred:
+
+| Item | Notes |
+| --- | --- |
+| Esc inside a focused text field | AppKit's field editor consumes the raw Escape (completion); ⌘. always cancels, Esc works otherwise. SwiftUI offers no clean override. |
+| Undo action names | Generic "Undo Change" — per-operation names ("Undo Delete Transaction") need call-site annotations. |
+| Window/state restoration | App launches to the splash; does not reopen the last book automatically. |
+| Help menu | No help book / anchors. |

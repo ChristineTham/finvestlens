@@ -64,8 +64,9 @@ struct CurrencyTransferSheet: View {
             }
             .formStyle(.grouped)
             .navigationTitle("Currency Transfer")
+            .onExitCommand { dismiss() }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Transfer") { record() }.disabled(!isValid)
                 }

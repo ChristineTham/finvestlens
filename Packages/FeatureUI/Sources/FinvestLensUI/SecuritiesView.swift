@@ -118,8 +118,9 @@ private struct EditSecuritySheet: View {
                 TextField("Full name", text: $fullName)
             }
             .navigationTitle("Edit Security")
+            .onExitCommand { dismiss() }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { model.renameSecurity(commodity, fullName: fullName); dismiss() }
                         .disabled(fullName.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -166,8 +167,9 @@ private struct PriceTargetSheet: View {
                     .scaledFont(.caption).foregroundStyle(.secondary)
             }
             .navigationTitle("Price Target")
+            .onExitCommand { dismiss() }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 if hasExisting {
                     ToolbarItem(placement: .destructiveAction) {
                         Button("Remove Target", role: .destructive) {
@@ -213,8 +215,9 @@ private struct AddWatchSheet: View {
                 TextField("Full name (optional)", text: $name)
             }
             .navigationTitle("Watch Security")
+            .onExitCommand { dismiss() }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
                         model.addWatchSecurity(exchange: exchange, ticker: ticker, name: name)
