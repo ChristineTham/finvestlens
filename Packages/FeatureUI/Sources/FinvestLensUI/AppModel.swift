@@ -253,14 +253,61 @@ public final class AppModel {
     }
 
     public func open(at url: URL, breakStaleLock: Bool = false) throws {
-        document = try FinvestLensDocument.open(at: url, breakStaleLock: breakStaleLock)
+        // Books picked via the iOS document picker (iCloud Drive, Box,
+        // Dropbox, …) are security-scoped; access must span the whole session
+        // because saves write back to the shared file.
+        let accessURL = beginBookAccess(to: url)
+        do {
+            document = try FinvestLensDocument.open(at: accessURL,
+                                                    breakStaleLock: breakStaleLock)
+        } catch {
+            endBookAccess()
+            throw error
+        }
         reloadKvpCollections()
         refreshAll()
         startQuoteAutoRefresh()
         lockIfNeeded()
-        recordLastBook(url)
+        recordLastBook(accessURL)
         observeExternalChanges()
         resetUndoBaseline()
+    }
+
+    // MARK: Security-scoped access (iOS document-provider locations)
+
+    private var scopedBookURL: URL?
+    private static let recentBookmarksKey = "finvestlens.recentBookBookmarks"
+
+    /// Starts security-scoped access to a book and keeps it for the session.
+    /// Picker URLs carry their own scope; recents resolve through the stored
+    /// bookmark (which can rewrite the path, so the caller must open the
+    /// returned URL). On unsandboxed macOS both attempts are no-ops and the
+    /// URL is returned unchanged.
+    private func beginBookAccess(to url: URL) -> URL {
+        endBookAccess()
+        if url.startAccessingSecurityScopedResource() {
+            scopedBookURL = url
+            return url
+        }
+        if let resolved = Self.resolveBookmark(forPath: url.path),
+           resolved.startAccessingSecurityScopedResource() {
+            scopedBookURL = resolved
+            return resolved
+        }
+        return url
+    }
+
+    private func endBookAccess() {
+        scopedBookURL?.stopAccessingSecurityScopedResource()
+        scopedBookURL = nil
+    }
+
+    private static func resolveBookmark(forPath path: String) -> URL? {
+        guard let bookmarks = UserDefaults.standard
+                .dictionary(forKey: recentBookmarksKey) as? [String: Data],
+              let data = bookmarks[path] else { return nil }
+        var stale = false
+        return try? URL(resolvingBookmarkData: data, bookmarkDataIsStale: &stale)
     }
 
     /// Keeps the advisory lock alive and autosaves while a book is open.
@@ -364,12 +411,26 @@ public final class AppModel {
         paths = Array(paths.prefix(5))
         UserDefaults.standard.set(paths, forKey: "finvestlens.recentBookPaths")
         recentBooks = paths.map { URL(fileURLWithPath: $0) }
+
+        // Bookmark taken while scoped access is active, so Open Recent can
+        // regain the grant on iOS after a relaunch. Pruned with the list.
+        var bookmarks = UserDefaults.standard
+            .dictionary(forKey: Self.recentBookmarksKey) as? [String: Data] ?? [:]
+        if let bookmark = try? url.bookmarkData() {
+            bookmarks[url.path] = bookmark
+        }
+        bookmarks = bookmarks.filter { paths.contains($0.key) }
+        UserDefaults.standard.set(bookmarks, forKey: Self.recentBookmarksKey)
     }
 
     static func loadRecents() -> [URL] {
-        (UserDefaults.standard.stringArray(forKey: "finvestlens.recentBookPaths") ?? [])
+        // A provider-backed book (iCloud/Box/Dropbox on iOS) isn't visible to
+        // fileExists without its grant — keep it if we hold a bookmark for it.
+        let bookmarks = UserDefaults.standard
+            .dictionary(forKey: recentBookmarksKey) as? [String: Data] ?? [:]
+        return (UserDefaults.standard.stringArray(forKey: "finvestlens.recentBookPaths") ?? [])
             .map { URL(fileURLWithPath: $0) }
-            .filter { FileManager.default.fileExists(atPath: $0.path) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) || bookmarks[$0.path] != nil }
     }
 
     /// `true` when `error` means the book is locked by another instance —
@@ -484,6 +545,7 @@ public final class AppModel {
         searchQuery = ""
         document?.discard()
         document = nil
+        endBookAccess()
         accountTree = []
         registerRows = []
         selectedAccountID = nil

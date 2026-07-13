@@ -33,22 +33,48 @@ public final class FinvestLensDocument {
     public var hasUnsavedChanges: Bool
 
     private let lock: FileLock
+    /// `false` when the sibling `.lock` file could not be created — e.g. an
+    /// iOS file-provider location (iCloud Drive, Box, Dropbox) where the
+    /// picker grant covers only the document itself. The document still
+    /// opens; saves are guarded by fingerprint conflict detection instead.
+    public private(set) var advisoryLockHeld: Bool
     private let workingCopyURL: URL
     private var store: SQLiteDocumentStore
     /// Hash of the shared file as of open / last successful save — for conflict
     /// detection (`FR-DAT-08`).
     private var baselineFingerprint: Data
 
-    private init(fileURL: URL, book: Book, lock: FileLock,
+    private init(fileURL: URL, book: Book, lock: FileLock, lockHeld: Bool,
                  workingCopyURL: URL, store: SQLiteDocumentStore,
                  fingerprint: Data, dirty: Bool) {
         self.fileURL = fileURL
         self.book = book
         self.lock = lock
+        self.advisoryLockHeld = lockHeld
         self.workingCopyURL = workingCopyURL
         self.store = store
         self.baselineFingerprint = fingerprint
         self.hasUnsavedChanges = dirty
+    }
+
+    /// Acquires the advisory lock, tolerating environments where the lock
+    /// file cannot be written. A **live** lock held by someone else still
+    /// throws (`alreadyLocked`) — only "can't create the sibling file here"
+    /// degrades to lockless mode.
+    private static func acquireLockIfPossible(_ lock: FileLock,
+                                              breakStaleLock: Bool) throws -> Bool {
+        do {
+            try lock.acquire()
+            return true
+        } catch let error as FileLock.LockError {
+            if case .alreadyLocked = error, breakStaleLock {
+                try lock.breakStaleLockAndAcquire()
+                return true
+            }
+            throw error
+        } catch {
+            return false
+        }
     }
 
     // MARK: Open / create
@@ -63,19 +89,22 @@ public final class FinvestLensDocument {
         let store = try SQLiteDocumentStore(path: workingCopyURL.path)
         let book = Book(baseCurrency: baseCurrency)
         try store.write(book)
-        try Self.copyItem(from: workingCopyURL, to: fileURL)
+        try Self.replaceItem(at: fileURL, withContentsOf: workingCopyURL)
 
         let lock = FileLock(documentURL: fileURL)
+        let lockHeld: Bool
         do {
-            try lock.acquire()
+            lockHeld = try Self.acquireLockIfPossible(lock, breakStaleLock: false)
         } catch {
-            // Don't leave an unlockable orphan behind.
+            // A live lock on a file we just created — don't leave an
+            // unlockable orphan behind.
             try? FileManager.default.removeItem(at: fileURL)
             throw error
         }
 
         let fingerprint = try Self.fingerprint(of: fileURL)
         return FinvestLensDocument(fileURL: fileURL, book: book, lock: lock,
+                                   lockHeld: lockHeld,
                                    workingCopyURL: workingCopyURL, store: store,
                                    fingerprint: fingerprint, dirty: false)
     }
@@ -84,19 +113,21 @@ public final class FinvestLensDocument {
     /// working copy, and materialises the book.
     public static func open(at fileURL: URL, breakStaleLock: Bool = false) throws -> FinvestLensDocument {
         let lock = FileLock(documentURL: fileURL)
-        do {
-            try lock.acquire()
-        } catch FileLock.LockError.alreadyLocked where breakStaleLock {
-            try lock.breakStaleLockAndAcquire()
-        }
+        let lockHeld = try Self.acquireLockIfPossible(lock, breakStaleLock: breakStaleLock)
 
         let workingCopyURL = Self.makeWorkingCopyURL()
-        try Self.copyItem(from: fileURL, to: workingCopyURL)
+        do {
+            try Self.copyItem(from: fileURL, to: workingCopyURL)
+        } catch {
+            if lockHeld { lock.release() }
+            throw error
+        }
         let store = try SQLiteDocumentStore(path: workingCopyURL.path)
         let book = try store.read()
         let fingerprint = try Self.fingerprint(of: fileURL)
 
         return FinvestLensDocument(fileURL: fileURL, book: book, lock: lock,
+                                   lockHeld: lockHeld,
                                    workingCopyURL: workingCopyURL, store: store,
                                    fingerprint: fingerprint, dirty: false)
     }
@@ -129,7 +160,7 @@ public final class FinvestLensDocument {
         try Self.replaceItem(at: fileURL, withContentsOf: workingCopyURL)  // atomic write-back
         baselineFingerprint = try Self.fingerprint(of: fileURL)
         hasUnsavedChanges = false
-        try? lock.refreshHeartbeat()
+        if advisoryLockHeld { try? lock.refreshHeartbeat() }
     }
 
     /// Discards unsaved changes by reloading the book from the shared file.
@@ -150,7 +181,10 @@ public final class FinvestLensDocument {
     }
 
     /// Refreshes the lock heartbeat (drive from a timer while open).
-    public func heartbeat() { try? lock.refreshHeartbeat() }
+    public func heartbeat() {
+        guard advisoryLockHeld else { return }
+        try? lock.refreshHeartbeat()
+    }
 
     // MARK: External changes / sync (`FR-PLT-02`)
 
@@ -215,11 +249,25 @@ public final class FinvestLensDocument {
         return directory.appendingPathComponent(UUID().uuidString + ".finvestlens")
     }
 
+    /// Copies the shared file to a local destination under a coordinated
+    /// read. Coordination is what makes cloud placeholders work: a dataless
+    /// item on iCloud Drive or a File Provider drive (Box, Dropbox) is
+    /// downloaded and materialised before the accessor runs.
     private static func copyItem(from source: URL, to destination: URL) throws {
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var thrown: Error?
+        coordinator.coordinate(readingItemAt: source, options: [],
+                               error: &coordinationError) { url in
+            do {
+                if FileManager.default.fileExists(atPath: destination.path) {
+                    try FileManager.default.removeItem(at: destination)
+                }
+                try FileManager.default.copyItem(at: url, to: destination)
+            } catch { thrown = error }
         }
-        try FileManager.default.copyItem(at: source, to: destination)
+        if let coordinationError { throw coordinationError }
+        if let thrown { throw thrown }
     }
 
     private static func replaceItem(at destination: URL, withContentsOf source: URL) throws {
@@ -249,8 +297,17 @@ public final class FinvestLensDocument {
     }
 
     private static func fingerprint(of url: URL) throws -> Data {
-        let data = try Data(contentsOf: url)
-        return Data(SHA256.hash(data: data))
+        // Coordinated for the same reason as `copyItem` — never hash a
+        // half-synced or dataless cloud file.
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var result: Result<Data, Error> = .failure(CocoaError(.fileReadUnknown))
+        coordinator.coordinate(readingItemAt: url, options: [],
+                               error: &coordinationError) { url in
+            result = Result { try Data(contentsOf: url) }
+        }
+        if let coordinationError { throw coordinationError }
+        return Data(SHA256.hash(data: try result.get()))
     }
 }
 

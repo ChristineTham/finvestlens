@@ -221,4 +221,54 @@ struct DocumentLifecycleTests {
         #expect(doc.book.accounts.first { $0.name == "Temp" } == nil)
         #expect(!doc.hasUnsavedChanges)
     }
+
+    @Test("Normal open holds the advisory lock")
+    func lockHeldLocally() throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let doc = try FinvestLensDocument.create(at: url)
+        defer { doc.discard() }
+        #expect(doc.advisoryLockHeld)
+    }
+
+    @Test("Opens lockless where the sibling lock file can't be created")
+    func locklessFallback() throws {
+        // Simulates an iOS file-provider grant (iCloud Drive / Box / Dropbox):
+        // the document is readable but its folder is not writable, so the
+        // sibling .lock cannot be created.
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("Book.finvestlens")
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755],
+                                                   ofItemAtPath: folder.path)
+            try? FileManager.default.removeItem(at: folder)
+        }
+
+        try FinvestLensDocument.create(at: url).discard()
+        try FileManager.default.setAttributes([.posixPermissions: 0o555],
+                                              ofItemAtPath: folder.path)
+
+        let doc = try FinvestLensDocument.open(at: url)
+        defer { doc.discard() }
+        #expect(!doc.advisoryLockHeld)
+        #expect(doc.book.commodities.contains(.aud))
+        #expect(!FileManager.default.fileExists(
+            atPath: url.deletingPathExtension().appendingPathExtension("lock").path))
+        doc.heartbeat()   // must be a no-op, not an error
+    }
+
+    @Test("A live lock still refuses even where locking is possible")
+    func liveLockStillRefuses() throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let first = try FinvestLensDocument.create(at: url)
+        defer { first.discard() }
+        #expect(throws: FileLock.LockError.self) {
+            try FinvestLensDocument.open(at: url)
+        }
+    }
 }

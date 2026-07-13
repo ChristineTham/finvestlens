@@ -237,6 +237,12 @@ Modeled on GnuCash's `.LCK` approach, hardened:
 - If the lock exists and its `heartbeatAt` is **fresh**, the document is in use elsewhere → the open fails showing the holder; if the heartbeat is **stale** (> 90 s), the UI offers **Break Lock and Open**. (An Open-Read-Only mode is not in 1.0.)
 - **Heartbeat:** while open, `heartbeatAt` is refreshed every 25 s (a background task in `AppModel`), and on every save. This distinguishes a live holder from a crashed one.
 - **Release on close;** crash recovery relies on stale-heartbeat detection.
+- **Lockless fallback (iOS providers).** Where the sibling `.lock` cannot be
+  created — an iOS file-provider grant (iCloud Drive, Box, Dropbox via the
+  Files picker) covers only the document, and the related-item mechanism is
+  macOS-only — the document still opens, with `advisoryLockHeld == false`;
+  saves remain guarded by the §6.2 fingerprint conflict check. A **live**
+  lock held by someone else still refuses the open.
 
 ### 6.2 Local working copy + atomic write-back
 
@@ -254,6 +260,12 @@ For **genuinely local volumes** (not a network share), the working-copy hop can 
 ### 6.3 iCloud / Files integration
 
 Because the document is a file, sync is **file-level**: place it in iCloud Documents or any Files-accessible location. We implement **`NSFilePresenter`** to react to external changes and use **`NSFileVersion`** for conflict resolution, consistent with the NAS write-back path. (This replaces the earlier SwiftData+CloudKit plan; `FR-PLT-02` becomes file-based sync.)
+
+Cloud specifics (verified 14 Jul 2026 on Box Drive and iCloud Drive, incl. an evicted/dataless file):
+
+- **Dataless placeholders.** The open-time copy-in and every fingerprint go through a **coordinated read**, which downloads and materialises a not-yet-local file (iCloud eviction, File Provider online-only) before it is touched.
+- **iOS security scope.** Books picked on iOS are security-scoped; `AppModel` holds the grant for the whole session (saves write back to the shared file) and stores a **bookmark** per recent so Open Recent can regain the grant after a relaunch.
+- **macOS provider drives** (`~/Library/CloudStorage`: Box, Dropbox, OneDrive) behave like local folders for the unsandboxed app; the sibling `.lock` syncs through the provider and extends single-writer protection across machines (heartbeat staleness is approximate under sync latency).
 
 > ADR-8: NAS safety = app-level lock file + heartbeat + local working copy + **explicit (Save/autosave) coordinated atomic write-back** + discardable sessions, never direct SQLite-over-network.
 
