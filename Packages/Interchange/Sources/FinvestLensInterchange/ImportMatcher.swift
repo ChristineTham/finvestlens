@@ -15,13 +15,19 @@ public struct MatchResult: Identifiable, Sendable {
     public var staged: StagedTransaction
     /// `true` if this appears to already exist in the target account.
     public var isDuplicate: Bool
+    /// The existing split in the target account this row matched, when
+    /// `isDuplicate` — lets reconciliation mark that split cleared instead
+    /// of merely skipping the row.
+    public var matchedSplitID: GncGUID?
     /// Suggested counter-account for the other leg, from payee history.
     public var suggestedAccountID: GncGUID?
 
-    public init(staged: StagedTransaction, isDuplicate: Bool, suggestedAccountID: GncGUID?) {
+    public init(staged: StagedTransaction, isDuplicate: Bool,
+                matchedSplitID: GncGUID? = nil, suggestedAccountID: GncGUID?) {
         self.id = staged.id
         self.staged = staged
         self.isDuplicate = isDuplicate
+        self.matchedSplitID = matchedSplitID
         self.suggestedAccountID = suggestedAccountID
     }
 }
@@ -66,7 +72,7 @@ public enum ImportMatcher {
             return counts?.max { $0.value < $1.value }?.key
         }
 
-        func isDuplicate(_ row: StagedTransaction) -> Bool {
+        func duplicateMatch(_ row: StagedTransaction) -> Split? {
             let target = target.commodity.round(row.amount)
             for split in targetSplits {
                 guard let transaction = split.transaction else { continue }
@@ -74,22 +80,24 @@ public enum ImportMatcher {
                    transaction.number == row.reference
                     || split.action == row.reference
                     || split.memo.contains(row.reference) {
-                    return true
+                    return split
                 }
                 if split.account?.commodity.round(split.quantity) == target {
                     let days = abs(calendar.dateComponents([.day],
                                                            from: transaction.datePosted,
                                                            to: row.date).day ?? .max)
-                    if days <= dayWindow { return true }
+                    if days <= dayWindow { return split }
                 }
             }
-            return false
+            return nil
         }
 
         return staged.map { row in
             let hint = row.payee.isEmpty ? row.memo : row.payee
+            let match = duplicateMatch(row)
             return MatchResult(staged: row,
-                               isDuplicate: isDuplicate(row),
+                               isDuplicate: match != nil,
+                               matchedSplitID: match?.guid,
                                suggestedAccountID: suggest(for: hint))
         }
     }

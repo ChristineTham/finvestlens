@@ -26,6 +26,7 @@ let package = Package(
         .package(path: "../Reports"),
         .package(path: "../Rules"),
         .package(path: "../Quotes"),
+        .package(path: "../Intelligence"),
     ],
     targets: [
         .target(
@@ -37,6 +38,7 @@ let package = Package(
                 .product(name: "FinvestLensReports", package: "Reports"),
                 .product(name: "FinvestLensRules", package: "Rules"),
                 .product(name: "FinvestLensQuotes", package: "Quotes"),
+                .product(name: "FinvestLensIntelligence", package: "Intelligence"),
             ]
         ),
         .testTarget(

@@ -47,6 +47,7 @@ public enum RootPanel: String, Identifiable, Sendable {
     case newAccount, newTransaction, stockTransaction, currencyTransfer
     case reports, rules, scheduled, budget, prices, saveSearch, onboarding
     case reconcile
+    case autoCategorize
     public var id: String { rawValue }
 }
 
@@ -118,6 +119,8 @@ public final class AppModel {
     public var bankImportRequested = false
     /// Set by menu commands to trigger the GnuCash XML exporter in the root view.
     public var exportRequested = false
+    /// Set by menu commands to trigger the dividend-statement (PDF) importer.
+    public var dividendImportRequested = false
 
     /// A user-facing document error (open/new/import failed). When
     /// ``DocumentError/lockedURL`` is set the UI offers "Break Lock" recovery.

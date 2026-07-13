@@ -113,3 +113,24 @@ Known 1.0 scope limits (post-1.0 backlog, in priority order):
 | Open Read-Only on live lock | §6.1 | Open fails with holder info + Break-Lock; no read-only mode. | P7 |
 | Autosave interval setting | §3 | Fixed 5 min; not user-configurable/disableable yet. | P7 |
 | Business (P7), bank sync/MT940/CAMT (P8), planners (P9) | FR-BUS, FR-XIO-04/07, FR-PLAN-10.. | Post-1.0 phases per plan.md. | P7–P9 |
+
+## Apple Intelligence (13 Jul 2026)
+
+Post-1.0 addition of the `Intelligence` package (FR-AI-01…06, Architecture
+§11). Fixed along the way (pre-existing 1.0 bugs uncovered by GUI testing):
+**File-menu Save/Revert/Import/Export/Close Book were silently missing**
+(`CommandGroup(after: .saveItem)` has no anchor in a plain WindowGroup —
+re-anchored to `.newItem`), and **bank-file import never presented its picker
+on macOS** (SwiftUI `.fileImporter` unreliable here; replaced with NSOpenPanel,
+deferred out of the view-update transaction).
+
+Known limits:
+
+| Item | FR | Notes | Target |
+|---|---|---|---|
+| Guardrail refusals | FR-AI-05 | On-device safety layer deterministically refuses some borderline inputs; budget advisor retries simplified phrasing then falls back to average-based plan. Other features surface a friendly message. | monitor |
+| Scanned-statement OCR quality | FR-AI-01 | Vision OCR fallback is untested against real bank scans; digital-PDF reflow is solid. | P8 |
+| Statement sign inference without balance column | FR-AI-01 | Signs are re-derived from the running balance; statements with unsigned debit/credit columns *and* no balance column may import with wrong signs (review screen catches). | P8 |
+| Invoice → attachment link | FR-AI-03 | Splits are created from the invoice, but the PDF itself is not attached (FR-REG-10 attachments not implemented). | P8 |
+| iOS file pickers | FR-AI-01/03/04 | iOS keeps `.fileImporter`; not yet exercised on-device. | P8 |
+| Live-model tests under load | — | `LiveModelTests` can time out when the model daemon is busy; they self-skip without Apple Intelligence. Not in CI. | monitor |

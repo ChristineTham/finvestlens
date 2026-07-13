@@ -17,6 +17,13 @@
 
 > **Deferred items from completed phases** (P0–P5) are tracked in [deferred.md](deferred.md), with FR refs, status, and a suggested pick-up phase.
 
+> **Post-1.0 (13 Jul 2026): Apple Intelligence.** A new `Intelligence` package
+> (on-device Foundation Models) adds six features — PDF statement import with
+> light reconciliation (FR-AI-01), auto-categorisation (FR-AI-02), invoice
+> splitting (FR-AI-03), dividend statements incl. franking credits (FR-AI-04),
+> budget suggestion (FR-AI-05), and a forecast outlook (FR-AI-06). See
+> [Architecture §11](architecture.md).
+
 This is the authoritative **delivery schedule**. It sequences the requirements from the [PRD](prd.md) (`FR-*`), the architecture decisions ([`ADR-*`](architecture.md)), and the porting map ([Porting §2](porting.md)) into ten releasable phases (P0–P9). Each phase lists its **objective, workstreams/tasks, dependencies, deliverables, exit criteria, test focus, and risks**.
 
 ---

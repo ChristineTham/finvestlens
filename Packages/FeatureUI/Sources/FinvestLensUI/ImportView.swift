@@ -10,11 +10,19 @@ import SwiftUI
 import FinvestLensEngine
 import FinvestLensInterchange
 
-/// A file the user chose to import, with its detected format.
+/// A file the user chose to import, with its detected format. PDF statements
+/// arrive with `prestaged` rows already extracted by Apple Intelligence.
 struct ImportPayload: Identifiable {
     let id = UUID()
     let data: Data
     let format: BankFileFormat
+    var prestaged: [StagedTransaction]?
+
+    init(data: Data, format: BankFileFormat, prestaged: [StagedTransaction]? = nil) {
+        self.data = data
+        self.format = format
+        self.prestaged = prestaged
+    }
 }
 
 /// Reviews a bank file before import: pick the target account, preview matched
@@ -31,6 +39,9 @@ struct ImportView: View {
     @State private var results: [MatchResult] = []
     @State private var assignments: [UUID: GncGUID] = [:]
     @State private var skipDuplicates = true
+    @State private var markMatchedCleared = true
+    @State private var suggesting = false
+    @State private var suggestError: String?
 
     // CSV column mapping (only shown for CSV).
     @State private var dateCol = 0
@@ -71,6 +82,25 @@ struct ImportView: View {
 
                 if !results.isEmpty {
                     Toggle("Skip duplicates", isOn: $skipDuplicates)
+                    if results.contains(where: \.isDuplicate) {
+                        Toggle("Mark matched transactions as cleared", isOn: $markMatchedCleared)
+                            .help("Reconcile register entries that this statement confirms")
+                    }
+                    if model.isIntelligenceAvailable {
+                        Section {
+                            Button {
+                                suggestCategories()
+                            } label: {
+                                Label(suggesting ? "Suggesting…" : "Suggest Categories",
+                                      systemImage: "sparkles")
+                            }
+                            .disabled(suggesting)
+                            .help("Let Apple Intelligence propose a destination account for each row")
+                            if let suggestError {
+                                Text(suggestError).scaledFont(.caption).foregroundStyle(.red)
+                            }
+                        }
+                    }
                     Section("\(results.count) transactions") {
                         ForEach(results) { result in
                             row(result)
@@ -90,10 +120,13 @@ struct ImportView: View {
                             _ = model.importMatched(results, intoAccountID: targetID,
                                                     assignments: assignments,
                                                     skipDuplicates: skipDuplicates)
+                            if markMatchedCleared {
+                                model.reconcileMatchedDuplicates(results)
+                            }
                         }
                         dismiss()
                     }
-                    .disabled(importCount == 0)
+                    .disabled(importCount == 0 && !(markMatchedCleared && results.contains(where: \.isDuplicate)))
                 }
             }
         }
@@ -150,8 +183,33 @@ struct ImportView: View {
         guard let targetID else { return }
         let mapping = CSVColumnMapping(date: dateCol, amount: amountCol, payee: payeeCol,
                                        dateFormat: dateFormat, hasHeader: hasHeader)
-        let staged = model.parseBankFile(payload.data, format: payload.format, csvMapping: mapping)
+        let staged = payload.prestaged
+            ?? model.parseBankFile(payload.data, format: payload.format, csvMapping: mapping)
         results = model.matchStaged(staged, intoAccountID: targetID)
         assignments = [:]
+    }
+
+    /// Fills empty destinations with on-device model suggestions (`FR-AI-02`).
+    /// Deterministic suggestions (rules/history/heuristics) are never replaced.
+    private func suggestCategories() {
+        suggesting = true
+        suggestError = nil
+        let pending = results
+        Task {
+            defer { suggesting = false }
+            do {
+                let suggested = try await model.suggestCategories(for: pending)
+                for (stagedID, accountID) in suggested where destinationForStagedID(stagedID) == nil {
+                    assignments[stagedID] = accountID
+                }
+            } catch {
+                suggestError = error.localizedDescription
+            }
+        }
+    }
+
+    private func destinationForStagedID(_ id: UUID) -> GncGUID? {
+        guard let result = results.first(where: { $0.staged.id == id }) else { return nil }
+        return destination(for: result)
     }
 }

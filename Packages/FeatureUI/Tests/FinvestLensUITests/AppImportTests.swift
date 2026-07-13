@@ -73,6 +73,7 @@ struct AppImportTests {
         #expect(BankFileFormat.forExtension("CSV") == .csv)
         #expect(BankFileFormat.forExtension("qif") == .qif)
         #expect(BankFileFormat.forExtension("qfx") == .ofx)
-        #expect(BankFileFormat.forExtension("pdf") == nil)
+        #expect(BankFileFormat.forExtension("pdf") == .pdf)  // via Apple Intelligence (FR-AI-01)
+        #expect(BankFileFormat.forExtension("docx") == nil)
     }
 }

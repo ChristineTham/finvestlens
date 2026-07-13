@@ -34,6 +34,9 @@ FinvestLensApp (macOS / iPadOS / iOS)          ← SwiftUI, per-platform
    ├── Interchange        GnuCash XML import/export · QIF/OFX/CSV · import matcher
    ├── Rules              rules engine · merchant heuristics · operator search
    ├── Quotes             pluggable price/quote providers (URLSession)
+   ├── Intelligence       Apple Intelligence (FoundationModels) features (§11)
+   │                      PDF text/OCR extraction · statement/invoice/dividend
+   │                      readers · categoriser · budget advisor · forecast outlook
    │
    ├── Persistence        ★ native file format: open/save/lock
    │     ├── FinvestLensDocument   lifecycle, dirty-tracking, autosave
@@ -304,7 +307,45 @@ Framework: **Swift Testing** for new tests; XCTest where needed for UI/perf harn
 
 ---
 
-## 11. References
+## 11. Apple Intelligence integration (Intelligence package)
+
+Added post-1.0. All features run on the **on-device** Foundation Models
+framework (macOS 26 / iOS 26) — no financial data ever leaves the device — and
+follow one contract:
+
+1. **The model proposes; deterministic code disposes.** Model output is typed
+   (`@Generable` guided generation, greedy sampling for extraction), parsed
+   tolerantly (`IntelligenceParsing`), resolved against the real chart of
+   accounts (`AccountNameMatcher`), and cross-checked arithmetically (statement
+   signs re-derived from the running balance column; invoice line sums
+   reconciled against the printed total). Only reviewed results mutate the book.
+2. **Availability-gated.** `IntelligenceAvailability` probes
+   `SystemLanguageModel.default`; menus disable (with the reason as a tooltip)
+   when Apple Intelligence is off, and every entry point degrades gracefully.
+   Guardrail refusals (`.refusal`/`.guardrailViolation`) surface a friendly
+   message; the budget advisor retries with simplified phrasing and finally
+   falls back to a deterministic average-based plan.
+3. **Small context, chunked work.** PDF pages are extracted via PDFKit with a
+   geometric reflow (rows rebuilt from per-character bounds — content-stream
+   order scrambles tables) and a Vision-OCR fallback for scans; each page or
+   batch is one fresh session.
+
+| Feature | ID | Flow |
+|---|---|---|
+| PDF statement import | FR-AI-01 | `StatementExtractor` → `StagedTransaction` → existing ImportMatcher/review; duplicate rows can mark the matched register split cleared (light reconciliation) |
+| Auto-categorisation | FR-AI-02 | `TransactionCategorizer` fills gaps after rules → history → heuristics, in import review and the Auto-Categorise panel (Imbalance/Orphan splits) |
+| Invoice splitting | FR-AI-03 | `InvoiceAnalyzer` line items → categorised splits in the transaction editor ("Split from Invoice…") |
+| Dividend statements | FR-AI-04 | `DividendExtractor` (franked/unfranked/franking credits) → reviewed booking incl. gross-up (Income:Dividends:Franking Credits ↔ Assets:Franking Credits Receivable) |
+| Budget suggestion | FR-AI-05 | Deterministic 6-month spending stats → `BudgetAdvisor` → reviewed per-line apply |
+| Forecast outlook | FR-AI-06 | Computed `cashFlowForecast` facts → `ForecastNarrator` headline + insights in the Cash Flow report |
+
+Testing: deterministic parts are unit-tested; `LiveModelTests` exercises the
+real on-device model end-to-end (PDF fixtures rendered in-test) and self-skips
+where Apple Intelligence is unavailable, keeping CI deterministic.
+
+---
+
+## 12. References
 
 **Persistence / SQLite**
 - [groue/GRDB.swift](https://github.com/groue/GRDB.swift) · [Core Data vs SwiftData 2025](https://distantjob.com/blog/core-data-vs-swiftdata/) · [SwiftData slow with large data (Apple Forums)](https://developer.apple.com/forums/thread/740517) · [SwiftData vs Realm perf](https://www.emergetools.com/blog/posts/swiftdata-vs-realm-performance-comparison)

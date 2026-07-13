@@ -11,9 +11,10 @@ import FinvestLensEngine
 import FinvestLensInterchange
 import FinvestLensRules
 
-/// Supported bank-file import formats.
+/// Supported bank-file import formats. `pdf` statements are read by Apple
+/// Intelligence (`FR-AI-01`) before reaching the shared review flow.
 public enum BankFileFormat: String, Sendable, CaseIterable, Identifiable {
-    case csv, qif, ofx
+    case csv, qif, ofx, pdf
     public var id: String { rawValue }
 
     public static func forExtension(_ ext: String) -> BankFileFormat? {
@@ -21,6 +22,7 @@ public enum BankFileFormat: String, Sendable, CaseIterable, Identifiable {
         case "csv": return .csv
         case "qif": return .qif
         case "ofx", "qfx": return .ofx
+        case "pdf": return .pdf
         default: return nil
         }
     }
@@ -36,6 +38,9 @@ extension AppModel {
         case .csv: return CSVTransactionImporter.parse(data, mapping: csvMapping ?? CSVColumnMapping(date: 0))
         case .qif: return QIFImporter.parse(data)
         case .ofx: return OFXImporter.parse(data)
+        // PDF rows are extracted asynchronously by Apple Intelligence before
+        // the review sheet opens (see ImportPayload.prestaged).
+        case .pdf: return []
         }
     }
 

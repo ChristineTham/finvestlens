@@ -10,6 +10,7 @@ import SwiftUI
 import Charts
 import FinvestLensEngine
 import FinvestLensReports
+import FinvestLensIntelligence
 
 /// A tabbed reports view: Balance Sheet, Income Statement, and a Net-Worth chart.
 /// Wraps the reports workspace for presentation in its own window (HIG:
@@ -664,6 +665,9 @@ private struct CashFlowView: View {
     @State private var wiDate = Date()
     @State private var wiAmount = ""
     @State private var wiLabel = ""
+    @State private var insights: ForecastInsights?
+    @State private var generatingOutlook = false
+    @State private var outlookError: String?
     @Environment(\.appFontScale) private var appFontScale
     private var dateWidth: CGFloat { 96 * appFontScale }
     private var balanceWidth: CGFloat { 96 * appFontScale }
@@ -696,6 +700,10 @@ private struct CashFlowView: View {
                     .padding()
                     .accessibilityLabel("Projected cash-flow balance")
                     Divider()
+                    if model.isIntelligenceAvailable {
+                        outlookBar
+                        Divider()
+                    }
                     List(events) { event in
                         HStack {
                             Text(event.date, format: .dateTime.year().month().day())
@@ -764,5 +772,46 @@ private struct CashFlowView: View {
         guard let amount = Decimal(string: wiAmount) else { return }
         model.addWhatIfEvent(date: wiDate, amount: amount, label: wiLabel)
         wiAmount = ""; wiLabel = ""; showAddWhatIf = false
+    }
+
+    /// Plain-language outlook on the forecast, written by the on-device
+    /// model from the computed numbers (`FR-AI-06`).
+    private var outlookBar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label("Outlook", systemImage: "sparkles")
+                    .scaledFont(.subheadline).fontWeight(.medium)
+                Spacer()
+                Button(generatingOutlook ? "Generating…" : (insights == nil ? "Generate" : "Refresh")) {
+                    generateOutlook()
+                }
+                .scaledFont(.caption)
+                .disabled(generatingOutlook)
+            }
+            if let insights {
+                Text(insights.headline).scaledFont(.callout).fontWeight(.medium)
+                ForEach(insights.insights, id: \.self) { insight in
+                    Text("•  \(insight)").scaledFont(.caption).foregroundStyle(.secondary)
+                }
+            }
+            if let outlookError {
+                Text(outlookError).scaledFont(.caption).foregroundStyle(.red)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal).padding(.vertical, 8)
+    }
+
+    private func generateOutlook() {
+        generatingOutlook = true
+        outlookError = nil
+        Task {
+            defer { generatingOutlook = false }
+            do {
+                insights = try await model.forecastInsights()
+            } catch {
+                outlookError = error.localizedDescription
+            }
+        }
     }
 }

@@ -9,6 +9,27 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import FinvestLensEngine
+import FinvestLensIntelligence
+#if os(macOS)
+import AppKit
+
+/// Direct NSOpenPanel wrapper for macOS. SwiftUI's `.fileImporter` does not
+/// reliably present in this app's window setup (menu-triggered bindings are
+/// dropped), so macOS uses the same AppKit-panel pattern as DocumentDialogs;
+/// iOS keeps `.fileImporter`.
+@MainActor
+enum MacFilePanel {
+    static func open(types: [UTType], title: String) -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = title
+        panel.message = title
+        panel.allowedContentTypes = types
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+}
+#endif
 
 /// A GnuCash XML file for `.fileExporter` (export only).
 struct GnuCashFileDocument: FileDocument {
@@ -101,6 +122,9 @@ public struct FinvestLensRootView: View {
     @State private var exportDocument: GnuCashFileDocument?
     @State private var importPayload: ImportPayload?
     @State private var offeredOnboarding = false
+    @State private var dividendPayload: DividendPayload?
+    @State private var statementProgress: (done: Int, total: Int)?
+    @State private var statementError: String?
 
     public init(model: AppModel) {
         self.model = model
@@ -178,6 +202,24 @@ public struct FinvestLensRootView: View {
                     Button("Prices & Quotes…", systemImage: "tag") {
                         model.presentedPanel = .prices
                     }
+                    Divider()
+                    // Apple Intelligence (on-device model) features.
+                    Button("Import PDF Statement…", systemImage: "doc.viewfinder") {
+                        model.bankImportRequested = true
+                    }
+                    .disabled(!model.isIntelligenceAvailable)
+                    .help(model.intelligenceUnavailableReason
+                          ?? "Read a PDF bank statement with Apple Intelligence")
+                    Button("Import Dividend Statement…", systemImage: "banknote") {
+                        model.dividendImportRequested = true
+                    }
+                    .disabled(!model.isIntelligenceAvailable)
+                    .help(model.intelligenceUnavailableReason
+                          ?? "Read a dividend statement, including franking credits")
+                    Button("Auto-Categorise…", systemImage: "sparkles") {
+                        model.presentedPanel = .autoCategorize
+                    }
+                    .help("Assign categories to uncategorised transactions")
                 } label: {
                     Label("Tools", systemImage: "wrench.and.screwdriver")
                 }
@@ -219,14 +261,70 @@ public struct FinvestLensRootView: View {
                 if let id = model.selectedAccountID {
                     ReconcileView(model: model, accountID: id)
                 }
+            case .autoCategorize: AutoCategorizeSheet(model: model)
             }
         }
+        #if os(macOS)
+        // macOS: AppKit panels — .fileImporter does not present reliably here.
+        .onChange(of: model.bankImportRequested) {
+            guard model.bankImportRequested else { return }
+            model.bankImportRequested = false
+            // Deferred out of the view-update transaction: running a modal
+            // panel inside it is silently dropped when triggered from a menu.
+            Task { @MainActor in
+                if let url = MacFilePanel.open(types: [.commaSeparatedText, .text, .pdf, .data],
+                                               title: "Choose a bank file (CSV, QIF, OFX or PDF)") {
+                    loadBankFile(url)
+                }
+            }
+        }
+        .onChange(of: model.dividendImportRequested) {
+            guard model.dividendImportRequested else { return }
+            model.dividendImportRequested = false
+            Task { @MainActor in
+                if let url = MacFilePanel.open(types: [.pdf],
+                                               title: "Choose a dividend statement (PDF)"),
+                   let data = readScoped(url) {
+                    dividendPayload = DividendPayload(data: data)
+                }
+            }
+        }
+        #else
         .fileImporter(isPresented: $model.bankImportRequested,
-                      allowedContentTypes: [.commaSeparatedText, .text, .data]) { result in
+                      allowedContentTypes: [.commaSeparatedText, .text, .pdf, .data]) { result in
             if case .success(let url) = result { loadBankFile(url) }
         }
+        // Anchored to a background view: two fileImporters on the same view
+        // clobber each other's presentation.
+        .background {
+            Color.clear
+                .fileImporter(isPresented: $model.dividendImportRequested,
+                              allowedContentTypes: [.pdf]) { result in
+                    if case .success(let url) = result,
+                       let data = readScoped(url) {
+                        dividendPayload = DividendPayload(data: data)
+                    }
+                }
+        }
+        #endif
         .sheet(item: $importPayload) { payload in
             ImportView(model: model, payload: payload)
+        }
+        .sheet(item: $dividendPayload) { payload in
+            DividendImportSheet(model: model, payload: payload)
+        }
+        .overlay {
+            if let statementProgress {
+                StatementProgressCard(done: statementProgress.done, total: statementProgress.total)
+            }
+        }
+        .alert("Couldn’t read the statement", isPresented: Binding(
+            get: { statementError != nil },
+            set: { if !$0 { statementError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(statementError ?? "")
         }
         .onAppear(perform: offerOnboardingIfEmpty)
         .onChange(of: model.exportRequested) {
@@ -244,11 +342,41 @@ public struct FinvestLensRootView: View {
     }
 
     private func loadBankFile(_ url: URL) {
-        guard let format = BankFileFormat.forExtension(url.pathExtension) else { return }
+        guard let format = BankFileFormat.forExtension(url.pathExtension),
+              let data = readScoped(url) else { return }
+        if format == .pdf {
+            extractStatement(data)
+        } else {
+            importPayload = ImportPayload(data: data, format: format)
+        }
+    }
+
+    private func readScoped(_ url: URL) -> Data? {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        guard let data = try? Data(contentsOf: url) else { return }
-        importPayload = ImportPayload(data: data, format: format)
+        return try? Data(contentsOf: url)
+    }
+
+    /// Reads a PDF statement with the on-device model (`FR-AI-01`), showing
+    /// page progress, then hands the rows to the normal import review sheet.
+    private func extractStatement(_ data: Data) {
+        statementProgress = (0, 1)
+        Task {
+            do {
+                let staged = try await model.extractStatementPDF(data) { done, total in
+                    Task { @MainActor in statementProgress = (done, total) }
+                }
+                statementProgress = nil
+                if staged.isEmpty {
+                    statementError = "No transactions were found in this PDF."
+                } else {
+                    importPayload = ImportPayload(data: data, format: .pdf, prestaged: staged)
+                }
+            } catch {
+                statementProgress = nil
+                statementError = error.localizedDescription
+            }
+        }
     }
 
     /// Offers onboarding once per open document when it has no accounts yet.
@@ -258,6 +386,26 @@ public struct FinvestLensRootView: View {
         if model.isOpen && model.accountTree.isEmpty {
             model.presentedPanel = .onboarding
         }
+    }
+}
+
+/// Progress card shown while Apple Intelligence reads a PDF statement.
+private struct StatementProgressCard: View {
+    let done: Int
+    let total: Int
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ProgressView(value: Double(done), total: Double(max(1, total)))
+                .frame(width: 200)
+            Text("Reading statement… page \(min(done + 1, total)) of \(total)")
+                .scaledFont(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(20)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .shadow(radius: 8)
+        .accessibilityLabel("Reading statement with Apple Intelligence")
     }
 }
 
@@ -758,6 +906,8 @@ struct TransactionEditorSheet: View {
     @State private var lines: [EditableSplit] = [EditableSplit(), EditableSplit()]
     @FocusState private var descriptionFocused: Bool
     @State private var commitError: String?
+    @State private var invoicePickerShown = false
+    @State private var analyzingInvoice = false
     @Environment(\.appFontScale) private var appFontScale
     private var amountWidth: CGFloat { 100 * appFontScale }
 
@@ -810,6 +960,23 @@ struct TransactionEditorSheet: View {
                     }
                     .onDelete { lines.remove(atOffsets: $0) }
                     Button("Add Split", systemImage: "plus") { lines.append(EditableSplit()) }
+                    if model.isIntelligenceAvailable {
+                        Button {
+                            #if os(macOS)
+                            if let url = MacFilePanel.open(types: [.pdf],
+                                                           title: "Choose an invoice (PDF)") {
+                                analyzeInvoice(url)
+                            }
+                            #else
+                            invoicePickerShown = true
+                            #endif
+                        } label: {
+                            Label(analyzingInvoice ? "Reading invoice…" : "Split from Invoice…",
+                                  systemImage: "sparkles")
+                        }
+                        .disabled(analyzingInvoice)
+                        .help("Read an invoice PDF and split this transaction across its line items")
+                    }
                 }
 
                 Section("Tags") {
@@ -843,7 +1010,52 @@ struct TransactionEditorSheet: View {
                 }
             }
             .onAppear(perform: loadIfNeeded)
+            .fileImporter(isPresented: $invoicePickerShown,
+                          allowedContentTypes: [.pdf]) { result in
+                if case .success(let url) = result { analyzeInvoice(url) }
+            }
         }
+    }
+
+    /// Reads a linked invoice PDF and replaces the counter-splits with its
+    /// categorised line items (`FR-AI-03`). The funding leg keeps its amount
+    /// when one exists, so a mismatch with the invoice total shows up in the
+    /// imbalance readout instead of being papered over.
+    private func analyzeInvoice(_ url: URL) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        let data = try? Data(contentsOf: url)
+        if scoped { url.stopAccessingSecurityScopedResource() }
+        guard let data else { return }
+        analyzingInvoice = true
+        commitError = nil
+        Task {
+            defer { analyzingInvoice = false }
+            do {
+                let analysis = try await model.analyzeInvoicePDF(data)
+                applyInvoice(analysis)
+            } catch {
+                commitError = error.localizedDescription
+            }
+        }
+    }
+
+    private func applyInvoice(_ analysis: InvoiceAnalysis) {
+        if description.isEmpty { description = analysis.vendor }
+        if !isEditing, let invoiceDate = analysis.date { date = invoiceDate }
+        let existing = lines.first
+        let fundingAmount = (existing?.amount ?? 0) != 0
+            ? existing!.amountText
+            : NSDecimalNumber(decimal: -analysis.total).stringValue
+        let funding = EditableSplit(accountID: existing?.accountID, amountText: fundingAmount)
+        let items = analysis.lineItems.map {
+            EditableSplit(accountID: $0.suggestedCategoryID,
+                          amountText: NSDecimalNumber(decimal: $0.amount).stringValue)
+        }
+        guard !items.isEmpty else {
+            commitError = "No line items were found in this invoice."
+            return
+        }
+        lines = [funding] + items
     }
 
     private func loadIfNeeded() {

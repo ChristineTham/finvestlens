@@ -89,7 +89,10 @@ struct finvestlensApp: App {
                 }
             }
             #endif
-            CommandGroup(after: .saveItem) {
+            // Anchored after .newItem, NOT .saveItem: a plain WindowGroup scene
+            // has no standard Save item, and a CommandGroup anchored to a
+            // missing item is silently dropped from the menu bar.
+            CommandGroup(after: .newItem) {
                 Button("Save") { try? model.save() }
                     .keyboardShortcut("s", modifiers: .command)
                     .disabled(!model.hasUnsavedChanges)
@@ -145,6 +148,17 @@ struct finvestlensApp: App {
                 Button("Scheduled Transactions…") { model.presentedPanel = .scheduled }
                     .disabled(!model.isOpen)
                 Button("Prices & Quotes…") { model.presentedPanel = .prices }
+                    .disabled(!model.isOpen)
+                Divider()
+                // Apple Intelligence features — disabled (with the reason as
+                // a tooltip) when the on-device model isn't available.
+                Button("Import PDF Statement…") { model.bankImportRequested = true }
+                    .disabled(!model.isOpen || !model.isIntelligenceAvailable)
+                    .help(model.intelligenceUnavailableReason ?? "Read a PDF bank statement with Apple Intelligence")
+                Button("Import Dividend Statement…") { model.dividendImportRequested = true }
+                    .disabled(!model.isOpen || !model.isIntelligenceAvailable)
+                    .help(model.intelligenceUnavailableReason ?? "Read a dividend statement, including franking credits")
+                Button("Auto-Categorise Transactions…") { model.presentedPanel = .autoCategorize }
                     .disabled(!model.isOpen)
                 Divider()
                 Button("Dashboard") { model.selectedAccountID = nil }

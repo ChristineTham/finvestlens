@@ -15,6 +15,7 @@ struct BudgetView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var showingEdit = false
+    @State private var showingSuggest = false
 
     private var budget: Budget? { model.budgets.first }
 
@@ -64,6 +65,15 @@ struct BudgetView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
+                }
+                if model.isIntelligenceAvailable {
+                    ToolbarItem {
+                        Button("Suggest Budget", systemImage: "sparkles") { showingSuggest = true }
+                            .help("Propose a monthly budget from your spending with Apple Intelligence")
+                            .sheet(isPresented: $showingSuggest) {
+                                BudgetSuggestSheet(model: model)
+                            }
+                    }
                 }
                 if let budget {
                     ToolbarItem {
