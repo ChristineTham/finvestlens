@@ -526,6 +526,13 @@ struct AccountsSidebar: View {
         List(selection: $model.selectedAccountID) {
             OutlineGroup(model.accountTree, children: \.children) { node in
                 HStack {
+                    // GnuCash account colour, shown Finder-tag style.
+                    if let dot = node.color.flatMap(GnuCashColor.color(from:)) {
+                        Circle()
+                            .fill(dot)
+                            .frame(width: 9, height: 9)
+                            .accessibilityHidden(true)
+                    }
                     Text(node.name)
                         .scaledFont(.body)
                         .foregroundStyle(node.isHidden ? .secondary : .primary)
@@ -1143,6 +1150,8 @@ struct EditAccountSheet: View {
     @State private var notes = ""
     @State private var isPlaceholder = false
     @State private var isHidden = false
+    @State private var hasColor = false
+    @State private var color: Color = .accentColor
     @State private var parentID: GncGUID?
     @State private var originalParentID: GncGUID?
     @FocusState private var nameFocused: Bool
@@ -1164,6 +1173,12 @@ struct EditAccountSheet: View {
                 Toggle("Placeholder", isOn: $isPlaceholder)
                 Toggle("Hidden", isOn: $isHidden)
 
+                // GnuCash account colour — shown as a dot in the sidebar.
+                Toggle("Colour", isOn: $hasColor.animation())
+                if hasColor {
+                    ColorPicker("Account colour", selection: $color, supportsOpacity: false)
+                }
+
                 Section {
                     Button("Renumber Sub-Accounts") {
                         model.renumberChildren(of: accountID)
@@ -1183,6 +1198,8 @@ struct EditAccountSheet: View {
                         model.updateAccount(id: accountID, name: name, code: code,
                                             description: description, notes: notes,
                                             isPlaceholder: isPlaceholder, isHidden: isHidden)
+                        model.setAccountColor(accountID,
+                                              colorString: hasColor ? GnuCashColor.gnuCashString(from: color) : nil)
                         if parentID != originalParentID {
                             model.moveAccount(accountID, under: parentID)
                         }
@@ -1196,6 +1213,10 @@ struct EditAccountSheet: View {
                     loaded = true
                     name = edit.name; code = edit.code; description = edit.description
                     notes = edit.notes; isPlaceholder = edit.isPlaceholder; isHidden = edit.isHidden
+                    if let existing = model.accountColor(accountID).flatMap(GnuCashColor.color(from:)) {
+                        hasColor = true
+                        color = existing
+                    }
                     parentID = model.parentID(ofAccount: accountID)
                     originalParentID = parentID
                 }

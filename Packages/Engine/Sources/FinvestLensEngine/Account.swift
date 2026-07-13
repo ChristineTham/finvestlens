@@ -34,6 +34,22 @@ public final class Account {
     /// Preserved key-value slots (including keys not modelled natively).
     public var kvp: KvpFrame
 
+    /// The account's display colour, stored in GnuCash's `color` slot (e.g.
+    /// `"rgb(144,144,238)"` or `"#8fbc8f"`), so it round-trips untouched.
+    /// GnuCash's "Not Set" sentinel reads as `nil`.
+    public var color: String? {
+        get {
+            guard case let .string(text)? = kvp[Self.colorKey],
+                  !text.isEmpty, text != "Not Set" else { return nil }
+            return text
+        }
+        set {
+            let cleaned = newValue?.trimmingCharacters(in: .whitespaces)
+            kvp[Self.colorKey] = (cleaned?.isEmpty ?? true) ? nil : .string(cleaned!)
+        }
+    }
+    private static let colorKey = "color"
+
     /// The parent account, or `nil` for the root. Weak to avoid a retain cycle.
     public private(set) weak var parent: Account?
     /// Child accounts, owned strongly by this account.

@@ -24,6 +24,9 @@ public enum Scrub {
         case orphanSplit(GncGUID)
         /// A transaction with fewer than two splits.
         case degenerateTransaction(GncGUID, splitCount: Int)
+        /// A transaction that moves no money at all — no splits, or only
+        /// zero-value splits (GnuCash's "no opening balance" stubs).
+        case emptyTransaction(GncGUID)
 
         public var description: String {
             switch self {
@@ -33,23 +36,35 @@ public enum Scrub {
                 return "Orphan split \(guid) (no account)"
             case let .degenerateTransaction(guid, count):
                 return "Transaction \(guid) has \(count) split(s)"
+            case let .emptyTransaction(guid):
+                return "Empty transaction \(guid) (moves no money)"
             }
         }
+
+        /// Cosmetic issues can't corrupt the books — they're clutter, not
+        /// errors. They don't count against ``Scrub/isClean(_:)`` but are
+        /// offered for cleanup.
+        public var isCosmetic: Bool {
+            if case .emptyTransaction = self { return true }
+            return false
+        }
+    }
+
+    /// `true` when every split moves nothing (or there are no splits).
+    private static func isEmpty(_ transaction: Transaction) -> Bool {
+        transaction.splits.allSatisfy { $0.value == 0 && $0.quantity == 0 }
     }
 
     /// Scans the book and returns all issues found (does not mutate).
     public static func check(_ book: Book) -> [Issue] {
         var issues: [Issue] = []
         for transaction in book.transactions {
+            if isEmpty(transaction) {
+                issues.append(.emptyTransaction(transaction.guid))
+                continue
+            }
             if transaction.splits.count < 2 {
-                // A lone zero-value split is GnuCash's "no opening balance"
-                // stub — balanced by definition, not a structural problem.
-                let isZeroStub = transaction.splits.count == 1
-                    && transaction.splits[0].value == 0
-                    && transaction.splits[0].quantity == 0
-                if !isZeroStub {
-                    issues.append(.degenerateTransaction(transaction.guid, splitCount: transaction.splits.count))
-                }
+                issues.append(.degenerateTransaction(transaction.guid, splitCount: transaction.splits.count))
             }
             if !transaction.isBalanced {
                 issues.append(.unbalancedTransaction(
@@ -64,9 +79,10 @@ public enum Scrub {
         return issues
     }
 
-    /// `true` when the book has no structural issues.
+    /// `true` when the book has no structural issues (cosmetic ones —
+    /// empty transactions — don't count).
     public static func isClean(_ book: Book) -> Bool {
-        check(book).isEmpty
+        check(book).allSatisfy { $0.isCosmetic }
     }
 
     // MARK: Repair
@@ -99,5 +115,53 @@ public enum Scrub {
         let account = Account(name: name, type: .bank, commodity: currency)
         book.addAccount(account)
         return account
+    }
+
+    /// Finds or creates the `Orphan-<CUR>` account (GnuCash's home for
+    /// splits that lost their account).
+    public static func orphanAccount(for currency: Commodity, in book: Book) -> Account {
+        let name = "Orphan-\(currency.mnemonic)"
+        if let existing = book.accounts.first(where: { $0.name == name && $0.commodity == currency }) {
+            return existing
+        }
+        let account = Account(name: name, type: .bank, commodity: currency)
+        book.addAccount(account)
+        return account
+    }
+
+    /// What ``clean(_:)`` did, for reporting.
+    public struct CleanupSummary: Equatable, Sendable {
+        public var emptiesRemoved = 0
+        public var orphansAssigned = 0
+        public var transactionsBalanced = 0
+
+        /// `true` when nothing needed fixing.
+        public var isNoOp: Bool {
+            emptiesRemoved == 0 && orphansAssigned == 0 && transactionsBalanced == 0
+        }
+    }
+
+    /// Repairs every issue ``check(_:)`` finds, GnuCash Check-&-Repair
+    /// style: empty transactions are removed, account-less splits are
+    /// reassigned to `Orphan-<CUR>`, and remaining imbalances are posted to
+    /// `Imbalance-<CUR>`. Returns what was done.
+    @discardableResult
+    public static func clean(_ book: Book) -> CleanupSummary {
+        var summary = CleanupSummary()
+
+        for transaction in book.transactions where isEmpty(transaction) {
+            book.removeTransaction(transaction)
+            summary.emptiesRemoved += 1
+        }
+
+        for transaction in book.transactions {
+            for split in transaction.splits where split.account == nil {
+                split.account = orphanAccount(for: transaction.currency, in: book)
+                summary.orphansAssigned += 1
+            }
+        }
+
+        summary.transactionsBalanced = balanceTransactions(in: book).count
+        return summary
     }
 }

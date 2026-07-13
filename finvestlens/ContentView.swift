@@ -55,6 +55,14 @@ struct RootHost: View {
         .fileImporter(isPresented: $importing, allowedContentTypes: [Self.documentType, .data]) { result in
             if case .success(let url) = result { model.openBook(at: url) }
         }
+        // Check & Repair review (offered after GnuCash import, or from the
+        // Book menu). Anchored on a background view so it can't clobber the
+        // fileImporter's presentation slot.
+        .background {
+            Color.clear.sheet(item: $model.pendingCleanup) { proposal in
+                CheckRepairSheet(model: model, proposal: proposal)
+            }
+        }
         .alert("Couldn’t open book",
                isPresented: Binding(get: { model.documentError != nil },
                                     set: { if !$0 { model.documentError = nil } }),

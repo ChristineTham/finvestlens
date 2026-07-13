@@ -25,6 +25,8 @@ public struct AccountNode: Identifiable, Hashable, Sendable {
     public var currencyCode: String
     public var isPlaceholder: Bool
     public var isHidden: Bool
+    /// GnuCash colour string (`color` slot), e.g. "rgb(144,144,238)".
+    public var color: String?
     public var children: [AccountNode]?
 }
 
@@ -133,6 +135,8 @@ public final class AppModel {
     public var documentError: DocumentError?
     /// A user-facing confirmation (e.g. GnuCash import summary).
     public var infoMessage: String?
+    /// Check & Repair findings awaiting the user's decision (sheet).
+    public var pendingCleanup: CleanupProposal?
 
     /// API-key store (Keychain in production; injectable for tests/previews).
     let apiKeys: APIKeyStoring
@@ -474,7 +478,14 @@ public final class AppModel {
         do {
             let summary = try importGnuCash(from: source, saveAs: destination)
             recordLastBook(destination)
-            infoMessage = "Imported \(summary.accountCount) accounts and \(summary.transactionCount) transactions from “\(source.lastPathComponent)”."
+            let note = "Imported \(summary.accountCount) accounts and \(summary.transactionCount) transactions from “\(source.lastPathComponent)”."
+            // Offer Check & Repair when the imported book has issues
+            // (empty stubs, orphans, imbalances) — GnuCash files often do.
+            if let proposal = cleanupProposal(importNote: note) {
+                pendingCleanup = proposal
+            } else {
+                infoMessage = note
+            }
         } catch {
             documentError = DocumentError(message: "Couldn’t import “\(source.lastPathComponent)”: \(error.localizedDescription)")
         }
@@ -717,6 +728,7 @@ public final class AppModel {
             currencyCode: account.commodity.mnemonic,
             isPlaceholder: account.isPlaceholder,
             isHidden: account.isHidden,
+            color: account.color,
             children: children.isEmpty ? nil : children
         )
     }

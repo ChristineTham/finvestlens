@@ -177,13 +177,40 @@ struct ScrubTests {
         #expect(Scrub.check(book).contains { if case .degenerateTransaction = $0 { return true } else { return false } })
     }
 
-    @Test("A zero-value single-split stub (GnuCash empty opening balance) is clean")
+    @Test("A zero-value single-split stub (GnuCash empty opening balance) is clean but cleanable")
     func zeroValueStubIsClean() {
         let book = Book(baseCurrency: .aud)
         let bank = book.addAccount(Account(name: "Bank", type: .bank, commodity: .aud))
         let stub = Transaction(currency: .aud, datePosted: day, description: "Opening Balance")
         stub.addSplit(account: bank, value: 0)
         book.addTransaction(stub)
-        #expect(Scrub.isClean(book))
+        #expect(Scrub.isClean(book))                          // cosmetic, not an error
+        #expect(Scrub.check(book) == [.emptyTransaction(stub.guid)])
+        #expect(Scrub.check(book).allSatisfy { $0.isCosmetic })
+    }
+
+    @Test("Check & Repair: empties removed, orphans housed, imbalances posted")
+    func cleanRepairsEverything() {
+        let book = Book(baseCurrency: .aud)
+        let bank = book.addAccount(Account(name: "Bank", type: .bank, commodity: .aud))
+
+        let stub = Transaction(currency: .aud, datePosted: day, description: "Opening Balance")
+        stub.addSplit(account: bank, value: 0)
+        book.addTransaction(stub)
+
+        let broken = Transaction(currency: .aud, datePosted: day, description: "Broken")
+        broken.addSplit(account: bank, value: dec("100.00"))
+        broken.addSplit(Split(account: nil, value: dec("-60.00")))
+        book.addTransaction(broken)
+
+        let summary = Scrub.clean(book)
+        #expect(summary == Scrub.CleanupSummary(emptiesRemoved: 1,
+                                                orphansAssigned: 1,
+                                                transactionsBalanced: 1))
+        #expect(Scrub.check(book).isEmpty)                    // fully clean now
+        #expect(book.transactions.count == 1)                 // stub gone
+        #expect(book.accounts.contains { $0.name == "Orphan-AUD" })
+        #expect(book.accounts.contains { $0.name == "Imbalance-AUD" })
+        #expect(broken.isBalanced)
     }
 }

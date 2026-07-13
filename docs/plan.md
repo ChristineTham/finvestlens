@@ -29,6 +29,15 @@
 > matching). Applied invoice/dividend PDFs are stored in a configurable
 > document folder and linked to their transaction GnuCash-style (`assoc_uri`,
 > FR-AI-08). See [Architecture §11](architecture.md).
+>
+> **Post-1.0 (14 Jul 2026): GnuCash fidelity.** Round-trip is now lossless
+> and verified against a real 8.5 MB book: exact rationals, verbatim KVP
+> slots on all five levels, commodity quote config, book GUID, template
+> sections excluded. **Check & Repair** (offered after import and in the
+> Book menu) removes empty transactions, houses orphan splits, and posts
+> imbalances — so exports are cleaner than the source. GnuCash **account
+> colours** render as Finder-tag-style dots in the sidebar and are editable
+> with a native colour picker.
 
 This is the authoritative **delivery schedule**. It sequences the requirements from the [PRD](prd.md) (`FR-*`), the architecture decisions ([`ADR-*`](architecture.md)), and the porting map ([Porting §2](porting.md)) into ten releasable phases (P0–P9). Each phase lists its **objective, workstreams/tasks, dependencies, deliverables, exit criteria, test focus, and risks**.
 
