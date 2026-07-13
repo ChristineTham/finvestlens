@@ -29,13 +29,13 @@ import FinvestLensUI
 import AppKit
 
 /// Saves the open book (and releases its lock) on quit, so ⌘Q never loses
-/// data and never leaves a stale lock behind.
+/// data and never leaves a stale lock behind. If the save fails, quitting is
+/// cancelled so the error alert is seen instead of the data being lost.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    var terminationHandler: (() -> Void)?
+    var terminationHandler: (() -> Bool)?
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        terminationHandler?()
-        return .terminateNow
+        (terminationHandler?() ?? true) ? .terminateNow : .terminateCancel
     }
 }
 #endif
@@ -64,7 +64,7 @@ struct finvestlensApp: App {
                 // delegate object.
                 .onAppear {
                     appDelegate.terminationHandler = { [weak model] in
-                        model?.saveAndCloseIfOpen()
+                        model?.saveAndCloseIfOpen() ?? true
                     }
                 }
             #endif

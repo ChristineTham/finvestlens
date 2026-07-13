@@ -29,6 +29,18 @@ public enum CurrencyEntryError: Error, Equatable {
 @MainActor
 extension AppModel {
 
+    /// The currency a transaction touching these accounts should be recorded
+    /// in: the first cash account's currency, else the book's base currency.
+    public func transactionCurrency(for accountIDs: [GncGUID]) -> Commodity {
+        for id in accountIDs {
+            if let commodity = book?.account(with: id)?.commodity,
+               commodity.namespace == .currency {
+                return commodity
+            }
+        }
+        return reportCurrency
+    }
+
     /// Distinct currencies used by the book's accounts.
     public var currencyCommodities: [Commodity] {
         guard let book else { return [] }

@@ -13,8 +13,9 @@ import Foundation
 /// Handles both **OFX v1 (SGML)** — where value-only tags have no closing tag —
 /// and **OFX v2 (XML)** with a single tolerant scanner: for each field tag we
 /// read the value up to the next `<`, which captures the value in both formats
-/// (Architecture §5.8a). Extracts `<STMTTRN>` entries from bank, card, and
-/// investment statements.
+/// (Architecture §5.8a). Extracts `<STMTTRN>` (cash) entries from bank and
+/// card statements; investment transactions (`<INVBUY>`/`<INVSELL>`) are not
+/// yet parsed — enter trades via the Stock Transaction Assistant.
 public enum OFXImporter {
 
     public static func parse(_ data: Data) -> [StagedTransaction] {

@@ -15,8 +15,9 @@ import FinvestLensEngine
 /// commodities, the account hierarchy, and transactions/splits, preserving
 /// GUIDs (Architecture ADR-2/ADR-3). Amounts are GnuCash rationals (`num/denom`)
 /// converted to `Decimal`. After parsing, `Scrub` validates the result
-/// (`FR-IMP-08`). Prices, budgets, scheduled and business objects are not yet
-/// mapped in P1 (counted as warnings).
+/// (`FR-IMP-08`). Prices **are** mapped (`FR-IMP-02`); GnuCash-native budget,
+/// scheduled-transaction (`sx:`) and business objects are not yet mapped and
+/// are counted as warnings (FinvestLens keeps its own in KVP slots).
 ///
 /// Slot (KVP) handling in P1 is intentionally minimal: the account
 /// `placeholder`/`hidden` flags are read; richer slot preservation for full

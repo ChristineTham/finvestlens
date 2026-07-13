@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Document status** | Draft v0.2 |
-| **Last updated** | 2026-07-12 |
+| **Document status** | As-built v1.0 (P0–P6 shipped) |
+| **Last updated** | 2026-07-13 |
 | **Companions** | [PRD](prd.md) · [Porting Strategy](porting.md) |
 | **Scope** | Target architecture, technology choices, native file format, and how the hard problems are solved |
 
@@ -29,15 +29,16 @@ This document evaluates implementation alternatives, recommends specific technol
 ```
 FinvestLensApp (macOS / iPadOS / iOS)          ← SwiftUI, per-platform
    │
-   ├── FeatureUI          SwiftUI views + view models (register, CoA, reconcile…)
+   ├── FeatureUI          SwiftUI views + AppModel (@Observable view model)
    ├── Reports            report computation (Swift) + Swift Charts rendering
    ├── Interchange        GnuCash XML import/export · QIF/OFX/CSV · import matcher
+   ├── Rules              rules engine · merchant heuristics · operator search
    ├── Quotes             pluggable price/quote providers (URLSession)
    │
-   ├── Document           ★ native file format: open/save/lock
+   ├── Persistence        ★ native file format: open/save/lock
    │     ├── FinvestLensDocument   lifecycle, dirty-tracking, autosave
    │     ├── FileLock              NAS-safe advisory locking (§6)
-   │     └── Store (GRDB)          SQLite schema + migrations + repositories
+   │     └── SQLiteDocumentStore   GRDB schema + snapshot read/write
    │
    └── Engine  ★ pure Swift, no persistence/UI deps
         ├── Money           Decimal-based amounts + Commodity
@@ -48,7 +49,7 @@ FinvestLensApp (macOS / iPadOS / iOS)          ← SwiftUI, per-platform
         └── Core            GncGUID · KvpFrame · Query
 ```
 
-Dependencies point **downward only**. `Engine` builds and tests with nothing above it. The UI and interchange layers talk to the engine's in-memory model; the `Document` layer persists that model to the native file.
+Dependencies point **downward only**. `Engine` builds and tests with nothing above it. The UI and interchange layers talk to the engine's in-memory model; the `Persistence` layer persists that model to the native file.
 
 ---
 
@@ -57,10 +58,11 @@ Dependencies point **downward only**. `Engine` builds and tests with nothing abo
 FinvestLens follows a **check-out → edit locally → explicit save** document model:
 
 1. **Open** a `.finvestlens` document → acquire the lock (§6) → copy it to a **local working copy** (§6) → open the SQLite store on the *local* copy → materialize the observable in-memory **`Book`**. Retain a pristine snapshot of the opened state for Revert.
-2. **Edit** against the in-memory model + local working copy (the working session). The UI binds via **Observation**. Edits accumulate **locally only** — the document on the share is untouched.
+2. **Edit** against the in-memory model + local working copy (the working session). The engine `Book` is a plain (non-observable) model; the UI binds via **Observation on `AppModel`** (FeatureUI), which snapshots derived state after each mutation. Edits accumulate **locally only** — the document on the share is untouched.
 3. **Write-back is explicit.** The local working copy is flushed back to the document location (atomically, under lock; §6.2) **only** on:
-   - **File ▸ Save** (⌘S), or
-   - **Autosave** (optional, user-configurable interval; can be turned off).
+   - **File ▸ Save** (⌘S),
+   - **Autosave** (as built: a fixed 5-minute interval while dirty; a user-configurable/disable setting is future work), or
+   - **automatic save on switch/close/quit** (switching books, Close Book, and ⌘Q save first — failures surface and abort the switch/quit).
 
    There is **no continuous background sync** to the share.
 4. **Discard / Revert.** Because the share only changes on an explicit save, the user can **abandon a working session**: **closing without saving** (or **File ▸ Revert**) discards unsaved changes and the on-share document reflects only the last save. The retained opened-state snapshot enables **Revert to the version that was opened**, even if autosave has run since.
@@ -116,11 +118,13 @@ This keeps the engine free of persistence concerns, gives SQLite's scalability f
 3. **Flat compressed snapshot** (whole book in RAM, atomic whole-file save) — simplest and very NAS-safe, but full rewrite per save and whole book in memory; rejected for scale.
 4. **File package/bundle** — multi-file semantics complicate atomic network writes; rejected.
 
-**Decision → a single SQLite file (`.finvestlens`) managed by [GRDB](https://github.com/groue/GRDB.swift)**, exposed to the rest of the app through `Repository` protocols (`BookStore`, `AccountStore`, `TransactionStore`, `PriceStore`, …). SwiftData is **not** used.
+**Decision → a single SQLite file (`.finvestlens`) managed by [GRDB](https://github.com/groue/GRDB.swift)**. SwiftData is **not** used.
+
+> **As built:** the store uses **whole-book snapshot semantics** — `read()` materializes the full graph and `write()` rewrites all tables in one transaction (a hybrid of options 1 and 3: SQLite file format, snapshot IO). This is simple and NAS-safe; incremental per-row persistence remains an optimization for the deferred 100k-txn perf validation to justify.
 
 - **UTI / document type:** `com.hellotham.finvestlens.document` conforming to `public.database`; extension `.finvestlens`.
-- **Schema & migrations:** GRDB `DatabaseMigrator`, versioned; a `meta` table records the app/schema version and a monotonically increasing **change counter** (used for conflict detection, §6).
-- **Journaling:** the *working copy* uses WAL for speed; before every write-back to the document location we **checkpoint and collapse WAL** so the artifact on the NAS is a single self-contained file (no stray `-wal`/`-shm` on the share).
+- **Schema & migrations:** GRDB `DatabaseMigrator`, versioned; a `meta` table records the app/schema version and a monotonically increasing **change counter**. Conflict detection as built uses a **SHA-256 file fingerprint** of the shared document (the counter is informational).
+- **Journaling:** the working copy uses GRDB's default `DatabaseQueue` (rollback journal), so the artifact written back to the NAS is inherently a single self-contained file; a WAL + `wal_checkpoint(TRUNCATE)` pipeline remains an option if the deferred perf validation demands it (OD-3).
 - **Document lifecycle:** a custom document controller (not SwiftUI `FileDocument`/`ReferenceFileDocument`, which assume whole-file snapshots) manages open/lock/copy/save/close so we can work against a live database.
 
 **Rationale.** GRDB gives a genuine portable single-file database — ideal as a document — with the maturity and speed SwiftData lacks at scale, and the low-level control (journaling, checkpointing, coordinated IO) required to be safe on a NAS. The `Repository` abstraction (P4) keeps the engine and UI ignorant of GRDB.
@@ -131,7 +135,7 @@ This keeps the engine free of persistence concerns, gives SQLite's scalability f
 
 **Context.** With our own native format, GnuCash's XML is no longer our store; it is an **import/export** path (PRD `FR-IMP-*`, `FR-EXP-*`).
 
-**Decision.** Keep the XML codec in the `Interchange` layer: Foundation `XMLParser` (SAX, streaming) to read, a hand-written streaming writer to write, and a zlib wrapper for the gzip container (Apple's Compression framework does raw DEFLATE/zlib but **not** the gzip container GnuCash uses). Recommended: [GzipSwift](https://github.com/1024jp/GzipSwift) or the streaming [swift-gzip](https://github.com/mihai8804858/swift-gzip). Round-trip fidelity is still a goal for supported objects, but **arithmetic differences from `Decimal` rounding are tolerated** (P3). Preserve GUIDs and KVP slots (§5.4) so re-export stays faithful.
+**Decision.** Keep the XML codec in the `Interchange` layer: Foundation `XMLParser` (SAX, streaming) to read, a hand-written streaming writer to write. **As built, the gzip container is implemented natively** over Apple's Compression framework (a small header/trailer wrapper around raw DEFLATE) — no third-party gzip package is used. Round-trip fidelity is still a goal for supported objects, but **arithmetic differences from `Decimal` rounding are tolerated** (P3). Preserve GUIDs and KVP slots (§5.4) so re-export stays faithful.
 
 > ADR-3: GnuCash XML is interchange (import/export), read via `XMLParser`, gzip via a zlib wrapper.
 
@@ -207,7 +211,7 @@ The list is extensible; adding a provider is a new `QuoteProvider` conformance.
 
 | Format | Approach | Package / basis |
 |---|---|---|
-| **CSV** | Assisted by a Swift package: streaming, RFC-4180, header detection; a **configurable column-mapping** UI with saved profiles (`FR-XIO-08`) sits on top. | [dehesa/CodableCSV](https://github.com/dehesa/CodableCSV) (row-by-row + Codable, streaming) — primary; [yaslab/CSV.swift](https://github.com/yaslab/CSV.swift) as alternative. |
+| **CSV** | **Custom Swift parser** (as built): RFC-4180-style with a configurable column mapping in the import UI. Saved mapping profiles (`FR-XIO-08`) are future work. | Hand-written; CodableCSV remains an option if needs outgrow it. |
 | **QIF** | **Custom Swift parser.** QIF is a simple line-oriented format: single-letter tag per line (`D` date, `T`/`U` amount, `P` payee, `M` memo, `L` category/transfer, `N` number/action, `C` cleared, `S/E/$` splits), records terminated by `^`, section headers like `!Type:Bank`, `!Account`, `!Type:Invst`. No package needed. | Spec/oracles: [Wikipedia QIF](https://en.wikipedia.org/wiki/Quicken_Interchange_Format), [Quiffen (Py)](https://quiffen.readthedocs.io/), [hazzik/qif (.NET)](https://github.com/hazzik/qif). |
 | **OFX / QFX** | **Custom Swift parser** handling both flavors: strip the OFX header block, then **OFX v2 (XML)** → reuse our `XMLParser`; **OFX v1 (SGML)** → a tolerant tokenizer that auto-closes value-only leaf tags (OFX v1 omits closing tags) to normalize into the same element tree. Handles bank (`STMTRS`), credit-card (`CCSTMTRS`), and investment (`INVSTMTRS`) statements; QFX is OFX plus Quicken extensions. | Spec/oracles: [ofxtools (Py)](https://github.com/csingley/ofxtools), [ofx-js](https://github.com/bradenmacdonald/ofx-js), [salt-parser (Ruby)](https://github.com/saltedge/salt-parser). |
 
@@ -225,21 +229,21 @@ Running SQLite **directly** over SMB/NFS is unsafe: network filesystems implemen
 
 Modeled on GnuCash's `.LCK` approach, hardened:
 
-- Beside `Book.finvestlens` we create **`Book.finvestlens.lock`** whose contents are JSON: `{ host, user, appInstanceUUID, pid, acquiredAt, heartbeatAt, mode }`.
-- **Acquire on open** using an **atomic create-if-absent** (exclusive create; on network volumes, a hard-link/rename trick provides atomicity where `O_EXCL` is unreliable). All lock IO goes through **`NSFileCoordinator`**.
-- If the lock exists and its `heartbeatAt` is **fresh**, the document is in use elsewhere → offer **Open Read-Only** or show the holder (`user@host`). If the heartbeat is **stale** (older than a threshold, e.g. 3× the heartbeat interval), offer to **break the lock** (with a warning).
-- **Heartbeat:** while open, refresh `heartbeatAt` on a timer (e.g. every 20–30 s). This distinguishes a live holder from a crashed one.
+- Beside `Book.finvestlens` we create **`Book.lock`** (same base name, different extension — required for the macOS sandbox related-item grant, kept for a future sandboxed build) whose contents are JSON: `{ host, user, instanceID, pid, acquiredAt, heartbeatAt }`.
+- **Acquire on open** using an **atomic create-if-absent** (`.withoutOverwriting`). All lock IO goes through **`NSFileCoordinator`** with a related-item presenter.
+- If the lock exists and its `heartbeatAt` is **fresh**, the document is in use elsewhere → the open fails showing the holder; if the heartbeat is **stale** (> 90 s), the UI offers **Break Lock and Open**. (An Open-Read-Only mode is not in 1.0.)
+- **Heartbeat:** while open, `heartbeatAt` is refreshed every 25 s (a background task in `AppModel`), and on every save. This distinguishes a live holder from a crashed one.
 - **Release on close;** crash recovery relies on stale-heartbeat detection.
 
 ### 6.2 Local working copy + atomic write-back
 
 To get SQLite's speed/scale without trusting it over the network, and to make write-back an explicit, discardable act:
 
-1. **On open** (after acquiring the lock): copy `Book.finvestlens` from the share to a **local working copy** in Application Support, verifying integrity; note the source's fingerprint + change counter, and keep a **pristine opened snapshot** for Revert.
+1. **On open** (after acquiring the lock): copy `Book.finvestlens` from the share to a **local working copy** (a per-session file under the app's temporary directory); note the source's SHA-256 fingerprint, and keep a **pristine opened snapshot** for Revert.
 2. **Edit** against the local SQLite (WAL, fast, reliable local semantics). Nothing is written to the share during editing.
-3. **Write-back happens only on explicit Save or autosave** (lock still held): `wal_checkpoint(TRUNCATE)` to collapse the WAL, then write the single consolidated file back to the share as a **sibling temp file**, `fsync`, and **atomically rename** over the document — all coordinated by `NSFileCoordinator`. Bump the `meta` change counter. **Autosave is user-configurable and can be disabled**; with it off, the share changes *only* on ⌘S.
+3. **Write-back happens only on explicit Save, autosave, or save-on-switch/close/quit** (lock still held): the consolidated single file is written back to the share atomically (replace-item semantics) under `NSFileCoordinator`, and the `meta` change counter is bumped. Autosave runs on a fixed 5-minute interval while dirty (a configurable/disable setting is future work).
 4. **Discard / Revert:** closing without saving (or File ▸ Revert) discards the working copy's unsaved changes; the share is left as it was at the last save. Reverting to the pristine opened snapshot restores the session's start state.
-5. **Conflict defense in depth:** before overwriting, re-read the document's change counter/fingerprint on the share; if it changed unexpectedly (someone bypassed the lock, or an out-of-band edit), **do not clobber** — surface a conflict and offer to save-as or reconcile.
+5. **Conflict defense in depth:** before overwriting, re-read the document's SHA-256 fingerprint on the share; if it changed unexpectedly (someone bypassed the lock, or an out-of-band edit), **do not clobber** — the save throws a conflict which the UI surfaces.
 6. **On close:** if dirty, prompt to Save or Discard; then release the lock and drop the working copy (retained briefly only for crash recovery).
 
 For **genuinely local volumes** (not a network share), the working-copy hop can be skipped (direct mode) as an optimization; the explicit-save/discard semantics and locking still apply.
@@ -277,13 +281,13 @@ Framework: **Swift Testing** for new tests; XCTest where needed for UI/perf harn
 
 | Package | Use | Phase | License | Notes |
 |---|---|---|---|---|
-| [groue/GRDB.swift](https://github.com/groue/GRDB.swift) | **Native document store** (SQLite) + repositories | P1 | MIT | Primary persistence; mature, fast, full control over journaling/locking needed for §6. |
-| [1024jp/GzipSwift](https://github.com/1024jp/GzipSwift) or [swift-gzip](https://github.com/mihai8804858/swift-gzip) | gzip container for GnuCash XML interchange | P3/P8 | MIT | Apple Compression lacks the gzip container; `swift-gzip` streams for large files. |
-| [dehesa/CodableCSV](https://github.com/dehesa/CodableCSV) | **CSV import/export** (streaming, RFC-4180) | P4 | MIT | Core CSV importer (`FR-XIO-03/06/08`); alt [yaslab/CSV.swift](https://github.com/yaslab/CSV.swift). |
+| [groue/GRDB.swift](https://github.com/groue/GRDB.swift) | **Native document store** (SQLite) | P1 | MIT | The **only** external dependency in 1.0. |
+
+**As built, went native instead of a package:** the **gzip** container (small header/trailer over Apple Compression's raw DEFLATE) and the **CSV** parser (hand-written, mapping UI on top) — GzipSwift/swift-gzip and CodableCSV were evaluated but not needed.
 
 **Hand-written, no package (none exists for Swift):** **QIF** and **OFX/QFX** parsers (`FR-XIO-01/02`), specced against mature Python/JS/Ruby parsers (§5.8a). OFX v2 reuses `XMLParser`.
 
-**Native / no dependency:** money (`Decimal`), XML read (`XMLParser`), charts (Swift Charts), coordinated file IO (`NSFileCoordinator`/`NSFilePresenter`/`NSFileVersion`), tests (Swift Testing), quotes (`URLSession`). **Removed vs v0.1:** SwiftData, and the `Int128`/BigInt numeric machinery.
+**Native / no dependency:** money (`Decimal`), XML read (`XMLParser`), gzip (Compression), CSV/QIF/OFX parsers, charts (Swift Charts), coordinated file IO (`NSFileCoordinator`/`NSFilePresenter`/`NSFileVersion`), tests (Swift Testing), quotes (`URLSession`). **Removed vs v0.1:** SwiftData, the `Int128`/BigInt numeric machinery, GzipSwift, CodableCSV.
 
 ---
 

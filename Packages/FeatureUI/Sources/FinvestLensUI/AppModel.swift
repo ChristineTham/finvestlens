@@ -141,6 +141,14 @@ public final class AppModel {
     /// The running periodic quote-refresh loop, if any.
     @ObservationIgnored var quoteRefreshTask: Task<Void, Never>?
 
+    /// Refreshes the lock heartbeat while a book is open, so a live holder's
+    /// lock never looks stale to another instance (Architecture §6.1).
+    @ObservationIgnored var heartbeatTask: Task<Void, Never>?
+
+    /// Periodically saves unsaved changes back to the shared file
+    /// (Architecture §3/§6.2 autosave; failures surface via ``documentError``).
+    @ObservationIgnored var autosaveTask: Task<Void, Never>?
+
     /// `true` when the open book is locked behind authentication (`NFR-07`).
     public internal(set) var isLocked = false
 
@@ -252,6 +260,41 @@ public final class AppModel {
         resetUndoBaseline()
     }
 
+    /// Keeps the advisory lock alive and autosaves while a book is open.
+    /// Without the heartbeat, an idle book's lock ages past the staleness
+    /// window and another instance could legitimately break it — two writers.
+    private func startDocumentMaintenance() {
+        heartbeatTask?.cancel()
+        heartbeatTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(25))
+                guard !Task.isCancelled else { break }
+                self?.document?.heartbeat()
+            }
+        }
+        autosaveTask?.cancel()
+        autosaveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(300))
+                guard !Task.isCancelled, let self, self.hasUnsavedChanges else { continue }
+                do {
+                    try self.save()
+                } catch {
+                    // Surface once; don't stack alerts every interval.
+                    if self.documentError == nil {
+                        self.documentError = DocumentError(
+                            message: "Autosave failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+
+    private func stopDocumentMaintenance() {
+        heartbeatTask?.cancel(); heartbeatTask = nil
+        autosaveTask?.cancel(); autosaveTask = nil
+    }
+
     /// Watches the shared file for external changes (iCloud sync from another
     /// device) and raises ``externalChangePending`` (`FR-PLT-02`).
     private func observeExternalChanges() {
@@ -281,12 +324,18 @@ public final class AppModel {
     }
 
     /// Keeps the local version: marks all conflict versions resolved and
-    /// re-saves our copy over the shared file.
+    /// re-saves our copy over the shared file. Failures surface — the user
+    /// must not believe their version won when it didn't.
     public func resolveConflictsKeepingMine() {
         guard let document else { return }
-        try? document.resolveConflictsKeepingCurrent()
-        try? document.save()
-        externalChangePending = false
+        do {
+            try document.resolveConflictsKeepingCurrent()
+            try document.save()
+            externalChangePending = false
+        } catch {
+            documentError = DocumentError(
+                message: "Couldn’t keep your version: \(error.localizedDescription)")
+        }
         refreshAll()
     }
 
@@ -332,7 +381,7 @@ public final class AppModel {
     /// Saves any open book, then opens `url`; failures land in
     /// ``documentError`` (with Break-Lock recovery for stale locks).
     public func openBook(at url: URL, breakStaleLock: Bool = false) {
-        saveAndCloseIfOpen()
+        guard saveAndCloseIfOpen() else { return }
         do {
             try open(at: url, breakStaleLock: breakStaleLock)
         } catch {
@@ -346,7 +395,7 @@ public final class AppModel {
 
     /// Saves any open book, then creates a new one at `url`.
     public func newBook(at url: URL, baseCurrency: Commodity = .aud) {
-        saveAndCloseIfOpen()
+        guard saveAndCloseIfOpen() else { return }
         do {
             try newDocument(at: url, baseCurrency: baseCurrency)
         } catch {
@@ -357,7 +406,7 @@ public final class AppModel {
     /// Imports a GnuCash XML file as a new native book, reporting the summary
     /// (or the failure) through ``infoMessage`` / ``documentError``.
     public func importGnuCashBook(from source: URL, saveAs destination: URL) {
-        saveAndCloseIfOpen()
+        guard saveAndCloseIfOpen() else { return }
         do {
             let summary = try importGnuCash(from: source, saveAs: destination)
             recordLastBook(destination)
@@ -368,11 +417,23 @@ public final class AppModel {
     }
 
     /// Saves and closes the current book, if any — switching books never
-    /// silently discards work.
-    public func saveAndCloseIfOpen() {
-        guard isOpen else { return }
-        if hasUnsavedChanges { try? save() }
+    /// silently discards work. Returns `false` (leaving the book open and
+    /// surfacing ``documentError``) if the save failed; callers must not
+    /// proceed with whatever would have replaced the book.
+    @discardableResult
+    public func saveAndCloseIfOpen() -> Bool {
+        guard isOpen else { return true }
+        if hasUnsavedChanges {
+            do {
+                try save()
+            } catch {
+                documentError = DocumentError(
+                    message: "Couldn’t save “\(documentURL?.lastPathComponent ?? "book")”: \(error.localizedDescription)")
+                return false
+            }
+        }
         close()
+        return true
     }
 
     /// Imports a GnuCash file and saves it as a new native document.
@@ -386,6 +447,10 @@ public final class AppModel {
         document = doc
         reloadKvpCollections()
         refreshAll()
+        startQuoteAutoRefresh()
+        startDocumentMaintenance()
+        observeExternalChanges()
+        resetUndoBaseline()
         return result.summary
     }
 

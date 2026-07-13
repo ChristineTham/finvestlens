@@ -757,6 +757,7 @@ struct TransactionEditorSheet: View {
     @State private var tagsText = ""
     @State private var lines: [EditableSplit] = [EditableSplit(), EditableSplit()]
     @FocusState private var descriptionFocused: Bool
+    @State private var commitError: String?
     @Environment(\.appFontScale) private var appFontScale
     private var amountWidth: CGFloat { 100 * appFontScale }
 
@@ -767,6 +768,10 @@ struct TransactionEditorSheet: View {
     }
 
     private var imbalance: Decimal { lines.reduce(Decimal(0)) { $0 + $1.amount } }
+    /// Currency of the transaction being built (first cash account's, else base).
+    private var displayCurrency: Commodity {
+        model.transactionCurrency(for: lines.compactMap(\.accountID))
+    }
     private var validLineCount: Int { lines.filter { $0.accountID != nil }.count }
     private var isBalanced: Bool { imbalance == 0 && validLineCount >= 2 }
     private var isEditing: Bool { editingID != nil }
@@ -815,9 +820,12 @@ struct TransactionEditorSheet: View {
                     HStack {
                         Text("Imbalance")
                         Spacer()
-                        Text(AmountFormat.string(imbalance, code: "AUD"))
+                        Text(AmountFormat.string(imbalance, code: displayCurrency.mnemonic))
                             .monospacedDigit()
                             .foregroundStyle(imbalance == 0 ? Color.secondary : Color.red)
+                    }
+                    if let commitError {
+                        Text(commitError).scaledFont(.caption).foregroundStyle(.red)
                     }
                 }
             }
@@ -861,14 +869,20 @@ struct TransactionEditorSheet: View {
         let inputs = lines
             .filter { $0.accountID != nil }
             .map { SplitInput(accountID: $0.accountID, value: $0.amount) }
-        if let editingID {
-            _ = try? model.updateTransaction(id: editingID, date: date, description: description,
-                                             currency: .aud, splits: inputs, tags: parsedTags)
-        } else {
-            _ = try? model.addTransaction(date: date, description: description,
-                                          currency: .aud, splits: inputs, tags: parsedTags)
+        let currency = model.transactionCurrency(for: inputs.compactMap(\.accountID))
+        do {
+            if let editingID {
+                try model.updateTransaction(id: editingID, date: date, description: description,
+                                            currency: currency, splits: inputs, tags: parsedTags)
+            } else {
+                try model.addTransaction(date: date, description: description,
+                                         currency: currency, splits: inputs, tags: parsedTags)
+            }
+            dismiss()
+        } catch {
+            // Keep the sheet up — the user's entry must not silently vanish.
+            commitError = error.localizedDescription
         }
-        dismiss()
     }
 }
 

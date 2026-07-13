@@ -2,10 +2,18 @@
 
 | | |
 |---|---|
-| **Document status** | Draft v0.1 |
-| **Last updated** | 2026-07-12 |
+| **Document status** | **Version 1.0 shipped** — Phases P0–P6 complete (13 July 2026) |
+| **Last updated** | 2026-07-13 |
 | **Scope** | The build plan: phases, workstreams, tasks, dependencies, and exit criteria |
 | **Companions** | [PRD](prd.md) · [Architecture](architecture.md) · [Porting Strategy](porting.md) · [Deferred backlog](deferred.md) · [Money study](enhancements-msmoney.md) · [Firefly study](enhancements-firefly.md) · [Frollo study](enhancements-frollo.md) |
+
+> **Release 1.0 (P0–P6).** The engine, native document + locking, GnuCash
+> import/export, core UX, everyday finance (reconcile/scheduled/budgets/
+> reports/bank import/rules/search), investments + multi-currency + quotes,
+> and sync/dashboard/alerts/lock are complete, with undo/redo, save-on-quit
+> and a full menu bar after the usability + HIG passes. Remaining known items
+> live in [deferred.md](deferred.md). P7–P9 (business, extended import/bank
+> sync, planning) are post-1.0.
 
 > **Deferred items from completed phases** (P0–P5) are tracked in [deferred.md](deferred.md), with FR refs, status, and a suggested pick-up phase.
 
@@ -168,20 +176,20 @@ Dependencies point downward only; `Engine` builds/tests with nothing above it (`
 
 **Workstreams & tasks** — status as of completion.
 - ✅ **PriceDB + Price Editor.** *(FR-ENG-09, FR-INV-02)*
-- ✅ **Securities** — created with commodity (exchange/ticker/name) in the New Account editor. ⏸️ A dedicated **Security Editor** (mutate a commodity in place across all holdings) is deferred: risky with existing postings, low value now that creation sets the metadata. *(FR-INV-01/07)*
+- ✅ **Securities** — created with commodity (exchange/ticker/name) in the New Account editor; dedicated **Security Editor** (rename across holdings) shipped later in the backlog sweep. *(FR-INV-01/07)*
 - ✅ **Lots + FIFO/LIFO/average + cap-gains + Investment Lots report.** *(FR-ENG-10, FR-INV-05)*
-- ✅ **Stock Transaction Assistant** — buy/sell/dividend/reinvest/**split** (lot-rescaling). Commission is expensed (not capitalised). ⏸️ Return-of-capital deferred (minor). *(FR-INV-04)*
-- ✅ **Multi-currency** transactions + exchange rates + FX valuation + currency-transfer entry. ⏸️ Optional **trading accounts** (exact multi-currency balancing of unrealised FX) deferred — the balance sheet's residual is the unrealised FX gain; `isBalanced` is informational. *(FR-CUR-01..04, FR-REG-07)*
-- ✅ **Quote providers:** keyless Yahoo + keyed EODHD/Alpha Vantage/Finnhub; Keychain keys; latest + historical backfill; injectable transport. ⏸️ **Scheduled refresh** deferred to P6 (background-task infra). *(FR-INV-03/03a–e, FR-CUR-04, ADR-7)*
+- ✅ **Stock Transaction Assistant** — buy/sell/dividend/reinvest/**split** (lot-rescaling)/**return-of-capital**. Commission is expensed (not capitalised). *(FR-INV-04)*
+- ✅ **Multi-currency** transactions + exchange rates + FX valuation + currency-transfer entry + optional **trading accounts**. *(FR-CUR-01..04, FR-REG-07)*
+- ✅ **Quote providers:** keyless Yahoo + keyed EODHD/Alpha Vantage/Finnhub; Keychain keys; latest + historical backfill; injectable transport; **scheduled auto-refresh**. *(FR-INV-03/03a–e, FR-CUR-04, ADR-7)*
 - ✅ **Investment reports:** Portfolio, Advanced Portfolio (allocation donut, price-history chart), Price Scatter, Investment Lots. *(FR-RPT-02)*
-- ✅ **Portfolio enhancements:** asset allocation, rate of return. ⏸️ **Watch lists** deferred (minor). *(FR-PLAN-07)*
+- ✅ **Portfolio enhancements:** asset allocation, rate of return, **watch lists + price targets**. *(FR-PLAN-07)*
 - ✅ **What-if scenarios** on cash flow (session-only hypothetical events). *(FR-PLAN-03)*
 - ✅ **Rules apply-to-historical + preview** (safe recategorisation of the income/expense leg + notes). *(FR-RULE-02)*
 
 **Dependencies.** P4.
 **Deliverables.** Investments module; quote layer; investment reports.
 **Exit criteria.** ✅ Record buys/sells/dividends/splits; ✅ fetch latest + historical quotes (keyless and keyed, incl. delisted via EODHD); ✅ compute cap gains via lots; ✅ value a multi-currency portfolio in a base currency.
-**Status.** **Complete.** Deferred items (Security Editor, trading accounts, scheduled quote refresh, watch lists, return-of-capital) are documented above; the first three are better tackled in P6 alongside sync/background infra.
+**Status.** **Complete** — including the once-deferred Security Editor, trading accounts, scheduled quote refresh, watch lists and return-of-capital (all shipped in the functional-backlog sweep).
 **Test focus.** Lot/cap-gains, cost-basis methods, splits; quote-provider parsing; FX valuation.
 **Risks.** Yahoo endpoint drift (keyed providers as stable fallback); cap-gains subtlety.
 

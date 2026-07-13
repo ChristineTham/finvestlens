@@ -82,3 +82,34 @@ Known nuances / still deferred:
 | Undo action names | Generic "Undo Change" — per-operation names ("Undo Delete Transaction") need call-site annotations. |
 | Window/state restoration | App launches to the splash; does not reopen the last book automatically. |
 | Help menu | No help book / anchors. |
+
+## 1.0 PRD audit (13 Jul 2026)
+
+Full code review against the PRD before tagging 1.0. Fixed during the audit:
+hardcoded AUD in the transaction editor (now derives the transaction currency
+from the splits' accounts), silent save failures on book-switch/quit/conflict
+resolution (now surfaced, quit cancels on failure), transaction-editor errors
+no longer silently dismissed, **lock heartbeat timer** (idle books no longer
+go stale-breakable), **autosave** (5-minute interval), stale importer/OFX
+comments.
+
+Known 1.0 scope limits (post-1.0 backlog, in priority order):
+
+| Item | FR | Notes | Target |
+|---|---|---|---|
+| QIF splits + investment actions | FR-XIO-01 | Parser handles flat D/T/U/P/M/N/L cash rows only; `S/E/$` splits and `!Type:Invst` actions dropped. | P8 |
+| OFX investment statements | FR-XIO-02 | Only `<STMTTRN>` cash rows parsed; `<INVBUY>`/`<INVSELL>` ignored (use the Stock Assistant). | P8 |
+| CSV price import | FR-XIO-03 | CSV imports transactions only. | P8 |
+| CSV export | FR-XIO-06 | No CSV export (GnuCash XML export covers interchange). | P8 |
+| CSV mapping profiles | FR-XIO-08 | Column mapping is per-import; no saved profiles. | P8 |
+| GnuCash `sx:`/budget/business import | FR-IMP-03/05 | Counted as import warnings; FinvestLens keeps its own in KVP slots. | P7/P8 |
+| Savings goals / piggy banks | FR-GOAL-01 | Not implemented. | P9 |
+| Twelve Data quote provider | FR-INV-03b | Yahoo/EODHD/Alpha Vantage/Finnhub shipped; Twelve Data/Stooq not. | P8 |
+| Scheduled-split formulas | FR-SCH-02 | Fixed amounts only. | P8 |
+| Re-open a finished reconciliation | FR-REC-03 | Begin/toggle/finish/cancel only. | P8 |
+| Loan amortization assistant | FR-SCH-04 | Not implemented. | P9 |
+| Transaction attachments | FR-REG-10 | Not implemented. | P8 |
+| Check printing | FR-REG-11 | Not implemented. | P9 |
+| Open Read-Only on live lock | §6.1 | Open fails with holder info + Break-Lock; no read-only mode. | P7 |
+| Autosave interval setting | §3 | Fixed 5 min; not user-configurable/disableable yet. | P7 |
+| Business (P7), bank sync/MT940/CAMT (P8), planners (P9) | FR-BUS, FR-XIO-04/07, FR-PLAN-10.. | Post-1.0 phases per plan.md. | P7–P9 |
