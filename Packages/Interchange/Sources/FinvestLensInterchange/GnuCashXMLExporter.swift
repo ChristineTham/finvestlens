@@ -14,7 +14,7 @@ import FinvestLensEngine
 /// The output mirrors what ``GnuCashXMLImporter`` reads — commodities, the
 /// account hierarchy, and transactions/splits — preserving GUIDs and the
 /// account placeholder/hidden flags (`FR-EXP-03`). Amounts are emitted as
-/// GnuCash rationals (`num/denom`) at each commodity's fraction. Prices,
+/// exact GnuCash rationals (`num/denom`), so no precision is lost. Prices,
 /// budgets, scheduled and business objects are not yet written (P5+).
 public enum GnuCashXMLExporter {
 
@@ -86,7 +86,7 @@ public enum GnuCashXMLExporter {
             block += "    <price:time><ts:date>\(GnuCashDate.format(price.date))</ts:date></price:time>\n"
             if !price.source.isEmpty { block += "    <price:source>\(escape(price.source))</price:source>\n" }
             if !price.type.isEmpty { block += "    <price:type>\(escape(price.type))</price:type>\n" }
-            block += "    <price:value>\(numeric(price.value, fraction: price.currency.smallestFraction))</price:value>\n"
+            block += "    <price:value>\(rational(price.value, fallbackFraction: price.currency.smallestFraction))</price:value>\n"
             block += "  </price>\n"
         }
         block += "</gnc:pricedb>\n"
@@ -176,8 +176,8 @@ public enum GnuCashXMLExporter {
             block += "      <split:action>\(escape(split.action))</split:action>\n"
         }
         block += "      <split:reconciled-state>\(split.reconcileState.rawValue)</split:reconciled-state>\n"
-        block += "      <split:value>\(numeric(split.value, fraction: currencyFraction))</split:value>\n"
-        block += "      <split:quantity>\(numeric(split.quantity, fraction: quantityFraction))</split:quantity>\n"
+        block += "      <split:value>\(rational(split.value, fallbackFraction: currencyFraction))</split:value>\n"
+        block += "      <split:quantity>\(rational(split.quantity, fallbackFraction: quantityFraction))</split:quantity>\n"
         if let account = split.account {
             block += "      <split:account type=\"guid\">\(account.guid.hexString)</split:account>\n"
         }
@@ -205,13 +205,65 @@ public enum GnuCashXMLExporter {
         }
     }
 
-    /// Formats a decimal as a GnuCash rational `num/denom` at the given fraction.
-    private static func numeric(_ value: Decimal, fraction: Int) -> String {
-        var scaled = value * Decimal(fraction)
+    /// Formats a decimal as an **exact** GnuCash rational `num/denom` with a
+    /// power-of-ten denominator, so no precision is lost (stock prices and
+    /// quantities routinely carry more decimals than the currency fraction).
+    /// A value that can't be represented in Int64 falls back to rounding at
+    /// `fallbackFraction` (the commodity SCU).
+    private static func rational(_ value: Decimal, fallbackFraction: Int) -> String {
+        var scaled = value
+        var denominator: Int64 = 1
+        while true {
+            var rounded = Decimal()
+            var candidate = scaled
+            NSDecimalRound(&rounded, &candidate, 0, .plain)
+            if rounded == scaled,
+               abs(NSDecimalNumber(decimal: scaled).doubleValue) < 9.0e18 {
+                return "\(NSDecimalNumber(decimal: scaled).int64Value)/\(denominator)"
+            }
+            guard denominator <= Int64.max / 10 else { break }
+            scaled *= 10
+            denominator *= 10
+        }
+        // Non-terminating decimal — typically an FX cross-rate that entered
+        // as an odd rational (e.g. 71211/46999). Recover an equivalent
+        // integer rational so a re-import divides back to the same Decimal.
+        if let recovered = bestRational(value) { return recovered }
+        var atFraction = value * Decimal(fallbackFraction)
         var rounded = Decimal()
-        NSDecimalRound(&rounded, &scaled, 0, .plain)
-        let numerator = NSDecimalNumber(decimal: rounded).int64Value
-        return "\(numerator)/\(fraction)"
+        NSDecimalRound(&rounded, &atFraction, 0, .plain)
+        return "\(NSDecimalNumber(decimal: rounded).int64Value)/\(fallbackFraction)"
+    }
+
+    /// Continued-fraction search for an `Int64` rational whose `Decimal`
+    /// division reproduces `value` exactly. Returns `nil` if none fits.
+    private static func bestRational(_ value: Decimal) -> String? {
+        let magnitude = abs(value)
+        let sign = value < 0 ? "-" : ""
+        var x = magnitude
+        var h0: Int64 = 0, h1: Int64 = 1
+        var k0: Int64 = 1, k1: Int64 = 0
+        for _ in 0..<64 {
+            var whole = Decimal()
+            var work = x
+            NSDecimalRound(&whole, &work, 0, .down)
+            guard NSDecimalNumber(decimal: whole).doubleValue < 9.0e18 else { return nil }
+            let a = NSDecimalNumber(decimal: whole).int64Value
+            let (ah, overflowAH) = a.multipliedReportingOverflow(by: h1)
+            let (h, overflowH) = ah.addingReportingOverflow(h0)
+            let (ak, overflowAK) = a.multipliedReportingOverflow(by: k1)
+            let (k, overflowK) = ak.addingReportingOverflow(k0)
+            if overflowAH || overflowH || overflowAK || overflowK { return nil }
+            (h0, h1) = (h1, h)
+            (k0, k1) = (k1, k)
+            if k1 > 0, Decimal(h1) / Decimal(k1) == magnitude {
+                return "\(sign)\(h1)/\(k1)"
+            }
+            let fraction = x - whole
+            if fraction == 0 { return nil }
+            x = 1 / fraction
+        }
+        return nil
     }
 
     private static func escape(_ text: String) -> String {

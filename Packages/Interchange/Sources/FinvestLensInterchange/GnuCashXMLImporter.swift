@@ -60,6 +60,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
     private var accountOrder: [GncGUID] = []
     private var parentGUID: [GncGUID: GncGUID] = [:]
     private var rootGUID: GncGUID?
+    private var bookGUID: GncGUID?
     private var transactions: [Transaction] = []
     private var prices: [Price] = []
     private var summary = ImportSummary()
@@ -67,6 +68,13 @@ private final class Delegate: NSObject, XMLParserDelegate {
     // Parse state.
     private var stack: [String] = []
     private var text = ""
+    /// Inside `<gnc:template-transactions>` — the accounts and transactions
+    /// there are scheduled-transaction internals (with their own ROOT), not
+    /// ledger data. They are skipped so the template root can never hijack
+    /// the book and template postings never pollute the register.
+    private var inTemplateSection = false
+    private var skippedTemplateAccounts = 0
+    private var skippedTemplateTransactions = 0
 
     // Builders for the object currently being read.
     private var commodity: CommodityBuilder?
@@ -87,9 +95,13 @@ private final class Delegate: NSObject, XMLParserDelegate {
         text = ""
 
         switch name {
+        case "gnc:template-transactions":
+            inTemplateSection = true
         case "gnc:commodity": commodity = CommodityBuilder()
-        case "gnc:account": account = AccountBuilder()
-        case "gnc:transaction": transaction = TransactionBuilder()
+        case "gnc:account":
+            if inTemplateSection { skippedTemplateAccounts += 1 } else { account = AccountBuilder() }
+        case "gnc:transaction":
+            if inTemplateSection { skippedTemplateTransactions += 1 } else { transaction = TransactionBuilder() }
         case "trn:split": split = SplitBuilder()
         case "price": price = PriceBuilder(); summary.priceCount += 1
         default: break
@@ -109,6 +121,12 @@ private final class Delegate: NSObject, XMLParserDelegate {
         }
 
         switch name {
+        case "gnc:template-transactions":
+            inTemplateSection = false
+
+        // Book identity (preserved across round-trips).
+        case "book:id": bookGUID = GncGUID(hex: value)
+
         // Commodity fields (context: definition vs. reference).
         case "cmdty:space": setCommodityField(space: value)
         case "cmdty:id": setCommodityField(id: value)
@@ -340,7 +358,14 @@ private final class Delegate: NSObject, XMLParserDelegate {
             root = Account(name: "Root Account", type: .root, commodity: .aud)
         }
 
-        let book = Book(rootAccount: root)
+        if skippedTemplateAccounts + skippedTemplateTransactions > 0 {
+            summary.warnings.append(
+                "Skipped \(skippedTemplateAccounts) template account(s) and " +
+                "\(skippedTemplateTransactions) template transaction(s) " +
+                "(scheduled-transaction internals)")
+        }
+
+        let book = Book(guid: bookGUID ?? .random(), rootAccount: root)
         for key in commodityOrder {
             if let commodity = commoditiesByKey[key] { book.registerCommodity(commodity) }
         }

@@ -15,7 +15,8 @@ left for later.
 |---|---|---|---|---|
 | CI pipeline + file-header/coverage gate | P0 | absent | Tests run locally; no `.github`. | P6 |
 | 100k-txn perf validation (local + SMB/NFS) | P1 (NFR-02, OD-1/2/3) | not-run | Go/no-go for GRDB direct-mode vs working-copy. | P6 |
-| Round-trip corpus CI gate | P3 | not-run | Interop verified manually via `gnucash-cli`; not automated. | P6 |
+| Round-trip corpus CI gate | P3 | partial | Interop verified manually via `gnucash-cli`. **14 Jul 2026:** deep round-trip on a real 8.5 MB book (560 accounts, 46,578 txns, 102,706 prices) now **CLEAN** — full graph + balances identical, double export byte-identical. Found & fixed: template-transactions ROOT hijacked the book (orphaning every real account), price/amount precision loss (exporter rounded to currency SCU; now exact rationals with continued-fraction recovery for FX cross-rates), book GUID not re-imported. Re-runnable harness: `FL_ROUNDTRIP_FILE=… swift test --filter LiveFileRoundTripTests`; CI automation still pending. | P6 |
+| Richer slot (KVP) round-trip | P3 | partial | Only account placeholder/hidden and trn `assoc_uri` slots round-trip; other GnuCash slots (account colours/notes, trn date-posted gdate, lots, sx) are dropped on import — GnuCash re-reading our export loses them. | P7 |
 | Budgets/scheduled/business in native GnuCash slots | P3 | partial | Persist as KVP-JSON, not GnuCash XML slots. | P7 |
 | iCloud Documents container | P6 (FR-PLT-02) | needs-capability | Sync machinery done + storage-agnostic; enabling the container needs a dev team/provisioning. | P6+ |
 | Widgets | P6 (FR-PLT-03) | needs-target | WidgetKit extension target; IntentSupport summaries ready to feed it. | P6+ |

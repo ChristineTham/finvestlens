@@ -134,6 +134,88 @@ struct DocumentLinkRoundTripTests {
         #expect(result.book.transactions.first?.documentLink == "invoices/officeworks-559023.pdf")
     }
 
+    @Test("Book GUID survives export → import")
+    func bookGUID() throws {
+        let book = makeBook()
+        let result = try GnuCashXMLImporter.importBook(from: GnuCashXMLExporter.export(book))
+        #expect(result.book.guid == book.guid)
+    }
+
+    @Test("Sub-cent price values survive (not rounded to the currency fraction)")
+    func pricePrecision() throws {
+        let book = makeBook()
+        let stock = Commodity(namespace: .security("ASX"), mnemonic: "BHP",
+                              fullName: "BHP Group", smallestFraction: 10000)
+        book.registerCommodity(stock)
+        book.addPrice(Price(commodity: stock, currency: .aud, date: day,
+                            value: dec("12.3456"), source: "user:price"))
+        let result = try GnuCashXMLImporter.importBook(from: GnuCashXMLExporter.export(book))
+        #expect(result.book.prices.first?.value == dec("12.3456"))
+    }
+
+    @Test("A non-terminating rational price (FX cross-rate) survives exactly")
+    func oddRationalPrice() throws {
+        let book = makeBook()
+        let value = Decimal(71211) / Decimal(46999)   // repeating decimal
+        book.addPrice(Price(commodity: .aud, currency: .aud, date: day, value: value))
+        let once = try GnuCashXMLImporter.importBook(from: GnuCashXMLExporter.export(book))
+        #expect(once.book.prices.first?.value == value)
+        // And the double export is byte-stable.
+        let twice = GnuCashXMLExporter.export(once.book)
+        #expect(twice == GnuCashXMLExporter.export(
+            try GnuCashXMLImporter.importBook(from: twice).book))
+    }
+
+    @Test("gnc:template-transactions never hijack the book root or the ledger")
+    func templateTransactionsSkipped() throws {
+        let realRoot = GncGUID.random().hexString
+        let bank = GncGUID.random().hexString
+        let templateRoot = GncGUID.random().hexString
+        let templateAcct = GncGUID.random().hexString
+        let xml = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <gnc-v2>
+        <gnc:book version="2.0.0">
+        <gnc:account version="2.0.0">
+          <act:name>Root Account</act:name>
+          <act:id type="guid">\(realRoot)</act:id>
+          <act:type>ROOT</act:type>
+        </gnc:account>
+        <gnc:account version="2.0.0">
+          <act:name>Bank</act:name>
+          <act:id type="guid">\(bank)</act:id>
+          <act:type>BANK</act:type>
+          <act:commodity><cmdty:space>CURRENCY</cmdty:space><cmdty:id>AUD</cmdty:id></act:commodity>
+          <act:parent type="guid">\(realRoot)</act:parent>
+        </gnc:account>
+        <gnc:template-transactions>
+        <gnc:account version="2.0.0">
+          <act:name>Template Root</act:name>
+          <act:id type="guid">\(templateRoot)</act:id>
+          <act:type>ROOT</act:type>
+        </gnc:account>
+        <gnc:account version="2.0.0">
+          <act:name>SX Template</act:name>
+          <act:id type="guid">\(templateAcct)</act:id>
+          <act:type>BANK</act:type>
+          <act:parent type="guid">\(templateRoot)</act:parent>
+        </gnc:account>
+        <gnc:transaction version="2.0.0">
+          <trn:id type="guid">\(GncGUID.random().hexString)</trn:id>
+          <trn:description>Template posting</trn:description>
+        </gnc:transaction>
+        </gnc:template-transactions>
+        </gnc:book>
+        </gnc-v2>
+        """
+        let result = try GnuCashXMLImporter.importBook(from: Data(xml.utf8))
+        #expect(result.book.rootAccount.guid.hexString == realRoot)
+        #expect(result.book.accounts.count == 1)
+        #expect(result.book.accounts.first?.name == "Bank")
+        #expect(result.book.transactions.isEmpty)
+        #expect(result.summary.warnings.contains { $0.contains("template") })
+    }
+
     @Test("Transactions without a link export no trn:slots")
     func noLink() {
         let xml = String(decoding: GnuCashXMLExporter.export(makeBook()), as: UTF8.self)

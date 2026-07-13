@@ -62,3 +62,6 @@ fastlane/screenshots/**/*.png
 fastlane/test_output
 .DS_Store
 dist/
+
+# Personal GnuCash books used for local round-trip testing (never commit).
+/*.gnucash
