@@ -36,6 +36,17 @@ enum GnuCashDate {
         dateTimeFormatter.string(from: date)
     }
 
+    /// Formats a date as a GnuCash `gdate` (day-only, UTC) string.
+    static func formatDayOnly(_ date: Date) -> String {
+        dateOnlyFormatter.string(from: date)
+    }
+
+    /// `true` when the date is exactly midnight UTC — i.e. it carries no
+    /// time-of-day and can be written as a `gdate` without loss.
+    static func isDayOnly(_ date: Date) -> Bool {
+        date.timeIntervalSince1970.truncatingRemainder(dividingBy: 86_400) == 0
+    }
+
     /// Parses a `ts:date` / `gdate` string, tolerating both forms.
     static func parse(_ raw: String) -> Date? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)

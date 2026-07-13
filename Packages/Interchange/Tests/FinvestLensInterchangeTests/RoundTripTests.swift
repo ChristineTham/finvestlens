@@ -134,6 +134,52 @@ struct DocumentLinkRoundTripTests {
         #expect(result.book.transactions.first?.documentLink == "invoices/officeworks-559023.pdf")
     }
 
+    @Test("Notes on accounts and transactions round-trip into their properties")
+    func notesRoundTrip() throws {
+        let book = makeBook()
+        book.accounts.first { $0.name == "Bank" }!.notes = "Joint account\nwith Alex"
+        book.transactions.first!.notes = "Reimbursed by work"
+        let result = try GnuCashXMLImporter.importBook(from: GnuCashXMLExporter.export(book))
+        #expect(account(result, "Bank")?.notes == "Joint account\nwith Alex")
+        #expect(result.book.transactions.first?.notes == "Reimbursed by work")
+        // Lifted into the property, not duplicated in the frame.
+        #expect(account(result, "Bank")?.kvp["notes"] == nil)
+    }
+
+    @Test("Unknown slots round-trip verbatim on every level")
+    func slotPreservation() throws {
+        let book = makeBook()
+        book.kvp["features"] = .frame(KvpFrame(["Budgets": .string("Budgets")]))
+        let bank = book.accounts.first { $0.name == "Bank" }!
+        bank.kvp["color"] = .string("rgb(144,144,238)")
+        bank.kvp["reconcile-info"] = .frame(KvpFrame([
+            "include-children": .int64(0),
+            "last-date": .date(Date(timeIntervalSince1970: 1_700_006_400)),  // midnight UTC
+        ]))
+        let txn = book.transactions.first!
+        txn.kvp["date-posted"] = .date(Date(timeIntervalSince1970: 1_699_920_000))
+        txn.kvp["gains-source"] = .guid(GncGUID.random())
+        let split = txn.splits[0]
+        split.kvp["online_id"] = .string("0161 130257 1234")
+        split.kvp["weight"] = .numeric(dec("0.25"))
+
+        let result = try GnuCashXMLImporter.importBook(from: GnuCashXMLExporter.export(book))
+        #expect(result.book.kvp == book.kvp)
+        let bank2 = try #require(account(result, "Bank"))
+        #expect(bank2.kvp == bank.kvp)
+        let txn2 = try #require(result.book.transactions.first)
+        #expect(txn2.kvp == txn.kvp)
+        #expect(txn2.splits.first { $0.guid == split.guid }?.kvp == split.kvp)
+    }
+
+    @Test("Tags (a KVP list) survive the XML round-trip")
+    func tagsRoundTrip() throws {
+        let book = makeBook()
+        book.transactions.first!.tags = ["holiday", "reimbursable"]
+        let result = try GnuCashXMLImporter.importBook(from: GnuCashXMLExporter.export(book))
+        #expect(result.book.transactions.first?.tags == ["holiday", "reimbursable"])
+    }
+
     @Test("Book GUID survives export → import")
     func bookGUID() throws {
         let book = makeBook()

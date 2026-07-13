@@ -19,9 +19,11 @@ import FinvestLensEngine
 /// scheduled-transaction (`sx:`) and business objects are not yet mapped and
 /// are counted as warnings (FinvestLens keeps its own in KVP slots).
 ///
-/// Slot (KVP) handling in P1 is intentionally minimal: the account
-/// `placeholder`/`hidden` flags are read; richer slot preservation for full
-/// round-trip fidelity is a P3 concern.
+/// Slots (KVP) are captured **verbatim** into the engine's `KvpFrame`s on
+/// book, account, transaction, and split (ADR-4), so unknown GnuCash keys
+/// (colours, online ids, reconcile info, …) survive a round-trip untouched.
+/// `placeholder`/`hidden`/`notes` are lifted into their engine properties.
+/// Commodity slots (`cmdty:slots`, e.g. `user_symbol`) are not yet kept.
 public enum GnuCashXMLImporter {
 
     /// Imports from raw file `data`, transparently decompressing gzip.
@@ -82,7 +84,22 @@ private final class Delegate: NSObject, XMLParserDelegate {
     private var transaction: TransactionBuilder?
     private var split: SplitBuilder?
     private var price: PriceBuilder?
-    private var slotKey: String?
+
+    // KVP slot capture (ADR-4: slots are preserved verbatim so GnuCash
+    // round-trips are lossless). Active while inside a recognised slots
+    // container; nested frames/lists build a small tree that is converted
+    // to a `KvpFrame` when the container closes.
+    private var slotContainer: String?
+    private var slotRoots: [SlotNode] = []
+    private var slotStack: [SlotNode] = []
+    private var bookKvp = KvpFrame()
+
+    private final class SlotNode {
+        var key = ""
+        var valueType = "string"
+        var scalar = ""
+        var children: [SlotNode] = []
+    }
 
     private var parentElement: String? { stack.count >= 2 ? stack[stack.count - 2] : nil }
 
@@ -104,6 +121,22 @@ private final class Delegate: NSObject, XMLParserDelegate {
             if inTemplateSection { skippedTemplateTransactions += 1 } else { transaction = TransactionBuilder() }
         case "trn:split": split = SplitBuilder()
         case "price": price = PriceBuilder(); summary.priceCount += 1
+
+        // Slot containers — capture only when the matching builder is live,
+        // so budget/sx/template slots never leak onto the wrong object.
+        case "act:slots" where account != nil,
+             "trn:slots" where transaction != nil && split == nil,
+             "split:slots" where split != nil,
+             "book:slots":
+            slotContainer = name
+        case "slot":
+            guard slotContainer != nil else { break }
+            let node = SlotNode()
+            if let parent = slotStack.last { parent.children.append(node) } else { slotRoots.append(node) }
+            slotStack.append(node)
+        case "slot:value":
+            guard slotContainer != nil else { break }
+            slotStack.last?.valueType = attributes["type"] ?? "string"
         default: break
         }
     }
@@ -148,7 +181,12 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "trn:id": transaction?.guid = GncGUID(hex: value)
         case "trn:description": transaction?.descriptionText = value
         case "trn:num": transaction?.number = value
-        case "ts:date": setTransactionDate(value)
+        case "ts:date":
+            if slotContainer != nil, parentElement == "slot:value" {
+                slotStack.last?.scalar = value          // timespec slot
+            } else {
+                setTransactionDate(value)
+            }
         case "gnc:transaction": finishTransaction()
 
         // Price fields.
@@ -168,9 +206,19 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "split:action": split?.action = value
         case "trn:split": finishSplit()
 
-        // Minimal slot handling (account placeholder/hidden).
-        case "slot:key": slotKey = value
-        case "slot:value": applySlot(value)
+        // KVP slots (preserved verbatim, ADR-4).
+        case "slot:key":
+            slotStack.last?.key = value
+        case "gdate":
+            if slotContainer != nil { slotStack.last?.scalar = value }
+        case "slot:value":
+            // Scalar text; frames/lists keep "" and use children instead.
+            // gdate/timespec scalars were already set by their child element.
+            if slotContainer != nil, !value.isEmpty { slotStack.last?.scalar = value }
+        case "slot":
+            if slotContainer != nil, !slotStack.isEmpty { slotStack.removeLast() }
+        case "act:slots", "trn:slots", "split:slots", "book:slots":
+            finishSlotContainer(name)
 
         default: break
         }
@@ -210,18 +258,62 @@ private final class Delegate: NSObject, XMLParserDelegate {
         }
     }
 
-    private func applySlot(_ value: String) {
-        defer { slotKey = nil }
-        guard let key = slotKey else { return }
-        if account != nil {
-            switch key {
-            case "placeholder": account?.isPlaceholder = (value == "true")
-            case "hidden": account?.isHidden = (value == "true")
-            default: break
+    /// Converts the captured slot tree to a frame and delivers it, lifting
+    /// the keys FinvestLens models as properties (`placeholder`, `hidden`,
+    /// `notes`) out of the frame so there is a single source of truth.
+    private func finishSlotContainer(_ container: String) {
+        guard slotContainer == container else { return }
+        var frame = KvpFrame()
+        for node in slotRoots where !node.key.isEmpty {
+            if let value = Self.kvpValue(of: node) { frame[node.key] = value }
+        }
+        slotRoots = []
+        slotStack = []
+        slotContainer = nil
+
+        switch container {
+        case "act:slots":
+            if case let .string(text)? = frame["placeholder"] {
+                account?.isPlaceholder = (text == "true"); frame["placeholder"] = nil
             }
-        } else if transaction != nil, split == nil, key == "assoc_uri" {
-            // GnuCash transaction association (document link, FR-AI-08).
-            transaction?.documentLink = value
+            if case let .string(text)? = frame["hidden"] {
+                account?.isHidden = (text == "true"); frame["hidden"] = nil
+            }
+            if case let .string(text)? = frame["notes"] {
+                account?.notes = text; frame["notes"] = nil
+            }
+            account?.kvp = frame
+        case "trn:slots":
+            if case let .string(text)? = frame["notes"] {
+                transaction?.notes = text; frame["notes"] = nil
+            }
+            transaction?.kvp = frame
+        case "split:slots":
+            split?.kvp = frame
+        case "book:slots":
+            bookKvp = frame
+        default:
+            break
+        }
+    }
+
+    private static func kvpValue(of node: SlotNode) -> KvpValue? {
+        switch node.valueType {
+        case "integer": return Int64(node.scalar).map(KvpValue.int64)
+        case "double": return Double(node.scalar).map(KvpValue.double)
+        case "numeric": return GnuCashNumeric.parse(node.scalar).map(KvpValue.numeric)
+        case "guid": return GncGUID(hex: node.scalar).map(KvpValue.guid)
+        case "gdate", "timespec": return GnuCashDate.parse(node.scalar).map(KvpValue.date)
+        case "frame":
+            var frame = KvpFrame()
+            for child in node.children where !child.key.isEmpty {
+                if let value = kvpValue(of: child) { frame[child.key] = value }
+            }
+            return .frame(frame)
+        case "list":
+            return .list(node.children.compactMap { kvpValue(of: $0) })
+        default:
+            return .string(node.scalar)
         }
     }
 
@@ -261,6 +353,8 @@ private final class Delegate: NSObject, XMLParserDelegate {
             isPlaceholder: builder.isPlaceholder,
             isHidden: builder.isHidden
         )
+        acct.notes = builder.notes
+        acct.kvp = builder.kvp
         accountsByGUID[guid] = acct
         accountOrder.append(guid)
         if type == .root {
@@ -282,6 +376,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
             memo: builder.memo,
             action: builder.action
         )
+        engineSplit.kvp = builder.kvp
         transaction?.pendingSplits.append(engineSplit)
     }
 
@@ -301,7 +396,8 @@ private final class Delegate: NSObject, XMLParserDelegate {
             number: builder.number,
             description: builder.descriptionText
         )
-        txn.documentLink = builder.documentLink
+        txn.notes = builder.notes
+        txn.kvp = builder.kvp
         for split in builder.pendingSplits { txn.addSplit(split) }
         transactions.append(txn)
     }
@@ -365,7 +461,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
                 "(scheduled-transaction internals)")
         }
 
-        let book = Book(guid: bookGUID ?? .random(), rootAccount: root)
+        let book = Book(guid: bookGUID ?? .random(), rootAccount: root, kvp: bookKvp)
         for key in commodityOrder {
             if let commodity = commoditiesByKey[key] { book.registerCommodity(commodity) }
         }
@@ -428,6 +524,8 @@ private struct AccountBuilder {
     var parentGUID: GncGUID?
     var isPlaceholder = false
     var isHidden = false
+    var notes = ""
+    var kvp = KvpFrame()
 }
 
 private struct TransactionBuilder {
@@ -438,7 +536,8 @@ private struct TransactionBuilder {
     var dateEntered: Date?
     var number = ""
     var descriptionText = ""
-    var documentLink: String?
+    var notes = ""
+    var kvp = KvpFrame()
     var pendingSplits: [Split] = []
 }
 
@@ -450,6 +549,7 @@ private struct SplitBuilder {
     var accountGUID: GncGUID?
     var memo = ""
     var action = ""
+    var kvp = KvpFrame()
 }
 
 private struct PriceBuilder {

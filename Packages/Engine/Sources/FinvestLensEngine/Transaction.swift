@@ -59,8 +59,9 @@ public final class Transaction {
     /// slot so it survives save; import matching checks both dates so a
     /// re-imported statement still recognises the transaction (`FR-AI-07`).
     ///
-    /// Not part of GnuCash's schema: it persists in the native document and
-    /// is omitted from GnuCash XML export (GnuCash sees only `datePosted`).
+    /// Not part of GnuCash's schema: GnuCash sees only `datePosted`, but the
+    /// slot rides along in XML export/import (as `finvestlens/statement-date`)
+    /// like any other preserved KVP, so it survives a GnuCash round-trip.
     public var statementDate: Date? {
         get {
             guard case let .date(date)? = kvp[Self.statementDateKey] else { return nil }

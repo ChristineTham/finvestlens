@@ -176,4 +176,14 @@ struct ScrubTests {
         book.addTransaction(single)
         #expect(Scrub.check(book).contains { if case .degenerateTransaction = $0 { return true } else { return false } })
     }
+
+    @Test("A zero-value single-split stub (GnuCash empty opening balance) is clean")
+    func zeroValueStubIsClean() {
+        let book = Book(baseCurrency: .aud)
+        let bank = book.addAccount(Account(name: "Bank", type: .bank, commodity: .aud))
+        let stub = Transaction(currency: .aud, datePosted: day, description: "Opening Balance")
+        stub.addSplit(account: bank, value: 0)
+        book.addTransaction(stub)
+        #expect(Scrub.isClean(book))
+    }
 }

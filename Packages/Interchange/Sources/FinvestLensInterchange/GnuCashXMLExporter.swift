@@ -48,6 +48,9 @@ public enum GnuCashXMLExporter {
 
         """
 
+        out += slotsBlock(book.kvp.slots.sorted { $0.key < $1.key },
+                          container: "book:slots", indent: "")
+
         let accounts = [book.rootAccount] + book.rootAccount.descendants
         out += "<gnc:count-data cd:type=\"commodity\">\(book.commodities.count)</gnc:count-data>\n"
         out += "<gnc:count-data cd:type=\"account\">\(accounts.count)</gnc:count-data>\n"
@@ -121,12 +124,12 @@ public enum GnuCashXMLExporter {
         if !account.accountDescription.isEmpty {
             block += "  <act:description>\(escape(account.accountDescription))</act:description>\n"
         }
-        if account.isPlaceholder || account.isHidden {
-            block += "  <act:slots>\n"
-            if account.isPlaceholder { block += boolSlot("placeholder") }
-            if account.isHidden { block += boolSlot("hidden") }
-            block += "  </act:slots>\n"
-        }
+        var slotEntries: [(String, KvpValue)] = []
+        if account.isPlaceholder { slotEntries.append(("placeholder", .string("true"))) }
+        if account.isHidden { slotEntries.append(("hidden", .string("true"))) }
+        if !account.notes.isEmpty { slotEntries.append(("notes", .string(account.notes))) }
+        slotEntries += account.kvp.slots.sorted { $0.key < $1.key }
+        block += slotsBlock(slotEntries, container: "act:slots", indent: "  ")
         if let parent = account.parent {
             block += "  <act:parent type=\"guid\">\(parent.guid.hexString)</act:parent>\n"
         }
@@ -147,15 +150,10 @@ public enum GnuCashXMLExporter {
         block += "  <trn:date-posted><ts:date>\(GnuCashDate.format(transaction.datePosted))</ts:date></trn:date-posted>\n"
         block += "  <trn:date-entered><ts:date>\(GnuCashDate.format(transaction.dateEntered))</ts:date></trn:date-entered>\n"
         block += "  <trn:description>\(escape(transaction.transactionDescription))</trn:description>\n"
-        // Document link (GnuCash transaction association, FR-AI-08).
-        if let link = transaction.documentLink {
-            block += "  <trn:slots>\n"
-            block += "    <slot>\n"
-            block += "      <slot:key>assoc_uri</slot:key>\n"
-            block += "      <slot:value type=\"string\">\(escape(link))</slot:value>\n"
-            block += "    </slot>\n"
-            block += "  </trn:slots>\n"
-        }
+        var slotEntries: [(String, KvpValue)] = []
+        if !transaction.notes.isEmpty { slotEntries.append(("notes", .string(transaction.notes))) }
+        slotEntries += transaction.kvp.slots.sorted { $0.key < $1.key }
+        block += slotsBlock(slotEntries, container: "trn:slots", indent: "  ")
         block += "  <trn:splits>\n"
         for split in transaction.splits {
             block += splitBlock(split, currencyFraction: transaction.currency.smallestFraction)
@@ -181,18 +179,69 @@ public enum GnuCashXMLExporter {
         if let account = split.account {
             block += "      <split:account type=\"guid\">\(account.guid.hexString)</split:account>\n"
         }
+        block += slotsBlock(split.kvp.slots.sorted { $0.key < $1.key },
+                            container: "split:slots", indent: "      ")
         block += "    </trn:split>\n"
         return block
     }
 
-    private static func boolSlot(_ key: String) -> String {
-        """
-            <slot>
-              <slot:key>\(key)</slot:key>
-              <slot:value type="string">true</slot:value>
-            </slot>
+    /// Emits a `<…:slots>` container for the given entries (sorted by the
+    /// caller for deterministic output), or nothing when empty.
+    private static func slotsBlock(_ entries: [(String, KvpValue)],
+                                   container: String, indent: String) -> String {
+        guard !entries.isEmpty else { return "" }
+        var block = "\(indent)<\(container)>\n"
+        for (key, value) in entries {
+            block += slotXML(key: key, value: value, indent: indent + "  ")
+        }
+        block += "\(indent)</\(container)>\n"
+        return block
+    }
 
-        """
+    private static func slotXML(key: String, value: KvpValue, indent: String) -> String {
+        var block = "\(indent)<slot>\n"
+        block += "\(indent)  <slot:key>\(escape(key))</slot:key>\n"
+        block += slotValueXML(value, indent: indent + "  ")
+        block += "\(indent)</slot>\n"
+        return block
+    }
+
+    private static func slotValueXML(_ value: KvpValue, indent: String) -> String {
+        switch value {
+        case .string(let text):
+            return "\(indent)<slot:value type=\"string\">\(escape(text))</slot:value>\n"
+        case .int64(let number):
+            return "\(indent)<slot:value type=\"integer\">\(number)</slot:value>\n"
+        case .double(let number):
+            return "\(indent)<slot:value type=\"double\">\(number)</slot:value>\n"
+        case .numeric(let number):
+            return "\(indent)<slot:value type=\"numeric\">\(rational(number, fallbackFraction: 1_000_000))</slot:value>\n"
+        case .guid(let guid):
+            return "\(indent)<slot:value type=\"guid\">\(guid.hexString)</slot:value>\n"
+        case .date(let date):
+            // Day-only dates keep GnuCash's `gdate` form; date-times need
+            // a `timespec` to survive with their time component.
+            if GnuCashDate.isDayOnly(date) {
+                return "\(indent)<slot:value type=\"gdate\"><gdate>\(GnuCashDate.formatDayOnly(date))</gdate></slot:value>\n"
+            }
+            return "\(indent)<slot:value type=\"timespec\"><ts:date>\(GnuCashDate.format(date))</ts:date></slot:value>\n"
+        case .frame(let frame):
+            var block = "\(indent)<slot:value type=\"frame\">\n"
+            for (key, child) in frame.slots.sorted(by: { $0.key < $1.key }) {
+                block += slotXML(key: key, value: child, indent: indent + "  ")
+            }
+            block += "\(indent)</slot:value>\n"
+            return block
+        case .list(let values):
+            // Elements ride as keyless <slot> children; the importer reads
+            // them back positionally.
+            var block = "\(indent)<slot:value type=\"list\">\n"
+            for child in values {
+                block += slotXML(key: "", value: child, indent: indent + "  ")
+            }
+            block += "\(indent)</slot:value>\n"
+            return block
+        }
     }
 
     // MARK: Helpers

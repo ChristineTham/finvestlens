@@ -42,7 +42,14 @@ public enum Scrub {
         var issues: [Issue] = []
         for transaction in book.transactions {
             if transaction.splits.count < 2 {
-                issues.append(.degenerateTransaction(transaction.guid, splitCount: transaction.splits.count))
+                // A lone zero-value split is GnuCash's "no opening balance"
+                // stub — balanced by definition, not a structural problem.
+                let isZeroStub = transaction.splits.count == 1
+                    && transaction.splits[0].value == 0
+                    && transaction.splits[0].quantity == 0
+                if !isZeroStub {
+                    issues.append(.degenerateTransaction(transaction.guid, splitCount: transaction.splits.count))
+                }
             }
             if !transaction.isBalanced {
                 issues.append(.unbalancedTransaction(
