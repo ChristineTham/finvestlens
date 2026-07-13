@@ -5,7 +5,7 @@
 | **Product** | FinvestLens — native Apple double-entry accounting |
 | **Platforms** | macOS, iPadOS, iOS |
 | **Document status** | Draft v0.1 |
-| **Last updated** | 2026-07-12 |
+| **Last updated** | 2026-07-14 |
 | **Author** | Christine Tham |
 | **License** | GNU GPL v3.0 |
 
@@ -269,6 +269,8 @@ FinvestLens is a **document-based app** with its **own native file format** (a s
 
 ### 5.15 Platform integration
 
+**Import/export is a desktop-class capability.** GnuCash XML import/export, bank-file import (CSV/QIF/OFX-QFX), CSV export, and report/PDF export are **macOS (and iPadOS where feasible)** features. On **iOS (iPhone)**, it is acceptable for FinvestLens to support only **opening** an existing book and **creating/editing** new books — import and export need not be offered. This keeps the compact iPhone experience focused on quick entry and review; users move data in and out on the Mac (or iPad), with the same document opened everywhere via Files/iCloud (`FR-PLT-02`).
+
 | ID | Requirement | Pri | Phase |
 |---|---|---|---|
 | FR-PLT-01 | Adaptive SwiftUI UI: multi-column/sidebar on macOS & iPad, compact navigation on iPhone. | Must | P2 |
@@ -276,6 +278,7 @@ FinvestLens is a **document-based app** with its **own native file format** (a s
 | FR-PLT-03 | System integration: **Shortcuts / App Intents**, Spotlight, **Quick Look** for `.finvestlens` (and `.gnucash`) files, Share Sheet, Home-screen **widgets** (net worth, budget). | Could | P6 |
 | FR-PLT-04 | Register FinvestLens's **own** `.finvestlens` document type (UTI, `public.database`) and register as an importer/exporter for GnuCash file types. | Must | P1/P3 |
 | FR-PLT-05 | Standard document behaviors (open/save/save-as, autosave, recent files, versions) across macOS/iPadOS/iOS. | Should | P1 |
+| FR-PLT-06 | **Platform capability scoping.** GnuCash XML import/export, bank-file import, CSV export, and report/PDF export are provided on **macOS** (and **iPadOS** as feasible). On **iOS (iPhone)** these are **out of scope**; iOS supports opening existing books and creating/editing new ones only. | Must | P6 |
 
 ### 5.16 Planning, forecasting & insights (Microsoft Money–inspired)
 
@@ -326,7 +329,7 @@ Automation and organization features that layer onto the engine. See the [enhanc
 | NFR-01 **Correctness** | Monetary math uses native `Decimal` (no binary-float error), rounded to each commodity's fraction. No transaction may persist unbalanced (within one minor unit). Round-trip import/export preserves structure/GUIDs/slots losslessly; amounts match within a rounding tolerance (test-enforced). |
 | NFR-02 **Performance** | Open and render a book with 100k+ transactions responsively; register scrolling and balance computation stay smooth (target <100 ms interactions on current Apple hardware). Import of a large GnuCash file completes with progress feedback. |
 | NFR-03 **Data integrity & safety** | Never lose or silently mutate user data; guard destructive actions; keep unrecognised imported data for round-tripping. Local-first; works fully **offline**. |
-| NFR-04 **Platform support** | macOS, iPadOS, iOS on a shared codebase. Minimum OS versions to be finalized (target current − 1 major). |
+| NFR-04 **Platform support** | macOS, iPadOS, iOS on a shared codebase. Minimum OS versions to be finalized (target current − 1 major). Not every capability need be present on every platform: import/export is desktop-class (macOS/iPadOS); iPhone is open/create/edit only (`FR-PLT-06`). |
 | NFR-05 **Accessibility** | Full VoiceOver, Dynamic Type, keyboard navigation, sufficient contrast, Reduce Motion support. |
 | NFR-06 **Localization** | Localizable UI; correct locale-aware number, date, and currency formatting; right-to-left readiness. |
 | NFR-07 **Privacy & security** | No financial data leaves the device except via user-initiated iCloud sync or export. No trades or transfers. Optional local authentication (Face ID / Touch ID) to open a book. |
@@ -365,7 +368,7 @@ Book
 
 - **macOS** — Multi-pane document window: accounts sidebar, register main area, inspector; toolbar, keyboard shortcuts; standard document lifecycle. GnuCash's menu set (File, Edit, View, Transaction, Business, Reports, Tools, Windows, Help) maps to a native macOS menu bar; the distinct GnuCash windows (Account Tree, Register/General Journal, Report, Reconcile, Scheduled Transactions) map to panes/sheets/tabs.
 - **iPadOS** — Sidebar + detail split view; pointer/keyboard support; drag-and-drop; multitasking.
-- **iOS** — Compact, navigation-stack UI optimized for quick transaction entry and review; widgets and Shortcuts for glanceable balances.
+- **iOS** — Compact, navigation-stack UI optimized for quick transaction entry and review; widgets and Shortcuts for glanceable balances. Open an existing book or create/edit a new one; **import and export (GnuCash, bank files, CSV, PDF) are not offered on iPhone** — those flows live on macOS/iPadOS (`FR-PLT-06`).
 - **Shared** — One design language; Dark Mode; SF Symbols; native controls; charts consistent with the project's data-visualization standards.
 
 ---
