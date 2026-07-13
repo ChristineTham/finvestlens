@@ -66,6 +66,32 @@ struct CloudDocumentTests {
         #expect(bookmarks[urls[5].path] != nil)
     }
 
+    @Test("New-book URLs avoid existing books and stale locks")
+    func newBookNaming() throws {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        // Empty folder → plain "Untitled".
+        #expect(AppModel.newBookURL(in: folder).lastPathComponent == "Untitled.finvestlens")
+
+        // Existing book → "Untitled 2"; stale lock for 2 → skip to 3.
+        try Data().write(to: folder.appendingPathComponent("Untitled.finvestlens"))
+        #expect(AppModel.newBookURL(in: folder).lastPathComponent == "Untitled 2.finvestlens")
+        try Data().write(to: folder.appendingPathComponent("Untitled 2.lock"))
+        #expect(AppModel.newBookURL(in: folder).lastPathComponent == "Untitled 3.finvestlens")
+
+        // The URL actually works end-to-end for creating a book.
+        let model = AppModel()
+        try model.newDocument(at: AppModel.newBookURL(in: folder))
+        defer { model.close() }
+        #expect(model.isOpen)
+        #expect(model.documentURL?.lastPathComponent == "Untitled 3.finvestlens")
+        #expect(FileManager.default.fileExists(
+            atPath: folder.appendingPathComponent("Untitled 3.finvestlens").path))
+    }
+
     @Test("A book in a read-only folder opens lockless (provider-style grant)")
     func openLockless() throws {
         let folder = FileManager.default.temporaryDirectory

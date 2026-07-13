@@ -91,9 +91,11 @@ struct RootHost: View {
         #if os(macOS)
         DocumentDialogs.newBook(model)
         #else
-        let name = "Untitled-\(UUID().uuidString.prefix(6)).finvestlens"
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
-        model.newBook(at: url)
+        // Documents, not tmp: iOS purges the temporary directory, silently
+        // destroying books created there. Documents is user-visible in the
+        // Files app ("On My iPhone > finvestlens") since the app declares
+        // UISupportsDocumentBrowser.
+        model.newBook(at: AppModel.newBookURL(in: URL.documentsDirectory))
         #endif
     }
 

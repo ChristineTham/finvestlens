@@ -24,6 +24,31 @@ extension AppModel {
 
     static let documentFolderDefaultsKey = "finvestlens.documentFolderPath"
 
+    // MARK: New-book placement
+
+    /// A non-colliding URL for a new book in `directory`: `Untitled`,
+    /// `Untitled 2`, `Untitled 3`, … On iOS the caller passes the app's
+    /// Documents directory — user-visible in Files under
+    /// "On My iPhone ▸ finvestlens" — never the purgeable temporary
+    /// directory. A leftover sibling `.lock` also counts as a collision, so
+    /// a new book can never adopt a stale lock.
+    public static func newBookURL(in directory: URL,
+                                  baseName: String = "Untitled") -> URL {
+        func candidate(_ index: Int) -> URL {
+            let name = index == 1 ? baseName : "\(baseName) \(index)"
+            return directory.appendingPathComponent(name)
+                .appendingPathExtension("finvestlens")
+        }
+        var index = 1
+        while FileManager.default.fileExists(atPath: candidate(index).path)
+            || FileManager.default.fileExists(
+                atPath: candidate(index).deletingPathExtension()
+                    .appendingPathExtension("lock").path) {
+            index += 1
+        }
+        return candidate(index)
+    }
+
     // MARK: Folder setting
 
     /// The user-chosen document folder, or `nil` to use the book's folder.
