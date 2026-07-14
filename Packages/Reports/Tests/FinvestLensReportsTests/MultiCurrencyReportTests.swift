@@ -53,6 +53,30 @@ struct MultiCurrencyReportTests {
         #expect(points.first?.netWorth == dec("1300"))
     }
 
+    @Test("Balance sheet and net worth value security holdings at market")
+    func securitiesValued() {
+        let b = Book(baseCurrency: .aud)
+        let cba = Commodity(namespace: .security("ASX"), mnemonic: "CBA.AX",
+                            fullName: "Commonwealth Bank", smallestFraction: 10000)
+        let bank = b.addAccount(Account(name: "Bank", type: .bank, commodity: .aud))
+        let shares = b.addAccount(Account(name: "CBA", type: .stock, commodity: cba))
+
+        // Buy 100 CBA for $10,000; price later $171.57 → market value $17,157.
+        let buy = Transaction(currency: .aud, datePosted: day(1), description: "Buy CBA")
+        buy.addSplit(Split(account: shares, value: dec("10000"), quantity: dec("100")))
+        buy.addSplit(account: bank, value: dec("-10000"))
+        b.addTransaction(buy)
+        b.addPrice(Price(commodity: cba, currency: .aud, date: day(5), value: dec("171.57")))
+
+        let sheet = FinancialReports.balanceSheet(b, asOf: day(10), currency: .aud)
+        // Bank −10,000 + CBA 17,157 = 7,157.
+        #expect(sheet.assets.contains { $0.name == "CBA" && $0.amount == dec("17157") })
+        #expect(sheet.totalAssets == dec("7157"))
+
+        let nw = FinancialReports.netWorthSeries(b, dates: [day(10)], currency: .aud)
+        #expect(nw.first?.assets == dec("7157"))
+    }
+
     @Test("Rate change moves the converted balance")
     func rateChange() {
         let b = book()

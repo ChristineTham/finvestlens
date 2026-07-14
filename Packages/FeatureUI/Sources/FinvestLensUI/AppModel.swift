@@ -719,18 +719,46 @@ public final class AppModel {
 
     private func node(for account: Account, book: Book) -> AccountNode {
         let children = account.children.map { node(for: $0, book: book) }
+        let amount: Decimal
+        let code: String
+        if children.isEmpty {
+            // A leaf shows its own balance in its own commodity — shares for a
+            // security, cash for a currency account (as GnuCash does).
+            amount = book.balance(of: account).rounded.amount
+            code = account.commodity.mnemonic
+        } else {
+            // A parent shows the whole subtree valued in the base currency.
+            // Each account is converted individually (securities at market,
+            // foreign currencies at the FX rate) then summed — converting the
+            // mixed-commodity quantity sum would be meaningless.
+            let base = reportCurrency
+            amount = subtreeValue(of: account, in: base, book: book)
+            code = base.mnemonic
+        }
         return AccountNode(
             id: account.guid,
             name: account.name,
             fullName: account.fullName,
             typeName: account.type.rawValue.capitalized,
-            balance: book.balance(of: account, includingDescendants: true).rounded.amount,
-            currencyCode: account.commodity.mnemonic,
+            balance: amount,
+            currencyCode: code,
             isPlaceholder: account.isPlaceholder,
             isHidden: account.isHidden,
             color: account.color,
             children: children.isEmpty ? nil : children
         )
+    }
+
+    /// The base-currency value of an account and all its descendants, summing
+    /// each account's individually-converted balance (`FR-INV-06`).
+    private func subtreeValue(of account: Account, in currency: Commodity, book: Book) -> Decimal {
+        var total = Decimal(0)
+        for descendant in [account] + account.descendants {
+            if let value = book.convertedBalance(of: descendant, in: currency) {
+                total += value
+            }
+        }
+        return currency.round(total)
     }
 
     private func refreshRegister() {

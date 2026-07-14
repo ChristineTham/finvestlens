@@ -57,12 +57,12 @@ public struct NetWorthPoint: Identifiable, Hashable, Sendable {
 
 /// Computes the core financial reports over an engine ``Book``.
 ///
-/// Reports are multi-currency: every currency-denominated account is included
-/// and converted into the report `currency` using the price DB at the report
-/// date (`FR-CUR-03`). Foreign accounts with no available rate are omitted.
-/// Security accounts (non-currency commodities) are covered by the Portfolio
-/// report, not the balance sheet. Amounts are sign-adjusted so credit-normal
-/// accounts (liabilities, equity, income) read as positive.
+/// Reports are multi-currency: every account is included and converted into
+/// the report `currency` using the price DB at the report date — foreign
+/// currencies at the FX rate, **security holdings at market** (shares × unit
+/// price, `FR-INV-06`/`FR-CUR-03`). Accounts with no available rate/price are
+/// omitted. Amounts are sign-adjusted so credit-normal accounts (liabilities,
+/// equity, income) read as positive.
 public enum FinancialReports {
 
     private static let assetTypes: Set<AccountType> =
@@ -73,7 +73,7 @@ public enum FinancialReports {
     // MARK: Balance Sheet
 
     public static func balanceSheet(_ book: Book, asOf: Date, currency: Commodity) -> BalanceSheet {
-        let accounts = book.accounts.filter { $0.commodity.namespace == .currency && !$0.isPlaceholder }
+        let accounts = book.accounts.filter { !$0.isPlaceholder }
 
         func lines(_ types: Set<AccountType>) -> ([ReportLine], Decimal) {
             var result: [ReportLine] = []
@@ -127,7 +127,7 @@ public enum FinancialReports {
 
     public static func incomeStatement(_ book: Book, from: Date, to: Date,
                                        currency: Commodity) -> IncomeStatement {
-        let accounts = book.accounts.filter { $0.commodity.namespace == .currency && !$0.isPlaceholder }
+        let accounts = book.accounts.filter { !$0.isPlaceholder }
 
         func lines(_ type: AccountType) -> ([ReportLine], Decimal) {
             var result: [ReportLine] = []
@@ -202,7 +202,13 @@ public enum FinancialReports {
                                         rateDate: Date?) -> Decimal? {
         let native = displayBalance(of: account, in: book, from: from, to: to)
         if account.commodity == currency || native == 0 { return native }
-        return book.convert(native, from: account.commodity, to: currency, on: rateDate)
+        if account.commodity.namespace == .currency {
+            return book.convert(native, from: account.commodity, to: currency, on: rateDate)
+        }
+        // Security (stock/fund): value the holding at market — shares × the
+        // latest unit price in `currency` (`FR-INV-06`).
+        guard let unit = book.securityUnitValue(account.commodity, in: currency, on: rateDate) else { return nil }
+        return native * unit
     }
 
     private static func periodTotal(_ book: Book, types: Set<AccountType>,
@@ -210,7 +216,7 @@ public enum FinancialReports {
                                     rateDate: Date?) -> Decimal {
         var total = Decimal(0)
         for account in book.accounts
-        where types.contains(account.type) && account.commodity.namespace == .currency && !account.isPlaceholder {
+        where types.contains(account.type) && !account.isPlaceholder {
             if let amount = convertedDisplayBalance(of: account, in: book, from: from, to: to,
                                                     currency: currency, rateDate: rateDate) {
                 total += amount
