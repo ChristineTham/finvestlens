@@ -47,13 +47,7 @@ public extension Book {
     /// `date` — used to value a security when no price exists directly in the
     /// report currency.
     func latestPriceInAnyCurrency(of commodity: Commodity, on date: Date? = nil) -> Price? {
-        var best: Price?
-        for price in prices {
-            guard price.commodity == commodity else { continue }
-            if let date, price.date > date { continue }
-            if best == nil || price.date > best!.date { best = price }
-        }
-        return best
+        latestPricedAnyCurrency(of: commodity, on: date)
     }
 
     /// The value of one unit of a security `commodity` in `currency`, priced

@@ -29,7 +29,13 @@ public final class Book {
     public private(set) var commodities: [Commodity]
 
     /// The price database (`FR-ENG-09`).
-    public private(set) var prices: [Price]
+    ///
+    /// Any change drops the lookup index rather than updating it: invalidation
+    /// is O(1), so reading a book's 100k prices stays linear, and the rebuild
+    /// is paid once on the next lookup.
+    public private(set) var prices: [Price] {
+        didSet { invalidatePriceIndex() }
+    }
 
     /// Preserved book-level key-value slots.
     public var kvp: KvpFrame
@@ -117,19 +123,91 @@ public final class Book {
         prices.removeAll { $0.guid == guid }
     }
 
+    // MARK: Price index
+
+    /// A quoted pair: what is priced, and what it is priced in.
+    struct PricePair: Hashable {
+        let commodity: Commodity
+        let currency: Commodity
+    }
+
+    /// Prices bucketed by pair and by commodity, each bucket sorted by date.
+    ///
+    /// `latestPrice` used to scan the whole database — 26 ms on a 100k-price
+    /// book — and the account tree asks for prices thousands of times per
+    /// refresh, which is what made opening a real book take ~45s. Built lazily
+    /// on first lookup and dropped whenever `prices` changes, so loading a book
+    /// (100k appends) doesn't rebuild it once per price.
+    private var pairIndex: [PricePair: [Price]]?
+    private var commodityIndex: [Commodity: [Price]]?
+
+    func invalidatePriceIndex() {
+        pairIndex = nil
+        commodityIndex = nil
+    }
+
+    /// Sorts a bucket by date, keeping insertion order within a date. The scan
+    /// this replaces took the *first* price of the winning date in `prices`
+    /// order, so ties must not be reordered or a duplicate-dated import would
+    /// silently change a balance.
+    private static func sortedByDate(_ bucket: [Price]) -> [Price] {
+        bucket.enumerated()
+            .sorted { $0.element.date == $1.element.date ? $0.offset < $1.offset
+                                                        : $0.element.date < $1.element.date }
+            .map(\.element)
+    }
+
+    private func buildIndexIfNeeded() {
+        guard pairIndex == nil || commodityIndex == nil else { return }
+        var pairs: [PricePair: [Price]] = [:]
+        var byCommodity: [Commodity: [Price]] = [:]
+        for price in prices {
+            pairs[PricePair(commodity: price.commodity, currency: price.currency), default: []]
+                .append(price)
+            byCommodity[price.commodity, default: []].append(price)
+        }
+        pairIndex = pairs.mapValues(Self.sortedByDate)
+        commodityIndex = byCommodity.mapValues(Self.sortedByDate)
+    }
+
+    /// The latest price in a date-sorted `bucket` on or before `date`, matching
+    /// the linear scan it replaces: the first price of the winning date.
+    private static func latest(in bucket: [Price], on date: Date?) -> Price? {
+        // First index past the cut-off, by binary search.
+        var low = 0, high = bucket.count
+        if let date {
+            while low < high {
+                let mid = (low + high) / 2
+                if bucket[mid].date > date { high = mid } else { low = mid + 1 }
+            }
+        } else {
+            low = bucket.count
+        }
+        guard low > 0 else { return nil }
+        // Rewind to the first price sharing the winning date.
+        let winning = bucket[low - 1].date
+        var first = low - 1
+        while first > 0, bucket[first - 1].date == winning { first -= 1 }
+        return bucket[first]
+    }
+
     /// The most recent price of `commodity` in `currency` on or before `date`
     /// (or the latest overall when `date` is `nil`).
     public func latestPrice(of commodity: Commodity, in currency: Commodity,
                             on date: Date? = nil) -> Price? {
-        var best: Price?
-        for price in prices {
-            guard price.commodity == commodity, price.currency == currency else { continue }
-            if let date, price.date > date { continue }
-            if best == nil || price.date > best!.date {
-                best = price
-            }
+        buildIndexIfNeeded()
+        guard let bucket = pairIndex?[PricePair(commodity: commodity, currency: currency)] else {
+            return nil
         }
-        return best
+        return Self.latest(in: bucket, on: date)
+    }
+
+    /// The most recent price of `commodity` in any currency (index-backed
+    /// counterpart of ``latestPrice(of:in:on:)``).
+    func latestPricedAnyCurrency(of commodity: Commodity, on date: Date? = nil) -> Price? {
+        buildIndexIfNeeded()
+        guard let bucket = commodityIndex?[commodity] else { return nil }
+        return Self.latest(in: bucket, on: date)
     }
 
     /// Values `quantity` units of `commodity` in `currency` using the price
@@ -256,6 +334,24 @@ public final class Book {
             }
         }
         return Money(total, account.commodity)
+    }
+
+    /// Every account's own balance, in one pass over the splits.
+    ///
+    /// ``balance(of:filter:includingDescendants:)`` walks the whole book per
+    /// call, so valuing a tree of accounts one at a time is quadratic — the
+    /// account tree did exactly that and cost ~28s on a 46k-transaction book.
+    /// Callers that need many balances at once should ask for them together.
+    /// Accounts with no postings are absent; treat a miss as zero.
+    public func balancesByAccount(filter: BalanceFilter = .all) -> [ObjectIdentifier: Decimal] {
+        var totals: [ObjectIdentifier: Decimal] = [:]
+        for transaction in transactions {
+            for split in transaction.splits {
+                guard let account = split.account, Book.matches(split, filter) else { continue }
+                totals[ObjectIdentifier(account), default: 0] += split.quantity
+            }
+        }
+        return totals
     }
 }
 

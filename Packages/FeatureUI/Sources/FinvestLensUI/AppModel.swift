@@ -772,17 +772,49 @@ public final class AppModel {
 
     private func rebuildAccountTree() {
         guard let book else { accountTree = []; return }
-        accountTree = book.rootAccount.children.map { node(for: $0, book: book) }
+        // Native balances for every account in a single pass, then one
+        // conversion per account, rolled up the tree. Asking the book for each
+        // account's balance separately re-walked the whole book every time, and
+        // the subtree sums did it once per ancestor on top of that.
+        let natives = book.balancesByAccount()
+        var converted: [ObjectIdentifier: Decimal] = [:]
+        for account in book.accounts {
+            let native = natives[ObjectIdentifier(account)] ?? 0
+            if let value = convertedValue(native, of: account, in: reportCurrency, book: book) {
+                converted[ObjectIdentifier(account)] = value
+            }
+        }
+        accountTree = book.rootAccount.children.map {
+            node(for: $0, book: book, natives: natives, converted: converted)
+        }
     }
 
-    private func node(for account: Account, book: Book) -> AccountNode {
-        let children = account.children.map { node(for: $0, book: book) }
+    /// `native` (an account's own balance, in its own commodity) valued in
+    /// `currency` — the same rules as `Book.convertedBalance`, but without
+    /// re-deriving the native balance.
+    private func convertedValue(_ native: Decimal, of account: Account,
+                                in currency: Commodity, book: Book) -> Decimal? {
+        if account.commodity == currency { return native }
+        if native == 0 { return 0 }
+        if account.commodity.namespace == .currency {
+            return book.convert(native, from: account.commodity, to: currency)
+        }
+        guard let unit = book.securityUnitValue(account.commodity, in: currency) else { return nil }
+        return native * unit
+    }
+
+    private func node(for account: Account, book: Book,
+                      natives: [ObjectIdentifier: Decimal],
+                      converted: [ObjectIdentifier: Decimal]) -> AccountNode {
+        let children = account.children.map {
+            node(for: $0, book: book, natives: natives, converted: converted)
+        }
         let amount: Decimal
         let code: String
         if children.isEmpty {
             // A leaf shows its own balance in its own commodity — shares for a
             // security, cash for a currency account (as GnuCash does).
-            amount = book.balance(of: account).rounded.amount
+            amount = account.commodity.round(natives[ObjectIdentifier(account)] ?? 0)
             code = account.commodity.mnemonic
         } else {
             // A parent shows the whole subtree valued in the base currency.
@@ -790,7 +822,7 @@ public final class AppModel {
             // foreign currencies at the FX rate) then summed — converting the
             // mixed-commodity quantity sum would be meaningless.
             let base = reportCurrency
-            amount = subtreeValue(of: account, in: base, book: book)
+            amount = subtreeValue(of: account, in: base, converted: converted)
             code = base.mnemonic
         }
         return AccountNode(
@@ -809,12 +841,11 @@ public final class AppModel {
 
     /// The base-currency value of an account and all its descendants, summing
     /// each account's individually-converted balance (`FR-INV-06`).
-    private func subtreeValue(of account: Account, in currency: Commodity, book: Book) -> Decimal {
+    private func subtreeValue(of account: Account, in currency: Commodity,
+                              converted: [ObjectIdentifier: Decimal]) -> Decimal {
         var total = Decimal(0)
         for descendant in [account] + account.descendants {
-            if let value = book.convertedBalance(of: descendant, in: currency) {
-                total += value
-            }
+            if let value = converted[ObjectIdentifier(descendant)] { total += value }
         }
         return currency.round(total)
     }
