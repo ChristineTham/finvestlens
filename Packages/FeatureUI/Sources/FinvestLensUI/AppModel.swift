@@ -429,12 +429,37 @@ public final class AppModel {
 
     static func loadRecents() -> [URL] {
         // A provider-backed book (iCloud/Box/Dropbox on iOS) isn't visible to
-        // fileExists without its grant — keep it if we hold a bookmark for it.
+        // fileExists without its grant, so a bookmark is the only evidence it
+        // is still there. Requiring the bookmark to *resolve* — rather than
+        // merely exist — is what separates those from a book that has since
+        // been deleted: a bookmark for a deleted file no longer resolves, so
+        // the entry drops out instead of haunting the list forever.
         let bookmarks = UserDefaults.standard
             .dictionary(forKey: recentBookmarksKey) as? [String: Data] ?? [:]
         return (UserDefaults.standard.stringArray(forKey: "finvestlens.recentBookPaths") ?? [])
             .map { URL(fileURLWithPath: $0) }
-            .filter { FileManager.default.fileExists(atPath: $0.path) || bookmarks[$0.path] != nil }
+            .filter { FileManager.default.fileExists(atPath: $0.path) || resolves(bookmarks[$0.path]) }
+    }
+
+    /// `true` when `data` still resolves to a file. Resolution is the existence
+    /// check here: a bookmark to a deleted file throws rather than resolving.
+    private static func resolves(_ data: Data?) -> Bool {
+        guard let data else { return false }
+        var stale = false
+        return (try? URL(resolvingBookmarkData: data, bookmarkDataIsStale: &stale)) != nil
+    }
+
+    /// Drops a book from the recents list and forgets its bookmark. Used when
+    /// a recent turns out to be unopenable, so a dead entry doesn't persist.
+    public func removeRecent(_ url: URL) {
+        var paths = UserDefaults.standard.stringArray(forKey: "finvestlens.recentBookPaths") ?? []
+        paths.removeAll { $0 == url.path }
+        UserDefaults.standard.set(paths, forKey: "finvestlens.recentBookPaths")
+        var bookmarks = UserDefaults.standard
+            .dictionary(forKey: Self.recentBookmarksKey) as? [String: Data] ?? [:]
+        bookmarks.removeValue(forKey: url.path)
+        UserDefaults.standard.set(bookmarks, forKey: Self.recentBookmarksKey)
+        recentBooks = Self.loadRecents()
     }
 
     /// `true` when `error` means the book is locked by another instance —
@@ -444,15 +469,39 @@ public final class AppModel {
         return false
     }
 
+    /// `true` when `error` means the file itself is gone (as opposed to being
+    /// unreadable, locked, or corrupt) — the entry is safe to forget.
+    static func isMissingFileError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        switch (nsError.domain, nsError.code) {
+        case (NSCocoaErrorDomain, NSFileNoSuchFileError),
+             (NSCocoaErrorDomain, NSFileReadNoSuchFileError):
+            return true
+        case (NSPOSIXErrorDomain, Int(ENOENT)):
+            return true
+        default:
+            return false
+        }
+    }
+
     // MARK: Safe document operations (error-surfacing wrappers)
 
     /// Saves any open book, then opens `url`; failures land in
     /// ``documentError`` (with Break-Lock recovery for stale locks).
     public func openBook(at url: URL, breakStaleLock: Bool = false) {
+        // Re-opening the book that is already open is a no-op, not a reload.
+        // Opening blocks the main thread (~45s on a 46k-transaction book), so
+        // the window can't repaint and the click looks ignored — people click
+        // again, and that second click would otherwise close the book that had
+        // just opened and read the whole thing back in. Use Revert to reload.
+        if isOpen, documentURL?.standardizedFileURL == url.standardizedFileURL { return }
         guard saveAndCloseIfOpen() else { return }
         do {
             try open(at: url, breakStaleLock: breakStaleLock)
         } catch {
+            // A recent whose file has gone is dead weight: drop it now rather
+            // than leave the user to hit the same error on every launch.
+            if Self.isMissingFileError(error) { removeRecent(url) }
             documentError = DocumentError(
                 message: Self.isLockedError(error)
                     ? "“\(url.lastPathComponent)” is locked by another FinvestLens instance. If that instance crashed, you can break the lock and open anyway."

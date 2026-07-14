@@ -66,6 +66,90 @@ struct CloudDocumentTests {
         #expect(bookmarks[urls[5].path] != nil)
     }
 
+    @Test("A recent whose book has been deleted drops out of the list")
+    func deletedRecentIsDropped() throws {
+        let url = tempURL()
+        let model = AppModel()
+        try model.newDocument(at: url)
+        model.close()
+
+        // Present while the file is there — including its bookmark.
+        #expect(bookmarks[url.path] != nil)
+        #expect(AppModel.loadRecents().contains { $0.path == url.path })
+
+        // Deleting the book must not leave the entry behind: the bookmark
+        // alone used to keep it in the list forever.
+        try FileManager.default.removeItem(at: url)
+        #expect(!AppModel.loadRecents().contains { $0.path == url.path })
+    }
+
+    @Test("Opening a missing recent prunes it and reports the failure")
+    func openingMissingRecentPrunesIt() throws {
+        let url = tempURL()
+        let model = AppModel()
+        try model.newDocument(at: url)
+        model.close()
+        try FileManager.default.removeItem(at: url)
+
+        // The entry survives in UserDefaults until something tries to use it.
+        let paths = { UserDefaults.standard.stringArray(forKey: "finvestlens.recentBookPaths") ?? [] }
+        #expect(paths().contains(url.path))
+
+        model.openBook(at: url)
+        #expect(model.documentError != nil)       // the user is told
+        #expect(!model.isOpen)
+        #expect(!paths().contains(url.path))      // …and it won't be offered again
+        #expect(bookmarks[url.path] == nil)
+    }
+
+    @Test("Re-opening the already-open book is a no-op, not a close-and-reload")
+    func reopeningSameBookIsNoOp() throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let model = AppModel()
+        try model.newDocument(at: url)
+        defer { model.close() }
+        let account = try #require(model.addAccount(name: "Bank", type: .bank))
+
+        // A second click on the same recent must not tear the book down: the
+        // document instance survives and unsaved work with it.
+        let before = model.document
+        model.openBook(at: url)
+        #expect(model.isOpen)
+        #expect(model.document === before)
+        #expect(model.documentError == nil)
+        #expect(model.accountTree.contains { $0.id == account })
+    }
+
+    @Test("A missing file is recognised, a locked book is not")
+    func missingFileErrorClassification() throws {
+        // Pin the real error the open path throws for a missing book, so the
+        // prune in openBook can't silently stop matching.
+        let missing = tempURL()
+        #expect(throws: (any Error).self) { try AppModel().open(at: missing) }
+        do {
+            try AppModel().open(at: missing)
+            Issue.record("expected open to throw for a missing file")
+        } catch {
+            #expect(AppModel.isMissingFileError(error))
+            #expect(!AppModel.isLockedError(error))
+        }
+
+        // A locked book is a different failure — the entry must be kept.
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let holder = AppModel()
+        try holder.newDocument(at: url)
+        defer { holder.close() }
+        do {
+            try AppModel().open(at: url)
+            Issue.record("expected open to throw for a locked book")
+        } catch {
+            #expect(AppModel.isLockedError(error))
+            #expect(!AppModel.isMissingFileError(error))
+        }
+    }
+
     @Test("New-book URLs avoid existing books and stale locks")
     func newBookNaming() throws {
         let folder = FileManager.default.temporaryDirectory
