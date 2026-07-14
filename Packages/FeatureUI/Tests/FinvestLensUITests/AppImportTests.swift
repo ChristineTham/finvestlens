@@ -68,6 +68,73 @@ struct AppImportTests {
         _ = groceries
     }
 
+    @Test("GnuCash import preserves prices, book GUID, and KVP into the saved document")
+    func gnuCashImportKeepsEverything() throws {
+        let bookGUID = GncGUID.random().hexString
+        let root = GncGUID.random().hexString
+        let bank = GncGUID.random().hexString
+        let priceGUID = GncGUID.random().hexString
+        let xml = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <gnc-v2>
+        <gnc:book version="2.0.0">
+        <book:id type="guid">\(bookGUID)</book:id>
+        <book:slots><slot><slot:key>feature-x</slot:key>
+          <slot:value type="string">on</slot:value></slot></book:slots>
+        <gnc:commodity version="2.0.0">
+          <cmdty:space>ASX</cmdty:space><cmdty:id>BHP</cmdty:id>
+          <cmdty:name>BHP Group</cmdty:name><cmdty:fraction>10000</cmdty:fraction>
+        </gnc:commodity>
+        <gnc:pricedb version="1">
+          <price>
+            <price:id type="guid">\(priceGUID)</price:id>
+            <price:commodity><cmdty:space>ASX</cmdty:space><cmdty:id>BHP</cmdty:id></price:commodity>
+            <price:currency><cmdty:space>CURRENCY</cmdty:space><cmdty:id>AUD</cmdty:id></price:currency>
+            <price:time><ts:date>2026-06-01 00:00:00 +0000</ts:date></price:time>
+            <price:value>4512/100</price:value>
+          </price>
+        </gnc:pricedb>
+        <gnc:account version="2.0.0">
+          <act:name>Root Account</act:name><act:id type="guid">\(root)</act:id><act:type>ROOT</act:type>
+        </gnc:account>
+        <gnc:account version="2.0.0">
+          <act:name>Bank</act:name><act:id type="guid">\(bank)</act:id><act:type>BANK</act:type>
+          <act:commodity><cmdty:space>CURRENCY</cmdty:space><cmdty:id>AUD</cmdty:id></act:commodity>
+          <act:parent type="guid">\(root)</act:parent>
+        </gnc:account>
+        </gnc:book>
+        </gnc-v2>
+        """
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).gnucash")
+        let destination = tempURL()
+        defer {
+            try? FileManager.default.removeItem(at: source)
+            try? FileManager.default.removeItem(at: destination)
+        }
+        try Data(xml.utf8).write(to: source)
+
+        let model = AppModel()
+        model.importGnuCashBook(from: source, saveAs: destination)
+        #expect(model.documentError == nil)
+        try #require(model.isOpen)
+
+        // In memory: the price, book GUID, and book KVP came across.
+        #expect(model.book?.prices.count == 1)
+        #expect(model.book?.guid.hexString == bookGUID)
+        #expect(model.book?.kvp["feature-x"] == .string("on"))
+        try model.save()
+        model.close()
+
+        // On disk (after reopen): all of it persisted.
+        try model.open(at: destination)
+        defer { model.close() }
+        #expect(model.book?.prices.count == 1)
+        #expect(model.book?.prices.first?.value == Decimal(string: "45.12"))
+        #expect(model.book?.guid.hexString == bookGUID)
+        #expect(model.book?.kvp["feature-x"] == .string("on"))
+    }
+
     @Test("Format is inferred from the extension")
     func formatDetection() {
         #expect(BankFileFormat.forExtension("CSV") == .csv)

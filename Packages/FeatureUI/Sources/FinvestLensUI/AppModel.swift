@@ -768,12 +768,11 @@ public final class AppModel {
     // MARK: Helpers
 
     private func replaceBook(of doc: FinvestLensDocument, with book: Book) throws {
-        // Copy accounts and transactions from `book` into the document's book.
-        let target = doc.book
-        for commodity in book.commodities { target.registerCommodity(commodity) }
-        for child in book.rootAccount.children { target.rootAccount.addChild(child) }
-        for txn in book.transactions { target.addTransaction(txn) }
-        doc.markDirty()
+        // Swap the imported book in wholesale. A piecemeal copy of only
+        // commodities/accounts/transactions silently dropped the price
+        // database, book-level KVP slots, and the imported book GUID —
+        // losing 100k+ prices from a real GnuCash import.
+        doc.replaceBook(book)
         try doc.save()
     }
 }

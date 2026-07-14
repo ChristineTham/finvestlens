@@ -65,3 +65,7 @@ dist/
 
 # Personal GnuCash books used for local round-trip testing (never commit).
 /*.gnucash
+
+# Personal test book (imported from Ashley Bears.gnucash; changes left permanent).
+/Ashley Bears.finvestlens
+/Ashley Bears.lock
