@@ -597,20 +597,18 @@ struct RegisterView: View {
     }
 
     /// Keyboard-only buttons: a register spanning years of history is otherwise
-    /// thousands of scroll-wheel ticks end to end. Basic style only — see
-    /// ``scroll(_:to:)`` for why the journal styles opt out.
-    @ViewBuilder
+    /// thousands of scroll-wheel ticks end to end. In the journal styles these
+    /// move within the loaded page — "oldest" means the oldest entry on screen,
+    /// which "Show Earlier" extends.
     private var jumpShortcuts: some View {
-        if style == .basic {
-            Group {
-                Button("Go to Oldest Transaction") { jump = .oldest }
-                    .keyboardShortcut(.upArrow, modifiers: .command)
-                Button("Go to Newest Transaction") { jump = .newest }
-                    .keyboardShortcut(.downArrow, modifiers: .command)
-            }
-            .opacity(0)
-            .accessibilityHidden(true)
+        Group {
+            Button("Go to Oldest Transaction") { jump = .oldest }
+                .keyboardShortcut(.upArrow, modifiers: .command)
+            Button("Go to Newest Transaction") { jump = .newest }
+                .keyboardShortcut(.downArrow, modifiers: .command)
         }
+        .opacity(0)
+        .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -632,11 +630,11 @@ struct RegisterView: View {
                                        description: Text("Choose an account to see its transactions."))
             } else {
                 JournalView(model: model, accountID: model.selectedAccountID,
-                            editingTransactionID: $editingTransactionID)
+                            editingTransactionID: $editingTransactionID, jump: $jump)
             }
         case .generalLedger:
             JournalView(model: model, accountID: nil,
-                        editingTransactionID: $editingTransactionID)
+                        editingTransactionID: $editingTransactionID, jump: $jump)
         }
     }
 
@@ -735,55 +733,91 @@ struct RegisterView: View {
 }
 
 /// Journal / general-ledger register: each transaction with all its legs.
+///
+/// Shows the newest `limit` transactions, oldest first, and opens on the newest
+/// — the general ledger spans the whole book, so it is always windowed. A page
+/// is bounded work to build and to scroll; the 46k live sections it replaced
+/// were neither, and `scrollTo` across them never settled.
 struct JournalView: View {
     @Bindable var model: AppModel
     let accountID: GncGUID?
     @Binding var editingTransactionID: GncGUID?
-
-    // NOTE: the journal styles deliberately do *not* scroll to the newest entry
-    // the way the basic register does. `scrollTo` on a `List` forces every
-    // section ahead of the target to be laid out, and the general ledger is the
-    // whole book — on a 46k-transaction file that pinned a core and passed 1 GB
-    // of resident memory without settling. Fixing it needs the journal to stop
-    // rebuilding all its entries on each body pass and to page in a window of
-    // transactions rather than materialise the lot. See docs/deferred.md.
+    @Binding var jump: RegisterEnd?
+    @State private var limit = AppModel.journalPageSize
 
     var body: some View {
-        let entries = model.journalEntries(forAccountID: accountID)
+        let total = model.journalEntryCount(forAccountID: accountID)
+        let entries = model.journalEntries(forAccountID: accountID, limit: limit)
         if entries.isEmpty {
             ContentUnavailableView("No transactions", systemImage: "tray",
                                    description: Text("No postings to show."))
         } else {
-            List {
-                ForEach(entries) { entry in
-                    Section {
-                        ForEach(entry.lines) { line in
-                            HStack {
-                                Text(line.accountName)
-                                    .scaledFont(.body)
-                                    .fontWeight(line.isFocusAccount ? .semibold : .regular)
-                                Spacer()
-                                Text(AmountFormat.string(line.amount, code: entry.currencyCode))
-                                    .scaledFont(.body)
-                                    .monospacedDigit()
-                                    .foregroundStyle(line.amount < 0 ? .red : .primary)
-                            }
-                        }
-                    } header: {
+            ScrollViewReader { proxy in
+                list(entries, total: total)
+                    .onAppear { scroll(proxy, entries, to: .newest) }
+                    .onChange(of: accountID) {
+                        limit = AppModel.journalPageSize
+                        scroll(proxy, entries, to: .newest)
+                    }
+                    .onChange(of: jump) { _, target in
+                        guard let target else { return }
+                        scroll(proxy, entries, to: target)
+                        jump = nil
+                    }
+            }
+        }
+    }
+
+    /// Entries are oldest first; the scroll targets are the leg rows, which are
+    /// what the inner `ForEach` registers with the proxy. Bounded by `limit`,
+    /// so this only ever lays out a page.
+    private func scroll(_ proxy: ScrollViewProxy, _ entries: [JournalEntry], to end: RegisterEnd) {
+        let target = end == .newest ? entries.last?.lines.last?.id : entries.first?.lines.first?.id
+        guard let target else { return }
+        proxy.scrollTo(target, anchor: end == .newest ? .bottom : .top)
+    }
+
+    private func list(_ entries: [JournalEntry], total: Int) -> some View {
+        List {
+            if total > entries.count {
+                Button {
+                    limit += AppModel.journalPageSize
+                } label: {
+                    Label("Show \(AppModel.journalPageSize) Earlier — \(total - entries.count) older not shown",
+                          systemImage: "arrow.up.circle")
+                        .scaledFont(.caption)
+                }
+                .buttonStyle(.borderless)
+                .frame(maxWidth: .infinity)
+            }
+            ForEach(entries) { entry in
+                Section {
+                    ForEach(entry.lines) { line in
                         HStack {
-                            Text(entry.date, format: .dateTime.year().month().day())
+                            Text(line.accountName)
                                 .scaledFont(.body)
-                            Text(entry.description).scaledFont(.body).fontWeight(.medium)
+                                .fontWeight(line.isFocusAccount ? .semibold : .regular)
                             Spacer()
-                            Button("Edit") { editingTransactionID = entry.id }
-                                .buttonStyle(.borderless).scaledFont(.caption)
+                            Text(AmountFormat.string(line.amount, code: entry.currencyCode))
+                                .scaledFont(.body)
+                                .monospacedDigit()
+                                .foregroundStyle(line.amount < 0 ? .red : .primary)
                         }
+                    }
+                } header: {
+                    HStack {
+                        Text(entry.date, format: .dateTime.year().month().day())
+                            .scaledFont(.body)
+                        Text(entry.description).scaledFont(.body).fontWeight(.medium)
+                        Spacer()
+                        Button("Edit") { editingTransactionID = entry.id }
+                            .buttonStyle(.borderless).scaledFont(.caption)
                     }
                 }
             }
-            .sheet(item: $editingTransactionID) { id in
-                TransactionEditorSheet(model: model, editingID: id)
-            }
+        }
+        .sheet(item: $editingTransactionID) { id in
+            TransactionEditorSheet(model: model, editingID: id)
         }
     }
 }

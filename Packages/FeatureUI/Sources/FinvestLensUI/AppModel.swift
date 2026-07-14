@@ -146,6 +146,13 @@ public final class AppModel {
     let authenticator: Authenticating
 
     /// The running periodic quote-refresh loop, if any.
+    /// Journal transactions, sorted, keyed by focus account (`nil` = general
+    /// ledger). Deriving this per body pass meant sorting and filtering the
+    /// whole book on every redraw. Not observed: it is a pure function of the
+    /// book, and ``refreshAll()`` clears it alongside the observed collections
+    /// that do drive the redraw.
+    @ObservationIgnored var journalTransactionCache: [GncGUID?: [Transaction]] = [:]
+
     @ObservationIgnored var quoteRefreshTask: Task<Void, Never>?
 
     /// Refreshes the lock heartbeat while a book is open, so a live holder's
@@ -606,6 +613,7 @@ public final class AppModel {
         document?.discard()
         document = nil
         endBookAccess()
+        journalTransactionCache = [:]
         accountTree = []
         registerRows = []
         selectedAccountID = nil
@@ -692,6 +700,7 @@ public final class AppModel {
     // MARK: Snapshots
 
     func refreshAll() {
+        journalTransactionCache = [:]
         rebuildAccountTree()
         refreshRegister()
         rebuildPrices()
