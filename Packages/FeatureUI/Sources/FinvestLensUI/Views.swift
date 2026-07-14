@@ -569,11 +569,18 @@ struct AccountsSidebar: View {
 
 // MARK: - Register
 
+/// Which end of a register to scroll to (`FR-REG-08`).
+enum RegisterEnd {
+    case oldest, newest
+}
+
 struct RegisterView: View {
     @Bindable var model: AppModel
     @State private var selection: Set<GncGUID> = []
     @State private var editingTransactionID: GncGUID?
     @State private var style: RegisterStyle = .basic
+    /// Set by the ⌘↑/⌘↓ shortcuts; the scrolling view consumes and clears it.
+    @State private var jump: RegisterEnd?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -586,6 +593,24 @@ struct RegisterView: View {
             content
         }
         .navigationTitle(style == .generalLedger ? "General Ledger" : selectedName)
+        .background { jumpShortcuts }
+    }
+
+    /// Keyboard-only buttons: a register spanning years of history is otherwise
+    /// thousands of scroll-wheel ticks end to end. Basic style only — see
+    /// ``scroll(_:to:)`` for why the journal styles opt out.
+    @ViewBuilder
+    private var jumpShortcuts: some View {
+        if style == .basic {
+            Group {
+                Button("Go to Oldest Transaction") { jump = .oldest }
+                    .keyboardShortcut(.upArrow, modifiers: .command)
+                Button("Go to Newest Transaction") { jump = .newest }
+                    .keyboardShortcut(.downArrow, modifiers: .command)
+            }
+            .opacity(0)
+            .accessibilityHidden(true)
+        }
     }
 
     @ViewBuilder
@@ -616,6 +641,19 @@ struct RegisterView: View {
     }
 
     private var registerTable: some View {
+        ScrollViewReader { proxy in
+            registerTableBody
+                .onAppear { scroll(proxy, to: .newest) }
+                .onChange(of: model.selectedAccountID) { scroll(proxy, to: .newest) }
+                .onChange(of: jump) { _, target in
+                    guard let target else { return }
+                    scroll(proxy, to: target)
+                    jump = nil
+                }
+        }
+    }
+
+    private var registerTableBody: some View {
         Table(model.registerRows, selection: $selection) {
             TableColumn("Date") { row in
                 Text(row.date, format: .dateTime.year().month().day())
@@ -668,6 +706,13 @@ struct RegisterView: View {
         }
     }
 
+    /// Rows are ordered oldest first, so the newest posting is the last row.
+    private func scroll(_ proxy: ScrollViewProxy, to end: RegisterEnd) {
+        let target = end == .newest ? model.registerRows.last?.id : model.registerRows.first?.id
+        guard let target else { return }
+        proxy.scrollTo(target, anchor: end == .newest ? .bottom : .top)
+    }
+
     private var selectedName: String {
         model.postableAccounts.first { $0.id == model.selectedAccountID }?.name
             ?? model.accountTree.first { $0.id == model.selectedAccountID }?.name
@@ -694,6 +739,14 @@ struct JournalView: View {
     @Bindable var model: AppModel
     let accountID: GncGUID?
     @Binding var editingTransactionID: GncGUID?
+
+    // NOTE: the journal styles deliberately do *not* scroll to the newest entry
+    // the way the basic register does. `scrollTo` on a `List` forces every
+    // section ahead of the target to be laid out, and the general ledger is the
+    // whole book — on a 46k-transaction file that pinned a core and passed 1 GB
+    // of resident memory without settling. Fixing it needs the journal to stop
+    // rebuilding all its entries on each body pass and to page in a window of
+    // transactions rather than materialise the lot. See docs/deferred.md.
 
     var body: some View {
         let entries = model.journalEntries(forAccountID: accountID)
