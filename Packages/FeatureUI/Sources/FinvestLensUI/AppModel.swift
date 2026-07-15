@@ -153,6 +153,9 @@ public final class AppModel {
     /// that do drive the redraw.
     @ObservationIgnored var journalTransactionCache: [GncGUID?: [Transaction]] = [:]
 
+    /// Built journal rows, keyed the same way and dropped at the same time.
+    @ObservationIgnored var journalRowCache: [GncGUID?: [JournalRow]] = [:]
+
     @ObservationIgnored var quoteRefreshTask: Task<Void, Never>?
 
     /// Refreshes the lock heartbeat while a book is open, so a live holder's
@@ -614,6 +617,7 @@ public final class AppModel {
         document = nil
         endBookAccess()
         journalTransactionCache = [:]
+        journalRowCache = [:]
         accountTree = []
         registerRows = []
         selectedAccountID = nil
@@ -701,6 +705,7 @@ public final class AppModel {
 
     func refreshAll() {
         journalTransactionCache = [:]
+        journalRowCache = [:]
         rebuildAccountTree()
         refreshRegister()
         rebuildPrices()

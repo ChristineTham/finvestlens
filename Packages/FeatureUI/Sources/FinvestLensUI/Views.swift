@@ -734,86 +734,79 @@ struct RegisterView: View {
 
 /// Journal / general-ledger register: each transaction with all its legs.
 ///
-/// Shows the newest `limit` transactions, oldest first, and opens on the newest
-/// — the general ledger spans the whole book, so it is always windowed. A page
-/// is bounded work to build and to scroll; the 46k live sections it replaced
-/// were neither, and `scrollTo` across them never settled.
+/// Journal / general-ledger register: each transaction's heading followed by
+/// its legs, oldest first, opening on the newest.
+///
+/// A `Table` rather than a `List` of sections. Uniform rows are what make the
+/// whole book affordable: AppKit positions row N without laying out the rows
+/// before it, so jumping to either end is instant across 46k transactions and
+/// no windowing is needed. The nested-section version had to be paged, and
+/// scrolling it to the far end never settled.
 struct JournalView: View {
     @Bindable var model: AppModel
     let accountID: GncGUID?
     @Binding var editingTransactionID: GncGUID?
     @Binding var jump: RegisterEnd?
-    @State private var limit = AppModel.journalPageSize
+    @State private var selection: Set<GncGUID> = []
+    @Environment(\.appFontScale) private var appFontScale
 
     var body: some View {
-        let total = model.journalEntryCount(forAccountID: accountID)
-        let entries = model.journalEntries(forAccountID: accountID, limit: limit)
-        if entries.isEmpty {
+        let rows = model.journalRows(forAccountID: accountID)
+        if rows.isEmpty {
             ContentUnavailableView("No transactions", systemImage: "tray",
                                    description: Text("No postings to show."))
         } else {
             ScrollViewReader { proxy in
-                list(entries, total: total)
-                    .onAppear { scroll(proxy, entries, to: .newest) }
-                    .onChange(of: accountID) {
-                        limit = AppModel.journalPageSize
-                        scroll(proxy, entries, to: .newest)
-                    }
+                table(rows)
+                    .onAppear { scroll(proxy, to: .newest) }
+                    .onChange(of: accountID) { scroll(proxy, to: .newest) }
                     .onChange(of: jump) { _, target in
                         guard let target else { return }
-                        scroll(proxy, entries, to: target)
+                        scroll(proxy, to: target)
                         jump = nil
                     }
             }
         }
     }
 
-    /// Entries are oldest first; the scroll targets are the leg rows, which are
-    /// what the inner `ForEach` registers with the proxy. Bounded by `limit`,
-    /// so this only ever lays out a page.
-    private func scroll(_ proxy: ScrollViewProxy, _ entries: [JournalEntry], to end: RegisterEnd) {
-        let target = end == .newest ? entries.last?.lines.last?.id : entries.first?.lines.first?.id
-        guard let target else { return }
+    /// Jumps to the oldest or newest row. Bounded work whatever the distance.
+    private func scroll(_ proxy: ScrollViewProxy, to end: RegisterEnd) {
+        guard let target = model.journalEdgeRowID(forAccountID: accountID,
+                                                  newest: end == .newest) else { return }
         proxy.scrollTo(target, anchor: end == .newest ? .bottom : .top)
     }
 
-    private func list(_ entries: [JournalEntry], total: Int) -> some View {
-        List {
-            if total > entries.count {
-                Button {
-                    limit += AppModel.journalPageSize
-                } label: {
-                    Label("Show \(AppModel.journalPageSize) Earlier — \(total - entries.count) older not shown",
-                          systemImage: "arrow.up.circle")
-                        .scaledFont(.caption)
+    private func table(_ rows: [JournalRow]) -> some View {
+        Table(rows, selection: $selection) {
+            TableColumn("Date") { row in
+                if let date = row.date {
+                    Text(date, format: .dateTime.year().month().day())
+                        .scaledFont(.body).fontWeight(.medium)
                 }
-                .buttonStyle(.borderless)
-                .frame(maxWidth: .infinity)
             }
-            ForEach(entries) { entry in
-                Section {
-                    ForEach(entry.lines) { line in
-                        HStack {
-                            Text(line.accountName)
-                                .scaledFont(.body)
-                                .fontWeight(line.isFocusAccount ? .semibold : .regular)
-                            Spacer()
-                            Text(AmountFormat.string(line.amount, code: entry.currencyCode))
-                                .scaledFont(.body)
-                                .monospacedDigit()
-                                .foregroundStyle(line.amount < 0 ? .red : .primary)
-                        }
-                    }
-                } header: {
-                    HStack {
-                        Text(entry.date, format: .dateTime.year().month().day())
-                            .scaledFont(.body)
-                        Text(entry.description).scaledFont(.body).fontWeight(.medium)
-                        Spacer()
-                        Button("Edit") { editingTransactionID = entry.id }
-                            .buttonStyle(.borderless).scaledFont(.caption)
-                    }
+            .width(min: 90, ideal: 100)
+            TableColumn("Transaction / Account") { row in
+                // Legs are indented under their heading, so the grouping still
+                // reads even though the rows are flat.
+                Text(row.text)
+                    .scaledFont(.body)
+                    .fontWeight(row.isHeading ? .medium : (row.isFocusAccount ? .semibold : .regular))
+                    .foregroundStyle(row.isHeading ? .primary : .secondary)
+                    .padding(.leading, row.isHeading ? 0 : 18 * appFontScale)
+            }
+            TableColumn("Amount") { row in
+                if let amount = row.amount {
+                    Text(AmountFormat.string(amount, code: row.currencyCode))
+                        .scaledFont(.body)
+                        .monospacedDigit()
+                        .foregroundStyle(amount < 0 ? .red : .primary)
                 }
+            }
+            .width(min: 100, ideal: 130)
+        }
+        .contextMenu(forSelectionType: GncGUID.self) { ids in
+            if let id = ids.first, let row = rows.first(where: { $0.id == id }) {
+                Button("Edit…") { editingTransactionID = row.transactionID }
             }
         }
         .sheet(item: $editingTransactionID) { id in

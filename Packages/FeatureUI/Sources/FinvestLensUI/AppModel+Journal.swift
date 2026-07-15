@@ -9,22 +9,25 @@
 import Foundation
 import FinvestLensEngine
 
-/// One leg shown in a journal-style register row.
-public struct JournalLine: Identifiable, Hashable, Sendable {
+/// One line of a journal register: either a transaction's heading or one of
+/// its legs. A journal is a register with several rows per transaction (as in
+/// GnuCash), so it is a flat list of uniform rows rather than nested sections —
+/// which is what lets it be a `Table`, and lets a jump to either end be
+/// instant no matter how far away it is.
+public struct JournalRow: Identifiable, Hashable, Sendable {
+    /// The transaction's GUID for a heading, the split's for a leg.
     public let id: GncGUID
-    public var accountName: String
-    public var amount: Decimal
+    public var transactionID: GncGUID
+    public var isHeading: Bool
+    /// Set on headings only.
+    public var date: Date?
+    /// The description on a heading, the account name on a leg.
+    public var text: String
+    /// Set on legs only.
+    public var amount: Decimal?
+    public var currencyCode: String
     /// `true` when this leg posts to the register's focused account.
     public var isFocusAccount: Bool
-}
-
-/// A transaction shown with all its legs (journal / general-ledger style).
-public struct JournalEntry: Identifiable, Hashable, Sendable {
-    public let id: GncGUID
-    public var date: Date
-    public var description: String
-    public var currencyCode: String
-    public var lines: [JournalLine]
 }
 
 /// How the register presents transactions (`FR-REG-01`).
@@ -38,11 +41,35 @@ public enum RegisterStyle: String, CaseIterable, Identifiable, Sendable {
 @MainActor
 extension AppModel {
 
-    /// How many of the newest transactions a journal shows before the reader
-    /// asks for more. The general ledger spans the whole book, so the journal
-    /// is always windowed: a page is cheap to build and cheap to scroll, where
-    /// 46k live sections were neither.
-    public static let journalPageSize = 200
+    /// Every row of the journal for `accountID` (the general ledger when it is
+    /// `nil`), oldest first: a heading per transaction followed by its legs.
+    ///
+    /// Cached until the book changes. Building ~140k rows for the whole book is
+    /// a fraction of a second once, but doing it per body pass is not — and the
+    /// rows are uniform, so the whole journal can be a `Table` and no longer
+    /// needs to be windowed to stay responsive.
+    public func journalRows(forAccountID accountID: GncGUID?) -> [JournalRow] {
+        if let cached = journalRowCache[accountID] { return cached }
+        guard let book else { return [] }
+        let focus = accountID.flatMap { book.account(with: $0) }
+        var rows: [JournalRow] = []
+        rows.reserveCapacity(journalTransactions(forAccountID: accountID).count * 3)
+        for txn in journalTransactions(forAccountID: accountID) {
+            rows.append(JournalRow(
+                id: txn.guid, transactionID: txn.guid, isHeading: true,
+                date: txn.datePosted, text: txn.transactionDescription,
+                amount: nil, currencyCode: txn.currency.mnemonic, isFocusAccount: false))
+            for split in txn.splits {
+                rows.append(JournalRow(
+                    id: split.guid, transactionID: txn.guid, isHeading: false,
+                    date: nil, text: split.account?.name ?? "—",
+                    amount: split.value, currencyCode: txn.currency.mnemonic,
+                    isFocusAccount: focus != nil && split.account === focus))
+            }
+        }
+        journalRowCache[accountID] = rows
+        return rows
+    }
 
     /// Transactions for `accountID` (its postings), or every transaction when
     /// `accountID` is `nil` (general ledger). Sorted oldest first, and cached
@@ -62,34 +89,15 @@ extension AppModel {
         return transactions
     }
 
-    /// How many transactions the journal for `accountID` could show in total.
+    /// How many transactions the journal for `accountID` holds.
     public func journalEntryCount(forAccountID accountID: GncGUID?) -> Int {
         journalTransactions(forAccountID: accountID).count
     }
 
-    /// The newest `limit` journal entries for `accountID`, oldest first (so the
-    /// newest is last, as in the register and in GnuCash). Only the entries in
-    /// the window are built — the rest of the book is never materialised.
-    ///
-    /// Defaults to the whole journal: windowing is the caller's choice, so a
-    /// report asking for a book's entries can't be silently truncated.
-    public func journalEntries(forAccountID accountID: GncGUID?,
-                               limit: Int = .max) -> [JournalEntry] {
-        guard let book else { return [] }
-        let focus = accountID.flatMap { book.account(with: $0) }
-        let transactions = journalTransactions(forAccountID: accountID)
-        return transactions.suffix(max(0, limit)).map { txn in
-            JournalEntry(
-                id: txn.guid, date: txn.datePosted,
-                description: txn.transactionDescription,
-                currencyCode: txn.currency.mnemonic,
-                lines: txn.splits.map { split in
-                    JournalLine(
-                        id: split.guid,
-                        accountName: split.account?.name ?? "—",
-                        amount: split.value,
-                        isFocusAccount: focus != nil && split.account === focus)
-                })
-        }
+    /// The journal row a jump lands on: the oldest heading, or the newest
+    /// transaction's last leg. Read off the cached rows, so asking is free.
+    public func journalEdgeRowID(forAccountID accountID: GncGUID?, newest: Bool) -> GncGUID? {
+        let rows = journalRows(forAccountID: accountID)
+        return newest ? rows.last?.id : rows.first?.id
     }
 }

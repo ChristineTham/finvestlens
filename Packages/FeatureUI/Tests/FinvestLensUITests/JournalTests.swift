@@ -42,18 +42,25 @@ struct JournalTests {
             SplitInput(accountID: salary, value: dec("-100")),
         ])
 
-        // Journal for Bank: both transactions touch Bank.
-        let bankJournal = model.journalEntries(forAccountID: bank)
-        #expect(bankJournal.count == 2)
-        #expect(bankJournal.first?.lines.count == 2)
-        #expect(bankJournal.first?.lines.contains { $0.accountName == "Food" } == true)
-        #expect(bankJournal.first?.lines.contains { $0.isFocusAccount } == true)
+        // Journal for Bank: a heading per transaction plus its legs.
+        let bankJournal = model.journalRows(forAccountID: bank)
+        #expect(bankJournal.filter(\.isHeading).count == 2)
+        #expect(bankJournal.count == 6)                      // 2 headings + 4 legs
+        #expect(bankJournal.first?.isHeading == true)
+        #expect(bankJournal.first?.text == "Groceries")
+        #expect(bankJournal.contains { $0.text == "Food" && !$0.isHeading })
+        #expect(bankJournal.contains { $0.isFocusAccount })
 
         // Journal for Food: only the groceries transaction.
-        #expect(model.journalEntries(forAccountID: food).count == 1)
+        #expect(model.journalRows(forAccountID: food).filter(\.isHeading).count == 1)
 
-        // General ledger: every transaction.
-        #expect(model.journalEntries(forAccountID: nil).count == 2)
+        // General ledger: every transaction, oldest first.
+        let ledger = model.journalRows(forAccountID: nil)
+        #expect(ledger.filter(\.isHeading).count == 2)
+        #expect(ledger.first?.text == "Groceries")
+        #expect(ledger.last?.isHeading == false)             // ends on a leg
+        // Nothing is a focus account in the general ledger.
+        #expect(!ledger.contains { $0.isFocusAccount })
     }
 
     /// A book with `count` dated transactions, newest last.
@@ -72,30 +79,30 @@ struct JournalTests {
         return model
     }
 
-    @Test("The journal windows to the newest page, and can be extended")
-    func windowing() throws {
+    @Test("The journal holds the whole book and jumps to its true ends")
+    func wholeJournalAndEdges() throws {
         let url = tempURL()
         let model = try pagedModel(10, at: url)
         defer { model.close(); try? FileManager.default.removeItem(at: url) }
 
+        // No windowing: every transaction is present, oldest first.
+        let rows = model.journalRows(forAccountID: nil)
+        #expect(rows.filter(\.isHeading).count == 10)
         #expect(model.journalEntryCount(forAccountID: nil) == 10)
+        #expect(rows.first?.text == "Txn 0")
+        #expect(rows.filter(\.isHeading).last?.text == "Txn 9")
 
-        // A page holds the *newest* transactions, still oldest-first — so the
-        // last entry is the newest, which is what the view scrolls to.
-        let page = model.journalEntries(forAccountID: nil, limit: 4)
-        #expect(page.count == 4)
-        #expect(page.first?.description == "Txn 6")
-        #expect(page.last?.description == "Txn 9")
+        // ⌘↑ reaches the oldest posting in the book, ⌘↓ the newest — the same
+        // meaning as in the basic register, not "the oldest currently loaded".
+        let oldest = try #require(model.journalEdgeRowID(forAccountID: nil, newest: false))
+        let newest = try #require(model.journalEdgeRowID(forAccountID: nil, newest: true))
+        #expect(oldest == rows.first?.id)
+        #expect(newest == rows.last?.id)
 
-        // "Show Earlier" widens the window towards the oldest.
-        let wider = model.journalEntries(forAccountID: nil, limit: 8)
-        #expect(wider.first?.description == "Txn 2")
-        #expect(wider.last?.description == "Txn 9")
-
-        // A limit past the end just yields everything; a silly limit is safe.
-        #expect(model.journalEntries(forAccountID: nil, limit: 500).count == 10)
-        #expect(model.journalEntries(forAccountID: nil, limit: 0).isEmpty)
-        #expect(model.journalEntries(forAccountID: nil, limit: -5).isEmpty)
+        // An empty journal has no edge rather than a crash.
+        let unused = try #require(model.addAccount(name: "Unused", type: .expense))
+        #expect(model.journalEdgeRowID(forAccountID: unused, newest: true) == nil)
+        #expect(model.journalRows(forAccountID: unused).isEmpty)
     }
 
     @Test("Cached journal transactions are invalidated when the book changes")
@@ -117,16 +124,17 @@ struct JournalTests {
         // A stale cache here would hide the new transaction from the journal.
         #expect(model.journalEntryCount(forAccountID: nil) == 4)
         #expect(model.journalEntryCount(forAccountID: bank) == 4)
-        #expect(model.journalEntries(forAccountID: nil).last?.description == "Later")
+        #expect(model.journalRows(forAccountID: nil).filter(\.isHeading).last?.text == "Later")
 
         // Deletions invalidate too.
-        let latest = try #require(model.journalEntries(forAccountID: nil).last?.id)
+        let latest = try #require(model.journalRows(forAccountID: nil).filter(\.isHeading).last?.id)
         model.deleteTransaction(latest)
         #expect(model.journalEntryCount(forAccountID: nil) == 3)
-        #expect(model.journalEntries(forAccountID: nil).last?.description == "Txn 2")
+        #expect(model.journalRows(forAccountID: nil).filter(\.isHeading).last?.text == "Txn 2")
 
         // Closing drops the cache rather than serving another book's entries.
         model.close()
         #expect(model.journalEntryCount(forAccountID: nil) == 0)
+        #expect(model.journalRows(forAccountID: nil).isEmpty)
     }
 }
