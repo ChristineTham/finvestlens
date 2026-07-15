@@ -13,9 +13,11 @@ import FinvestLensRules
 @MainActor
 extension AppModel {
 
-    /// Adds a categorisation rule to the first (or a new) group.
-    public func addRule(_ rule: Rule) {
-        if ruleGroups.isEmpty {
+    /// Adds a categorisation rule to `groupID`, or the first (or a new) group.
+    public func addRule(_ rule: Rule, toGroup groupID: UUID? = nil) {
+        if let groupID, let index = ruleGroups.firstIndex(where: { $0.id == groupID }) {
+            ruleGroups[index].rules.append(rule)
+        } else if ruleGroups.isEmpty {
             ruleGroups.append(RuleGroup(name: "Rules", rules: [rule]))
         } else {
             ruleGroups[0].rules.append(rule)
@@ -28,6 +30,72 @@ extension AppModel {
             ruleGroups[index].rules.removeAll { $0.id == id }
         }
         commitKvpCollections(named: "Delete Rule")
+    }
+
+    /// Replaces a rule in place, wherever it lives.
+    public func updateRule(_ rule: Rule) {
+        for group in ruleGroups.indices {
+            if let index = ruleGroups[group].rules.firstIndex(where: { $0.id == rule.id }) {
+                ruleGroups[group].rules[index] = rule
+                commitKvpCollections(named: "Edit Rule")
+                return
+            }
+        }
+    }
+
+    /// Turns one rule off without deleting it — `isActive` has been honoured by
+    /// the engine and stored all along, with no way to set it.
+    public func setRuleActive(_ id: UUID, _ active: Bool) {
+        for group in ruleGroups.indices {
+            if let index = ruleGroups[group].rules.firstIndex(where: { $0.id == id }) {
+                ruleGroups[group].rules[index].isActive = active
+                commitKvpCollections(named: active ? "Enable Rule" : "Disable Rule")
+                return
+            }
+        }
+    }
+
+    // MARK: Groups
+
+    /// Groups exist in the model, are ordered, and can be switched off as a
+    /// set — the UI flattened them away with `flatMap(\.rules)`, so a book
+    /// could carry them but nobody could make or use one.
+    @discardableResult
+    public func addRuleGroup(named name: String) -> UUID {
+        let group = RuleGroup(name: name)
+        ruleGroups.append(group)
+        commitKvpCollections(named: "Add Rule Group")
+        return group.id
+    }
+
+    public func deleteRuleGroup(_ id: UUID) {
+        ruleGroups.removeAll { $0.id == id }
+        commitKvpCollections(named: "Delete Rule Group")
+    }
+
+    public func renameRuleGroup(_ id: UUID, to name: String) {
+        guard let index = ruleGroups.firstIndex(where: { $0.id == id }) else { return }
+        ruleGroups[index].name = name
+        commitKvpCollections(named: "Rename Rule Group")
+    }
+
+    public func setRuleGroupActive(_ id: UUID, _ active: Bool) {
+        guard let index = ruleGroups.firstIndex(where: { $0.id == id }) else { return }
+        ruleGroups[index].isActive = active
+        commitKvpCollections(named: active ? "Enable Rule Group" : "Disable Rule Group")
+    }
+
+    /// Rules are evaluated in order and `stopProcessing` cuts the rest off, so
+    /// the order is a real setting rather than presentation.
+    public func moveRules(inGroup id: UUID, from offsets: IndexSet, to destination: Int) {
+        guard let index = ruleGroups.firstIndex(where: { $0.id == id }) else { return }
+        ruleGroups[index].rules.move(fromOffsets: offsets, toOffset: destination)
+        commitKvpCollections(named: "Reorder Rules")
+    }
+
+    public func moveRuleGroups(from offsets: IndexSet, to destination: Int) {
+        ruleGroups.move(fromOffsets: offsets, toOffset: destination)
+        commitKvpCollections(named: "Reorder Rule Groups")
     }
 
     /// Convenience: evaluate the document's rules against a context.

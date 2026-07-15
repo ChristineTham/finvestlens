@@ -1616,6 +1616,24 @@ struct TransactionEditorSheet: View {
             .filter { !$0.isEmpty }
     }
 
+    /// What is being typed after the last comma — the tag in progress, which is
+    /// what suggestions should narrow on.
+    private var tagFragment: String {
+        String(tagsText.split(separator: ",", omittingEmptySubsequences: false).last ?? "")
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Completes the tag in progress rather than appending after it, so picking
+    /// "groceries" while "groc" is typed does not leave "groc, groceries".
+    private func appendTag(_ tag: String) {
+        var parts = tagsText.split(separator: ",", omittingEmptySubsequences: false)
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+        if parts.isEmpty || !tagFragment.isEmpty { _ = parts.popLast() }
+        parts.removeAll { $0.isEmpty }
+        parts.append(tag)
+        tagsText = parts.joined(separator: ", ")
+    }
+
     private var imbalance: Decimal { lines.reduce(Decimal(0)) { $0 + $1.amount } }
     /// Currency of the transaction being built (first cash account's, else base).
     private var displayCurrency: Commodity {
@@ -1713,6 +1731,19 @@ struct TransactionEditorSheet: View {
 
                 Section("Tags") {
                     TextField("Comma-separated tags", text: $tagsText)
+                    // Fed by `Book.allTags`, which existed and was tested with
+                    // no caller: the field was free text, so reusing a tag
+                    // meant remembering how you spelled it and a typo quietly
+                    // made a second one.
+                    let suggestions = model.tagSuggestions(prefix: tagFragment,
+                                                           excluding: parsedTags)
+                    if !suggestions.isEmpty {
+                        Menu("Add existing tag…") {
+                            ForEach(suggestions.prefix(20), id: \.self) { tag in
+                                Button(tag) { appendTag(tag) }
+                            }
+                        }
+                    }
                 }
 
                 Section {

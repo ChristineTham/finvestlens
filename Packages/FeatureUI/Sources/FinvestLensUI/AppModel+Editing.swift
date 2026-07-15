@@ -416,6 +416,24 @@ extension AppModel {
         book?.split(with: splitID)?.reconcileState
     }
 
+    /// Every tag in the book. `Book.allTags` has existed and been tested from
+    /// the start with no caller: the editor's Tags field was free text, so the
+    /// only way to reuse a tag was to remember how you spelled it, and a typo
+    /// silently made a second tag.
+    public var knownTags: [String] { book?.allTags ?? [] }
+
+    /// Tags starting with `prefix` that are not already on the transaction being
+    /// edited, for autocomplete. Matching on a prefix rather than anywhere is
+    /// what makes the list shorten as you type.
+    public func tagSuggestions(prefix: String, excluding used: [String] = []) -> [String] {
+        let needle = prefix.trimmingCharacters(in: .whitespaces).lowercased()
+        let taken = Set(used.map { $0.lowercased() })
+        return knownTags.filter {
+            !taken.contains($0.lowercased())
+                && (needle.isEmpty || $0.lowercased().hasPrefix(needle))
+        }
+    }
+
     // MARK: Reconciliation
 
     public func setReconcileState(splitID: GncGUID, to state: ReconcileState) {
