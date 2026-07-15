@@ -375,7 +375,64 @@ where Apple Intelligence is unavailable, keeping CI deterministic.
 
 ---
 
-## 12. References
+## 12. Derived state and performance
+
+The engine `Book` is the source of truth and is held entirely in memory (§3), as GnuCash does. Everything the UI shows is *derived* from it. On a small book any derivation is affordable and none of this matters; the design below exists because a real book — the 46k-transaction / 102k-price reference file — made the cost of re-deriving state the dominant factor in how the app feels. Each decision was made against measurements on that file, and each is recorded with the number that justified it.
+
+The rule the section encodes: **derive on demand, cache what is expensive, invalidate on the same signal that drives the redraw.** A cache that outlives its data is a correctness bug, not a performance win — so every cache here hangs off `refreshAll()`/`close()`, which already run after every mutation, rather than inventing a second invalidation path that can drift.
+
+### 12.1 Index the price database, don't scan it
+
+`Book.latestPrice(of:in:on:)` scanned the whole price database per call — **26 ms** against 102,706 prices — and `securityUnitValue` can trigger four such scans per account. Prices are bucketed by (commodity, currency) and by commodity, each bucket sorted by date, and the answer found by binary search.
+
+The index is **dropped, not updated**, whenever `prices` changes (a `didSet` on the stored property, so no mutation can miss it). Invalidation is O(1), which keeps reading a book's 100k prices linear; the rebuild is paid once on the next lookup.
+
+The scan's tie-breaking is preserved exactly: when several prices share the winning date it returns the **first in `prices` order**. This is not incidental — a duplicate-dated import would otherwise silently move a balance. `PriceIndexEquivalenceTests` pins the index against the old scan as an oracle over pseudo-random books with deliberate duplicate dates.
+
+### 12.2 Ask for many balances at once
+
+`Book.balance(of:)` walks every transaction per call (**25 ms**). Valuing a tree of accounts one at a time is therefore quadratic — and the account tree compounded it, asking for each account's balance once per *ancestor*.
+
+`Book.balancesByAccount(filter:)` derives every account's balance in a single pass. `rebuildAccountTree` calls it once, converts each account once, and rolls subtree sums up from that. Accounts with no postings are absent from the result; a miss means zero.
+
+> `refreshAll()` 33.7s → **0.25s**. Book open 45s → 12.6s. Every figure — Net Worth, Assets, every subtree — unchanged, and still matching GnuCash to the cent.
+
+### 12.3 Uniform rows so a register can be a `Table`
+
+The basic register scrolls 46k rows instantly because SwiftUI's `Table` is `NSTableView`-backed: uniform row heights let AppKit position row *N* without laying out the rows before it.
+
+The journal styles were a `List` of variable-height `Section`s, which cannot do that — `scrollTo` forces every section ahead of the target to lay out. Scrolling the general ledger to its newest entry pinned a core and passed 1 GB resident without settling. Paging it to a window made it usable but left ⌘↑ meaning "oldest *loaded*", which is not what the shortcut means anywhere else.
+
+The journal is now a flat list of uniform `JournalRow`s — a heading per transaction followed by its legs, which is what a journal *is* (and how GnuCash presents one) — rendered in a `Table`. Windowing is gone: the whole book is affordable, and jumping to either end is bounded work whatever the distance, so ⌘↑ reaches the true oldest posting exactly as in the basic register.
+
+Journal rows and their sorted transactions are cached per focus account (`nil` = general ledger) and dropped in `refreshAll()`/`close()` alongside the observed collections that drive the redraw. Deriving them per body pass meant sorting and filtering the whole book on every redraw.
+
+### 12.4 Capture undo *before* the edit
+
+Undo was post-hoc: every mutation exported the whole book as GnuCash XML to maintain a baseline holding the state before the *next* edit. On the reference book that was **5.8 s and 115 MB per edit** — cycling a reconcile flag paid both — and 25 undo levels could retain ~2.9 GB. Opening a book paid the same 5.8 s to prime the baseline.
+
+Each edit now captures only what it is about to change, before changing it:
+
+```swift
+editing([id], named: "Edit Transaction") { … }   // copies just those transactions
+editingWholeBook(named: "Move Account") { … }    // exports first; structural/bulk changes
+```
+
+A `nil` snapshot means "did not exist", which makes undo-of-add and redo-of-delete the same operation. Undo re-enters the wrapper and captures the state it replaces, so redo falls out of the same path. Naming each edit at its call site is also what lets the Edit menu read "Undo Delete Transaction" rather than "Undo Change".
+
+With no baseline to maintain, opening a book stops exporting entirely.
+
+> Edit 5.79s → **0.26s** (all of it the remaining `refreshAll`). Memory +115 MB → +7 MB per edit, flat over 10 edits. Open 12s → **6.6s**.
+
+This had to be **all-or-nothing**. With the baseline gone, any site left on the old path would apply its edit and silently register no undo — worse than slow undo, on financial data. So the bare `markDirtyAndRefresh` was removed outright, making every one of the 40 call sites a compile error until converted, and the compiler the checklist. A partial migration here is not a smaller version of this change; it is a broken one.
+
+### 12.5 What is deliberately still slow
+
+Opening a book is synchronous and takes ~6.5s on the reference file, essentially all of it `store.read`; the window cannot repaint while it runs, so the click looks ignored. `refreshAll()` re-sorts all 102,706 prices per edit for the price/rate editors. Both are recorded in [deferred.md](deferred.md) with what they need — the former wants the load off the main actor (`Book` is a reference graph and not `Sendable`), the latter wants those rows derived lazily.
+
+---
+
+## 13. References
 
 **Persistence / SQLite**
 - [groue/GRDB.swift](https://github.com/groue/GRDB.swift) · [Core Data vs SwiftData 2025](https://distantjob.com/blog/core-data-vs-swiftdata/) · [SwiftData slow with large data (Apple Forums)](https://developer.apple.com/forums/thread/740517) · [SwiftData vs Realm perf](https://www.emergetools.com/blog/posts/swiftdata-vs-realm-performance-comparison)

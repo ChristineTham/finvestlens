@@ -97,6 +97,8 @@ FinvestLens is not a fork of GnuCash. It is a clean, idiomatic Swift reimplement
 | Shared-storage safety | App-level file locking + heartbeat; local working copy; explicit (Save/autosave) atomic write-back; discardable sessions (NAS-safe) |
 | Core engine | Pure-Swift accounting model (accounts, transactions, splits, commodities, prices) |
 | Numbers | Native `Decimal` money (rounded per commodity) |
+| Derived state | Everything shown is derived from the in-memory `Book`; expensive derivations (price lookups, per-account balances, journal rows) are indexed or cached and invalidated on the same signal that drives the redraw |
+| Undo | Each edit captures only what it is about to change, before changing it — no whole-book snapshots |
 | Import/Export | GnuCash XML reader & writer (interchange); native CSV/QIF/OFX-QFX importers + import matcher |
 | Sync (planned) | File-level (iCloud Documents / Files) with conflict resolution |
 
@@ -126,4 +128,8 @@ The GnuCash XML format is treated as an interchange specification. This is not a
 
 ## Status
 
-Early development. The Xcode project is scaffolded; the core engine and import/export are being built out per the roadmap above.
+Feature-complete against the v1 scope above and exercised against a real GnuCash book — 46,553 transactions, 559 accounts, 102,706 prices, multi-currency — imported and compared side by side with GnuCash, which it matches to the cent (net worth, every account subtree, register running balances, and the balance sheet).
+
+Performance work is measured against that book rather than a synthetic one. Opening it takes ~6.5s and a register edit ~0.26s, down from 45s and 5.8s respectively; the general ledger scrolls all 46k transactions with jumps to either end instant. The design behind those numbers — and what is still deliberately slow — is [architecture.md §12](docs/architecture.md#12-derived-state-and-performance); known gaps are tracked in [deferred.md](docs/deferred.md).
+
+Not yet released. iOS can open and create books but not import or export (a deliberate non-goal, see the PRD); there is no CI pipeline.
