@@ -52,6 +52,33 @@ left for later.
 | What-if scenarios on cash flow | FR-PLAN-03 | P5 | (done earlier in P5) |
 | UTI / document-type registration | FR-PLT-04 | P1 | document type + onOpenURL |
 
+## GnuCash parity audit — accounts & transactions (15 Jul 2026)
+
+Audited the register and account functions against a real GnuCash 5.x running
+the same book, menu by menu. Three **bugs** came out of it and are fixed
+(`EditFidelityTests` pins each; every one was verified to fail with its fix
+reverted):
+
+| Bug | Was | Now |
+|---|---|---|
+| Editing a transaction destroyed share counts and split memos | `EditableSplit` carried only account + amount, so `commit()` rebuilt every split with `quantity: nil` (→ defaults to value) and `memo: ""`. Re-saving an unchanged 100-share/$1,000 buy left **1000 shares**, memo gone. Balance checks can't see it: the *values* still balance. | The editor row carries `quantity`/`memo` through untouched; `asInput` is the single exit point. Verified in the GUI on the real book: the 11,600-share AGL buy re-saves with 11,600 shares and Net Worth unmoved. |
+| Voided splits still moved the register's running balance | `Book.balance` excludes voided (`Book.matches`), `refreshRegister` did not — so the register's last balance disagreed with the sidebar and every report. | The row still shows with its amount and `v`; it no longer moves the balance. |
+| No Unvoid, and the R column silently un-voided | `cycleReconcileState`'s `default` mapped voided → `n`, one split at a time. | `unvoidTransaction`/`isVoided` added (context menu shows Void or Unvoid); the cycle leaves voided **and** frozen alone. |
+
+Parity gaps found, not yet built (ranked):
+
+| Item | Notes | Target |
+|---|---|---|
+| Search results are read-only | GnuCash's Find opens results **as an editable register** — that is its bulk edit. Ours is a `Table` with no selection/context menu/jump, and a non-empty query hijacks the detail pane. Result rows already carry the txn GUID, so a jump is cheap. | P7 |
+| No structured Find, no ⌘F, no Find Account | GnuCash: 16 criteria, all/any, refine/add/delete-results. Ours: one free-text field, 5 AND-only operators (`tag:`/`account:`/`memo:`/`desc:`/`amount:`); no date, notes, number or reconcile-state search. An unknown key (`date:2026`) silently degrades to a literal substring. | P7 |
+| Register Sort By / Filter By | GnuCash sorts by 10 fields (+reverse, save) and filters by date range + 5 statuses. Ours: hardcoded oldest-first, no filter, headers not sortable. | P7 |
+| Double-line mode | `Transaction.notes` is stored and round-trips but is never shown or editable. | P7 |
+| Register ops absent | Cut/Copy/Paste transaction, Blank-transaction in-register entry, Go to Date (⌘G), Edit Exchange Rate on an existing txn, Schedule-from-transaction, Auto-Split Ledger style. | P7/P8 |
+| Register ops unreachable | Every txn action is context-menu-only — no menu-bar items, no shortcuts, and none available in Journal/General Ledger style. | P7 |
+| Per-split memo/action fields | Now preserved through an edit, but still not *editable* — GnuCash shows both per split. | P7 |
+| Account gaps | Cascade Account Properties, Auto-clear, Open SubAccounts (subtree register), account-tree filter, reconcile report. Delete Account has no move-transactions-to; type/commodity not editable after creation; hidden accounts always shown (no toggle). | P7/P8 |
+| Data ahead of UI | `setReconcileState` (all 5 states), multi-trigger AND/OR rules, `setNotes`, rule groups, `Book.allTags` all exist and are tested but have no surface. Wiring, not building. | P7 |
+
 ## Usability review (July 2026)
 
 Resolved in the usability pass: File/Book menu bar (New/Open/Open Recent/

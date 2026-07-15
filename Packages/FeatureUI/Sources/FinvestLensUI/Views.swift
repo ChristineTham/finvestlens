@@ -719,7 +719,11 @@ struct RegisterView: View {
                 Divider()
                 Button("Duplicate") { model.duplicateTransaction(txnID) }
                 Button("Add Reversing Transaction") { _ = model.addReversingTransaction(txnID) }
-                Button("Void") { model.voidTransaction(txnID) }
+                if model.isVoided(txnID) {
+                    Button("Unvoid") { model.unvoidTransaction(txnID) }
+                } else {
+                    Button("Void") { model.voidTransaction(txnID) }
+                }
                 Divider()
                 Button("Delete", role: .destructive) { model.deleteTransaction(txnID) }
             }
@@ -1018,10 +1022,28 @@ struct NewAccountSheet: View {
 
 // MARK: - Transaction editor (multi-split)
 
-private struct EditableSplit: Identifiable {
+/// One editable row of the transaction editor.
+///
+/// Internal rather than private so the round-trip below can be tested: this
+/// type is the only thing standing between a transaction and its rewrite on
+/// save, and the fields it forgets are the fields the save destroys.
+struct EditableSplit: Identifiable {
     let id = UUID()
     var accountID: GncGUID?
     var amountText: String = ""
+
+    /// The split's amount in its **own** commodity — a share count for a
+    /// security, the foreign amount for an FX leg — when it differs from the
+    /// value. `nil` means "same as the value", which is right for a plain
+    /// cash posting and lets editing the amount carry the quantity with it.
+    ///
+    /// The sheet has no field for this; it is carried through untouched. It
+    /// must be: the editor rebuilds every split on save, so dropping it reset
+    /// share counts to the dollar value and silently destroyed a holding.
+    var quantity: Decimal?
+
+    /// Per-split memo, likewise carried through so an edit cannot erase it.
+    var memo: String = ""
 
     var amount: Decimal { Decimal(string: amountText) ?? 0 }
 
@@ -1033,6 +1055,14 @@ private struct EditableSplit: Identifiable {
     init(_ input: SplitInput) {
         self.accountID = input.accountID
         self.amountText = NSDecimalNumber(decimal: input.value).stringValue
+        self.quantity = input.quantity
+        self.memo = input.memo
+    }
+
+    /// The row as the engine takes it. Everything the editor knows about a
+    /// split has to come back out here, including the parts it never showed.
+    var asInput: SplitInput {
+        SplitInput(accountID: accountID, value: amount, quantity: quantity, memo: memo)
     }
 }
 
@@ -1223,7 +1253,7 @@ struct TransactionEditorSheet: View {
     private func commit() {
         let inputs = lines
             .filter { $0.accountID != nil }
-            .map { SplitInput(accountID: $0.accountID, value: $0.amount) }
+            .map(\.asInput)
         let currency = model.transactionCurrency(for: inputs.compactMap(\.accountID))
         do {
             if let editingID {

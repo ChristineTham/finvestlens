@@ -263,6 +263,26 @@ extension AppModel {
         }
     }
 
+    /// Un-voids a transaction, returning its splits to unreconciled.
+    ///
+    /// The state each split held before the void is not recorded, so this
+    /// cannot restore a prior `c`/`y` — unreconciled is the safe landing:
+    /// it never claims a split was reconciled when it may not have been.
+    public func unvoidTransaction(_ id: GncGUID) {
+        guard let book, let txn = book.transaction(with: id) else { return }
+        editing([id], named: "Unvoid Transaction") {
+            for split in txn.splits where split.reconcileState == .voided {
+                split.reconcileState = .notReconciled
+            }
+        }
+    }
+
+    /// Whether every split of a transaction is voided (drives Unvoid in the UI).
+    public func isVoided(_ id: GncGUID) -> Bool {
+        guard let book, let txn = book.transaction(with: id), !txn.splits.isEmpty else { return false }
+        return txn.splits.allSatisfy { $0.reconcileState == .voided }
+    }
+
     /// The GUID of the transaction owning a split (for register-row actions).
     public func transactionID(ofSplit splitID: GncGUID) -> GncGUID? {
         book?.split(with: splitID)?.transaction?.guid
@@ -279,15 +299,23 @@ extension AppModel {
     }
 
     /// Cycles a split n → c → y → n (register click behaviour).
+    ///
+    /// Voided and frozen splits are left alone: they are not part of the cycle,
+    /// and folding them into it meant a stray click on the R column silently
+    /// un-voided a transaction one split at a time. Use ``unvoidTransaction(_:)``
+    /// to undo a void, and ``setReconcileState(splitID:to:)`` to set `f`.
     public func cycleReconcileState(splitID: GncGUID) {
         guard let book, let split = book.split(with: splitID),
               let txnID = split.transaction?.guid else { return }
+        let next: ReconcileState
+        switch split.reconcileState {
+        case .notReconciled: next = .cleared
+        case .cleared: next = .reconciled
+        case .reconciled: next = .notReconciled
+        case .voided, .frozen: return
+        }
         editing([txnID], named: "Change Reconcile State") {
-            switch split.reconcileState {
-            case .notReconciled: split.reconcileState = .cleared
-            case .cleared: split.reconcileState = .reconciled
-            default: split.reconcileState = .notReconciled
-            }
+            split.reconcileState = next
         }
     }
 

@@ -995,7 +995,11 @@ public final class AppModel {
         }
         var running = Decimal(0)
         registerRows = splits.map { split in
-            running += split.quantity
+            // A voided split still shows, with its amount, but must not move the
+            // balance — `Book.balance` excludes it, so counting it here made the
+            // register's last running balance disagree with the figure the
+            // sidebar and every report show for the same account.
+            if split.reconcileState != .voided { running += split.quantity }
             return RegisterRow(
                 id: split.guid,
                 date: split.transaction?.datePosted ?? Date(timeIntervalSince1970: 0),
