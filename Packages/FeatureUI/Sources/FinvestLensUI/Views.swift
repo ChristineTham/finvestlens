@@ -10,6 +10,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import FinvestLensEngine
 import FinvestLensIntelligence
+import FinvestLensPersistence
 #if os(macOS)
 import AppKit
 
@@ -134,25 +135,61 @@ public struct LockView: View {
 /// Shown while a book is being read. The read runs off the main actor, so this
 /// view actually animates — the point of it is that a large book no longer looks
 /// like a click that did nothing.
+///
+/// The bar is determinate once the loader has sized the book, and indeterminate
+/// until then: the first report cannot arrive before the row counts are in, and
+/// a bar sitting at zero says "stuck" where a spinner says "working".
 public struct OpeningBookView: View {
     let url: URL
+    let progress: BookLoadProgress?
     @Environment(\.appFontScale) private var appFontScale
 
-    public init(url: URL) { self.url = url }
+    public init(url: URL, progress: BookLoadProgress? = nil) {
+        self.url = url
+        self.progress = progress
+    }
+
+    private var bookName: String { url.deletingPathExtension().lastPathComponent }
+
+    /// "Reading transactions… 12,000 of 46,553" — the count is what makes the
+    /// wait legible: it says the book is big, not that the app is hung.
+    private var detail: String {
+        guard let progress else { return "Reading accounts, transactions and prices." }
+        guard progress.total > 0 else { return progress.stage.label + "…" }
+        return "\(progress.stage.label)… \(progress.completed.formatted(.number)) of \(progress.total.formatted(.number))"
+    }
 
     public var body: some View {
         VStack(spacing: 16) {
-            ProgressView()
-                .controlSize(.large)
-            Text("Opening \(url.deletingPathExtension().lastPathComponent)…")
+            if let progress {
+                ProgressView(value: progress.fraction, total: 1)
+                    .progressViewStyle(.linear)
+                    .frame(maxWidth: 320)
+                    // No implicit animation. SwiftUI would ease the fill toward
+                    // each new value over ~0.25s, and the main actor goes busy
+                    // the instant the read ends — so the last ease never
+                    // finishes and the bar strands part-way (measured: it sat at
+                    // 93% under "102,706 of 102,706"). Painting the reported
+                    // number is both honest and what actually shows up.
+                    .animation(nil, value: progress.fraction)
+            } else {
+                ProgressView()
+                    .controlSize(.large)
+                    .frame(maxWidth: 320)
+            }
+            Text("Opening \(bookName)…")
                 .scaledFont(.title3, weight: .semibold)
-            Text("Reading accounts, transactions and prices.")
+            Text(detail)
                 .foregroundStyle(.secondary)
+                .scaledFont(.callout)
+                .monospacedDigit()
+                .animation(nil, value: detail)   // the digits update, not slide
         }
         .padding(48)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Opening \(url.deletingPathExtension().lastPathComponent)")
+        .accessibilityLabel("Opening \(bookName)")
+        .accessibilityValue(progress.map { "\(Int($0.fraction * 100)) percent" } ?? "")
     }
 }
 

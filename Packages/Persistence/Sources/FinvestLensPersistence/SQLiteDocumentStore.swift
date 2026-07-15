@@ -212,8 +212,29 @@ public final class SQLiteDocumentStore {
     // MARK: Read (materialise the book)
 
     /// Reconstructs the in-memory ``Book`` from the database.
-    public func read() throws -> Book {
+    ///
+    /// `progress`, if given, is called as the load runs — see ``BookLoadProgress``
+    /// for the stage weights and why they are what they are. It is called from
+    /// whatever thread `read` runs on (in the app, the `DocumentLoader` actor),
+    /// so it must be safe to call from anywhere; the app hops to the main actor
+    /// inside it.
+    ///
+    /// Reporting is throttled to whole percents. Calling out per row would mean
+    /// ~250,000 hops for a bar with 100 visible states, and the reporting would
+    /// cost more than the work it reports on.
+    public func read(progress: (@Sendable (BookLoadProgress) -> Void)? = nil) throws -> Book {
         try dbQueue.read { db in
+            // Sizing the bar needs the row counts up front, which costs ~0.19s
+            // on this book — 3% of a debug load. Skipped entirely when nobody is
+            // watching, so an unobserved read (tests, import, revert) pays
+            // nothing for a bar that is not on screen.
+            var reporter: LoadReporter?
+            if let progress {
+                reporter = try LoadReporter(db: db, emit: progress)
+            }
+
+            reporter?.startingAccounts()
+
             // Commodities, keyed for lookup.
             var commodityByKey: [String: Commodity] = [:]
             var commodities: [Commodity] = []
@@ -288,9 +309,15 @@ public final class SQLiteDocumentStore {
 
             // Transactions and their splits.
             var splitsByTxn: [String: [Row]] = [:]
+            var groupedSplits = 0
             for row in try Row.fetchAll(db, sql: "SELECT * FROM split") {
                 splitsByTxn[row["txnGuid"], default: []].append(row)
+                groupedSplits += 1
+                reporter?.groupedSplits(groupedSplits)
             }
+
+            reporter?.startTransactions()
+            var builtTxns = 0
             for row in try Row.fetchAll(db, sql: "SELECT * FROM txn") {
                 guard let guid = GncGUID(hex: row["guid"]) else { continue }
                 let txn = Transaction(
@@ -319,8 +346,12 @@ public final class SQLiteDocumentStore {
                     txn.addSplit(split)
                 }
                 book.addTransaction(txn)
+                builtTxns += 1
+                reporter?.builtTransactions(builtTxns)
             }
 
+            reporter?.startPrices()
+            var builtPrices = 0
             // Prices.
             for row in try Row.fetchAll(db, sql: "SELECT * FROM price") {
                 guard let guid = GncGUID(hex: row["guid"]) else { continue }
@@ -333,8 +364,11 @@ public final class SQLiteDocumentStore {
                     source: row["source"],
                     type: row["type"]
                 ))
+                builtPrices += 1
+                reporter?.builtPrices(builtPrices)
             }
 
+            reporter?.finished()
             return book
         }
     }

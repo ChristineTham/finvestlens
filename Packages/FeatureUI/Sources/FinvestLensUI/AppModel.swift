@@ -121,8 +121,24 @@ public final class AppModel {
     /// seconds long.
     public private(set) var openingURL: URL?
 
+    /// How far through the open we are, or `nil` before the first report. Drives
+    /// the bar in ``OpeningBookView``; see ``BookLoadProgress`` for the weights.
+    public private(set) var loadProgress: BookLoadProgress?
+
     /// True while a book is being opened.
     public var isOpening: Bool { openingURL != nil }
+
+    /// Records a report from the loader, dropping any that would move the bar
+    /// backwards.
+    ///
+    /// Reports are emitted off the main actor and hop here one `Task` each;
+    /// nothing guarantees two hops arrive in the order they were sent, and a bar
+    /// that goes backwards reads as a bug even when the load is fine. Monotonic
+    /// is the only property that matters, and it is one comparison.
+    func recordLoadProgress(_ progress: BookLoadProgress) {
+        guard progress.fraction >= (loadProgress?.fraction ?? -1) else { return }
+        loadProgress = progress
+    }
 
     public private(set) var accountTree: [AccountNode] = []
     public private(set) var registerRows: [RegisterRow] = []
@@ -439,11 +455,23 @@ public final class AppModel {
             // Off the main actor: materialising the book is seconds of CPU on a
             // large file, and the window cannot repaint while it runs.
             document = try await FinvestLensDocument.load(at: accessURL,
-                                                          breakStaleLock: breakStaleLock)
+                                                          breakStaleLock: breakStaleLock) { progress in
+                Task { @MainActor [weak self] in self?.recordLoadProgress(progress) }
+            }
         } catch {
             endBookAccess()
             throw error
         }
+        // The read is done; everything below is main-actor work — balances, the
+        // account tree, the dashboard — and the window cannot repaint while it
+        // runs. Say so, and give the run loop one frame to actually paint it
+        // before going busy: otherwise the last thing on screen for the whole of
+        // that wait is a bar under "Reading prices", which is finished.
+        // A frame is ~16ms against a multi-second open.
+        recordLoadProgress(BookLoadProgress(stage: .finishing, completed: 0,
+                                            total: 0, fraction: 1))
+        try? await Task.sleep(for: .milliseconds(16))
+
         reloadKvpCollections()
         refreshAll()
         startQuoteAutoRefresh()
@@ -677,7 +705,11 @@ public final class AppModel {
         if isOpening { return }
         guard saveAndCloseIfOpen() else { return }
         openingURL = url
-        defer { openingURL = nil }
+        loadProgress = nil
+        // Cleared on the way out as well as the way in: a late report can land
+        // after the load returns (the hop is a `Task`), and the next open must
+        // start from an empty bar rather than the last one's 100%.
+        defer { openingURL = nil; loadProgress = nil }
         do {
             try await open(at: url, breakStaleLock: breakStaleLock)
         } catch {

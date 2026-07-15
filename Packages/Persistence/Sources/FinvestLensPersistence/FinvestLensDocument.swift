@@ -125,7 +125,12 @@ public final class FinvestLensDocument {
 
     /// Opens an existing document: acquires the lock, copies it to a local
     /// working copy, and materialises the book.
-    public static func open(at fileURL: URL, breakStaleLock: Bool = false) throws -> FinvestLensDocument {
+    ///
+    /// `progress` reports the book read, which is ~95% of an open — the lock,
+    /// the working copy (an APFS clone, effectively free) and the fingerprint
+    /// are the rest. Omit it and nothing is metered.
+    public static func open(at fileURL: URL, breakStaleLock: Bool = false,
+                            progress: (@Sendable (BookLoadProgress) -> Void)? = nil) throws -> FinvestLensDocument {
         let lock = FileLock(documentURL: fileURL)
         let lockHeld = try Self.acquireLockIfPossible(lock, breakStaleLock: breakStaleLock)
 
@@ -137,7 +142,7 @@ public final class FinvestLensDocument {
             throw error
         }
         let store = try SQLiteDocumentStore(path: workingCopyURL.path)
-        let book = try store.read()
+        let book = try store.read(progress: progress)
         let fingerprint = try Self.fingerprint(of: fileURL)
 
         return FinvestLensDocument(fileURL: fileURL, book: book, lock: lock,
@@ -154,8 +159,9 @@ public final class FinvestLensDocument {
     /// leaves this actor entirely rather than being shared with it.
     @DocumentLoader
     public static func load(at fileURL: URL,
-                            breakStaleLock: Bool = false) throws -> sending FinvestLensDocument {
-        try open(at: fileURL, breakStaleLock: breakStaleLock)
+                            breakStaleLock: Bool = false,
+                            progress: (@Sendable (BookLoadProgress) -> Void)? = nil) throws -> sending FinvestLensDocument {
+        try open(at: fileURL, breakStaleLock: breakStaleLock, progress: progress)
     }
 
     // MARK: Editing

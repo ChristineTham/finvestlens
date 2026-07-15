@@ -40,7 +40,7 @@ struct RootHost: View {
     var body: some View {
         Group {
             if let openingURL = model.openingURL {
-                OpeningBookView(url: openingURL)
+                OpeningBookView(url: openingURL, progress: model.loadProgress)
             } else if model.isOpen && model.isLocked {
                 LockView(model: model)
             } else if model.isOpen, let url = model.documentURL {
