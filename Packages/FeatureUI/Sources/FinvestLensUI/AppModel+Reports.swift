@@ -34,6 +34,13 @@ extension AppModel {
         return FinancialReports.transactionReport(book, accountID: accountID, from: from, to: to)
     }
 
+    /// An account's postings grouped by reconcile state as of a date
+    /// (`FR-RPT-05`).
+    public func reconcileReport(accountID: GncGUID, asOf: Date) -> ReconcileReport? {
+        guard let book else { return nil }
+        return FinancialReports.reconcileReport(book, accountID: accountID, asOf: asOf)
+    }
+
     /// A monthly net-worth series across the last `months` months.
     public func netWorthSeries(months: Int = 12, endingAt end: Date = Date()) -> [NetWorthPoint] {
         guard let book else { return [] }

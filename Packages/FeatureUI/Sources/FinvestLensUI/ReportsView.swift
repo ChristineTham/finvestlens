@@ -41,6 +41,7 @@ struct ReportsView: View {
         case balanceSheet = "Balance Sheet"
         case incomeStatement = "Income Statement"
         case transactions = "Transactions"
+        case reconcile = "Reconciliation"
         case netWorth = "Net Worth"
         case cashFlow = "Cash Flow"
         case portfolio = "Portfolio"
@@ -69,6 +70,7 @@ struct ReportsView: View {
                 case .balanceSheet: BalanceSheetView(model: model)
                 case .incomeStatement: IncomeStatementView(model: model)
                 case .transactions: TransactionReportView(model: model)
+                case .reconcile: ReconcileReportView(model: model)
                 case .netWorth: NetWorthChartView(model: model)
                 case .cashFlow: CashFlowView(model: model)
                 case .portfolio: PortfolioView(model: model)
@@ -423,6 +425,111 @@ private struct PriceHistorySection: View {
                     .accessibilityLabel("Price history for \(commodity.mnemonic)")
                 }
             }
+        }
+    }
+}
+
+/// GnuCash's Reconciliation Report: of what is in this account, how much has the
+/// bank agreed to? (`FR-RPT-05`)
+private struct ReconcileReportView: View {
+    @Bindable var model: AppModel
+    @State private var accountID: GncGUID?
+    @State private var asOf = Date()
+    @Environment(\.appFontScale) private var appFontScale
+    private var dateWidth: CGFloat { 90 * appFontScale }
+
+    /// Reconciling is a bank-statement idea, so the accounts offered are the
+    /// ones a statement arrives for.
+    private var accounts: [AccountNode] {
+        model.postableAccounts.filter { ["Bank", "Cash", "Credit", "Asset", "Liability"]
+            .contains($0.typeName) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Form {
+                Picker("Account", selection: $accountID) {
+                    Text("—").tag(GncGUID?.none)
+                    ForEach(accounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+                }
+                DatePicker("As of", selection: $asOf, displayedComponents: .date)
+            }
+            .frame(maxHeight: 110)
+            Divider()
+            if let id = accountID, let report = model.reconcileReport(accountID: id, asOf: asOf) {
+                content(report)
+            } else {
+                ContentUnavailableView("Choose an account", systemImage: "checkmark.circle",
+                                       description: Text("See what has been reconciled, what is "
+                                                         + "cleared, and what is neither."))
+            }
+        }
+    }
+
+    private func content(_ report: ReconcileReport) -> some View {
+        List {
+            section("Funds In", report.fundsIn, report.totalIn, report)
+            section("Funds Out", report.fundsOut, report.totalOut, report)
+            Section("Reconciled") {
+                total("Reconciled balance", report.reconciledBalance, report, emphasised: true)
+            }
+            section("Cleared — on a statement, not yet reconciled",
+                    report.cleared, report.clearedTotal, report)
+            Section {
+                total("Cleared balance", report.clearedBalance, report)
+            }
+            section("Outstanding — not on a statement", report.outstanding,
+                    report.outstandingTotal, report)
+            Section {
+                total("Ending balance", report.endingBalance, report, emphasised: true)
+            } footer: {
+                // The report's whole claim, said out loud. If it ever fails the
+                // figures are lying, and saying nothing would be worse.
+                if !report.isConsistent {
+                    Text("These figures do not add up. Please report this.")
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func section(_ title: String, _ rows: [ReconcileReportRow],
+                         _ sum: Decimal, _ report: ReconcileReport) -> some View {
+        Section(title) {
+            if rows.isEmpty {
+                Text("Nothing.").scaledFont(.caption).foregroundStyle(.secondary)
+            } else {
+                ForEach(rows) { row in
+                    HStack {
+                        Text(row.date, format: .dateTime.year().month().day())
+                            .foregroundStyle(.secondary)
+                            .frame(width: dateWidth, alignment: .leading)
+                        VStack(alignment: .leading) {
+                            Text(row.description)
+                            if !row.memo.isEmpty {
+                                Text(row.memo).scaledFont(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Text(AmountFormat.string(row.amount, code: report.currencyCode))
+                            .monospacedDigit()
+                            .foregroundStyle(row.amount < 0 ? .red : .primary)
+                    }
+                }
+                total("Total", sum, report)
+            }
+        }
+    }
+
+    private func total(_ label: String, _ amount: Decimal, _ report: ReconcileReport,
+                       emphasised: Bool = false) -> some View {
+        HStack {
+            Text(label).fontWeight(emphasised ? .semibold : .regular)
+            Spacer()
+            Text(AmountFormat.string(amount, code: report.currencyCode))
+                .monospacedDigit()
+                .fontWeight(emphasised ? .semibold : .regular)
         }
     }
 }
