@@ -41,11 +41,21 @@ public struct RegisterRow: Identifiable, Hashable, Sendable {
     public var description: String
     public var transfer: String
     public var reconcile: String
-    /// The split's own memo. Carried for sorting; the register has no column
-    /// for it yet (that is double-line mode, still to come).
+    /// The split's own memo, and the transaction's notes and this split's
+    /// action — the three things GnuCash puts on a register's second line when
+    /// Double Line is on. `memo` is also what the Memo sort orders by.
     public var memo: String
+    public var notes: String
+    public var action: String
     public var amount: Decimal
     public var runningBalance: Decimal
+
+    /// What double-line mode shows beneath the description: the transaction's
+    /// notes, then this split's own memo, then its action. Any of the three can
+    /// be empty, and on most rows all three are.
+    public var secondLine: String {
+        [notes, memo, action].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
 }
 
 /// How a register orders its rows for display (GnuCash View ▸ Sort By).
@@ -1155,6 +1165,8 @@ public final class AppModel {
                 transfer: transferDescription(for: split, in: account),
                 reconcile: split.reconcileState.rawValue,
                 memo: split.memo,
+                notes: split.transaction?.notes ?? "",
+                action: split.action,
                 amount: split.quantity,
                 runningBalance: running
             )

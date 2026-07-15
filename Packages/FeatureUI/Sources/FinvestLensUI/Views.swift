@@ -643,6 +643,9 @@ struct RegisterView: View {
     @State private var editingTransactionID: GncGUID?
     @State private var style: RegisterStyle = .basic
     @State private var filterShown = false
+    /// GnuCash's View ▸ Double Line. A preference rather than per-register
+    /// state, as in GnuCash, so it survives moving between accounts.
+    @AppStorage("registerDoubleLine") private var doubleLine = false
     /// Set by the ⌘↑/⌘↓ shortcuts; the scrolling view consumes and clears it.
     @State private var jump: RegisterEnd?
 
@@ -656,6 +659,7 @@ struct RegisterView: View {
                 .fixedSize()
                 if style == .basic {
                     Spacer()
+                    doubleLineToggle
                     sortMenu
                     filterButton
                 }
@@ -669,6 +673,18 @@ struct RegisterView: View {
         .sheet(isPresented: $filterShown) {
             RegisterFilterSheet(model: model)
         }
+    }
+
+    /// GnuCash's View ▸ Double Line: show each row's notes, memo and action
+    /// under its description. Worth having beyond parity — 40% of the
+    /// transactions in a real book carry notes, and without this there is
+    /// nowhere they are visible.
+    private var doubleLineToggle: some View {
+        Toggle(isOn: $doubleLine) {
+            Label("Double Line", systemImage: "text.alignleft")
+        }
+        .toggleStyle(.button)
+        .help("Show notes, memo and action under each transaction")
     }
 
     /// GnuCash's View ▸ Sort By, as a menu rather than a dialog — the options
@@ -785,7 +801,17 @@ struct RegisterView: View {
                     .scaledFont(.body)
             }
             TableColumn("Description") { row in
-                Text(row.description).scaledFont(.body)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(row.description).scaledFont(.body)
+                    // Only when there is something to say: an empty second line
+                    // on every row would add height to show nothing.
+                    if doubleLine, !row.secondLine.isEmpty {
+                        Text(row.secondLine)
+                            .scaledFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
             }
             TableColumn("Transfer") { row in
                 Text(row.transfer).scaledFont(.body)
@@ -1371,6 +1397,7 @@ struct TransactionEditorSheet: View {
     @State private var loaded = false
     @State private var date = Date()
     @State private var description = ""
+    @State private var notes = ""
     @State private var tagsText = ""
     @State private var lines: [EditableSplit] = [EditableSplit(), EditableSplit()]
     @FocusState private var descriptionFocused: Bool
@@ -1412,19 +1439,52 @@ struct TransactionEditorSheet: View {
                     }
                 }
 
+                // GnuCash's Notes: the second line of a double-line register,
+                // and the only home for the 18,641 notes this book already
+                // carries — they round-tripped through import and export
+                // faithfully while being impossible to read.
+                TextField("Notes", text: $notes, axis: .vertical)
+                    .lineLimit(1...4)
+
                 Section("Splits") {
+                    // Two rows per split, as GnuCash shows them: the posting,
+                    // then its own memo and action. Two sibling rows rather
+                    // than a VStack — nesting the posting row inside a stack
+                    // takes it out of the Form's own row layout, and the
+                    // account Picker's intrinsic width (the longest of 559 full
+                    // account names) then overflows the sheet on both sides.
+                    // Two lines per split, as GnuCash shows them: the posting,
+                    // then that split's own memo and action. Labels are hidden
+                    // and the prompts carry the naming — a Form row that keeps
+                    // its labels is split into a label column and a content
+                    // column sized across every row, and the account picker
+                    // (as wide as the longest of 559 full account paths) then
+                    // drags that column wider than the sheet.
                     ForEach($lines) { $line in
-                        HStack {
-                            Picker("Account", selection: $line.accountID) {
-                                Text("—").tag(GncGUID?.none)
-                                ForEach(model.postableAccounts) { node in
-                                    Text(node.fullName).tag(GncGUID?.some(node.id))
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Picker("Account", selection: $line.accountID) {
+                                    Text("—").tag(GncGUID?.none)
+                                    ForEach(model.postableAccounts) { node in
+                                        Text(node.fullName).tag(GncGUID?.some(node.id))
+                                    }
                                 }
+                                .labelsHidden()
+                                TextField("Amount", text: $line.amountText,
+                                          prompt: Text("Amount"))
+                                    .labelsHidden()
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(width: amountWidth)
                             }
-                            .labelsHidden()
-                            TextField("Amount", text: $line.amountText)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: amountWidth)
+                            HStack(spacing: 8) {
+                                TextField("Memo", text: $line.memo, prompt: Text("Memo"))
+                                    .labelsHidden()
+                                TextField("Action", text: $line.action, prompt: Text("Action"))
+                                    .labelsHidden()
+                                    .frame(width: amountWidth)
+                            }
+                            .scaledFont(.caption)
+                            .foregroundStyle(.secondary)
                         }
                     }
                     .onDelete { lines.remove(atOffsets: $0) }
@@ -1533,6 +1593,7 @@ struct TransactionEditorSheet: View {
         if let editingID, let edit = model.editData(forTransaction: editingID) {
             date = edit.date
             description = edit.description
+            notes = edit.notes
             lines = edit.splits.map { EditableSplit($0) }
             tagsText = edit.tags.joined(separator: ", ")
         }
@@ -1554,10 +1615,12 @@ struct TransactionEditorSheet: View {
         do {
             if let editingID {
                 try model.updateTransaction(id: editingID, date: date, description: description,
-                                            currency: currency, splits: inputs, tags: parsedTags)
+                                            currency: currency, splits: inputs,
+                                            tags: parsedTags, notes: notes)
             } else {
                 try model.addTransaction(date: date, description: description,
-                                         currency: currency, splits: inputs, tags: parsedTags)
+                                         currency: currency, splits: inputs,
+                                         tags: parsedTags, notes: notes)
             }
             dismiss()
         } catch {

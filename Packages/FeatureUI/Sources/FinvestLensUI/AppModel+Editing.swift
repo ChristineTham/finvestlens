@@ -108,6 +108,8 @@ public struct TransactionEdit: Sendable {
     public var currency: Commodity
     public var splits: [SplitInput]
     public var tags: [String] = []
+    /// GnuCash's transaction Notes — the second line of a double-line register.
+    public var notes: String = ""
 }
 
 /// A snapshot of an account's editable fields.
@@ -129,12 +131,14 @@ extension AppModel {
     /// (`FR-REG-02`). Throws ``TransactionEntryError`` otherwise.
     @discardableResult
     public func addTransaction(date: Date, description: String, currency: Commodity,
-                               splits: [SplitInput], tags: [String] = []) throws -> GncGUID {
+                               splits: [SplitInput], tags: [String] = [],
+                               notes: String = "") throws -> GncGUID {
         guard let book else { throw TransactionEntryError.noBook }
         let realSplits = splits.filter { $0.accountID != nil }
         guard realSplits.count >= 2 else { throw TransactionEntryError.tooFewSplits }
 
-        let txn = Transaction(currency: currency, datePosted: date, description: description)
+        let txn = Transaction(currency: currency, datePosted: date,
+                              description: description, notes: notes)
         for input in realSplits {
             guard let id = input.accountID, let account = book.account(with: id) else {
                 throw TransactionEntryError.unknownAccount
@@ -167,7 +171,8 @@ extension AppModel {
                            quantity: $0.quantity == $0.value ? nil : $0.quantity,
                            memo: $0.memo, action: $0.action)
             },
-            tags: txn.tags
+            tags: txn.tags,
+            notes: txn.notes
         )
     }
 
@@ -176,7 +181,8 @@ extension AppModel {
     @discardableResult
     public func updateTransaction(id: GncGUID, date: Date, description: String,
                                   currency: Commodity, splits: [SplitInput],
-                                  tags: [String]? = nil) throws -> GncGUID {
+                                  tags: [String]? = nil,
+                                  notes: String? = nil) throws -> GncGUID {
         guard let book, let txn = book.transaction(with: id) else { throw TransactionEntryError.notFound }
         let realSplits = splits.filter { $0.accountID != nil }
         guard realSplits.count >= 2 else { throw TransactionEntryError.tooFewSplits }
@@ -209,6 +215,7 @@ extension AppModel {
             txn.transactionDescription = description
             txn.currency = currency
             if let tags { txn.tags = tags }
+            if let notes { txn.notes = notes }
             for existing in Array(txn.splits) { txn.removeSplit(existing) }
             for (account, input) in resolved {
                 if let splitID = input.splitID, let split = reusable[splitID] {
@@ -662,6 +669,12 @@ extension AppModel {
             .filter { $0.transactionDescription.caseInsensitiveCompare(description) == .orderedSame }
             .max(by: { $0.datePosted < $1.datePosted })
         guard let match else { return nil }
-        return match.splits.map { SplitInput(accountID: $0.account?.guid, value: $0.value, memo: $0.memo) }
+        // No `splitID`: these rows are a template for a *new* transaction, and
+        // carrying one would re-attach the save to the splits of the
+        // transaction we copied from.
+        return match.splits.map {
+            SplitInput(accountID: $0.account?.guid, value: $0.value,
+                       memo: $0.memo, action: $0.action)
+        }
     }
 }
