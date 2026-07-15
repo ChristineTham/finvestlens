@@ -90,7 +90,7 @@ struct AppModelTests {
 
         #expect(!model.canDeleteAccount(bank))     // has postings
         #expect(model.canDeleteAccount(spare))     // empty
-        model.deleteAccount(spare)
+        try model.deleteAccount(spare)
         #expect(model.accountTree.first { $0.name == "Spare" } == nil)
     }
 

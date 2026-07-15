@@ -866,15 +866,160 @@ public final class AppModel {
         return account.guid
     }
 
-    /// Whether an account can be deleted (no postings and no children).
-    public func canDeleteAccount(_ id: GncGUID) -> Bool {
-        guard let book, let account = book.account(with: id) else { return false }
-        return account.children.isEmpty && book.splits(for: account).isEmpty
+    /// What stands between an account and being deleted (`FR-ACC-04`).
+    ///
+    /// GnuCash asks this before deleting: an account with postings or children
+    /// can still go, but its contents have to be given somewhere to live first.
+    /// Refusing outright — which is what this used to do — leaves most of a real
+    /// book undeletable, since almost every account has been posted to.
+    public struct AccountDeletionPlan: Sendable, Equatable {
+        public var splitCount: Int
+        public var childCount: Int
+        /// Descendants' postings, which move with their accounts rather than
+        /// separately; counted so the dialog can say what it is about to move.
+        public var descendantSplitCount: Int
+        public var needsTransactionTarget: Bool { splitCount > 0 }
+        public var needsChildTarget: Bool { childCount > 0 }
+        public var isUnencumbered: Bool { splitCount == 0 && childCount == 0 }
     }
 
-    public func deleteAccount(_ id: GncGUID) {
-        guard let book, let account = book.account(with: id), canDeleteAccount(id) else { return }
+    public enum AccountDeletionError: Error, Equatable {
+        case notFound
+        /// The account has postings and no account was named to take them.
+        case transactionsNeedTarget
+        /// The account has children and no account was named to take them.
+        case childrenNeedTarget
+        case targetNotFound
+        /// A target inside the subtree being deleted would be deleted with it.
+        case targetIsSelfOrDescendant
+        /// Quantities are denominated in the account's own commodity, so moving
+        /// a split to an account of another commodity would silently reinterpret
+        /// it — 100 shares becoming 100 dollars.
+        case targetCommodityDiffers
+    }
+
+    /// An account's own name, for a dialog that has to name it.
+    public func accountName(_ id: GncGUID) -> String? {
+        book?.account(with: id)?.name
+    }
+
+    /// Why a deletion was refused, in words for the person who asked for it.
+    public func describe(_ error: Error) -> String {
+        switch error {
+        case AccountDeletionError.transactionsNeedTarget:
+            "Choose an account to move the transactions to."
+        case AccountDeletionError.childrenNeedTarget:
+            "Choose an account to move the subaccounts to."
+        case AccountDeletionError.targetIsSelfOrDescendant:
+            "That account is inside the one being deleted, so it would go too."
+        case AccountDeletionError.targetCommodityDiffers:
+            "That account holds a different commodity, which would change what "
+            + "every moved amount means."
+        case AccountDeletionError.targetNotFound, AccountDeletionError.notFound:
+            "That account no longer exists."
+        default:
+            (error as NSError).localizedDescription
+        }
+    }
+
+    public func deletionPlan(for id: GncGUID) -> AccountDeletionPlan? {
+        guard let book, let account = book.account(with: id) else { return nil }
+        let descendants = account.descendants
+        return AccountDeletionPlan(
+            splitCount: book.splits(for: account).count,
+            childCount: account.children.count,
+            descendantSplitCount: descendants.reduce(0) { $0 + book.splits(for: $1).count }
+        )
+    }
+
+    /// Whether an account can be deleted with no questions asked.
+    public func canDeleteAccount(_ id: GncGUID) -> Bool {
+        deletionPlan(for: id)?.isUnencumbered ?? false
+    }
+
+    /// The accounts that could take `id`'s postings: same commodity, and not
+    /// inside the subtree about to be removed.
+    public func transactionTargets(forDeleting id: GncGUID) -> [AccountNode] {
+        guard let book, let account = book.account(with: id) else { return [] }
+        let excluded = Set(([account] + account.descendants).map(\.guid))
+        return postableAccounts.filter {
+            !excluded.contains($0.id)
+                && book.account(with: $0.id)?.commodity == account.commodity
+        }
+    }
+
+    /// The accounts that could adopt `id`'s children — anywhere outside the
+    /// subtree. Commodity is not a constraint here: a parent does not hold its
+    /// children's postings.
+    public func childTargets(forDeleting id: GncGUID) -> [AccountNode] {
+        guard let book, let account = book.account(with: id) else { return [] }
+        let excluded = Set(([account] + account.descendants).map(\.guid))
+        // Placeholders included, unlike the postings target: holding children is
+        // exactly what a placeholder is for.
+        func flatten(_ nodes: [AccountNode]) -> [AccountNode] {
+            nodes.flatMap { [$0] + flatten($0.children ?? []) }
+        }
+        return flatten(accountTree).filter { !excluded.contains($0.id) }
+    }
+
+    /// Deletes an account, first moving its postings and children where asked
+    /// (`FR-ACC-04`).
+    ///
+    /// Both moves are refused rather than guessed at: silently deleting someone's
+    /// transactions because they did not name a target is not a thing to do by
+    /// default, and neither is dropping them into an account whose commodity
+    /// would reinterpret every quantity.
+    public func deleteAccount(_ id: GncGUID,
+                              movingTransactionsTo transactionTarget: GncGUID? = nil,
+                              movingChildrenTo childTarget: GncGUID? = nil) throws {
+        guard let book, let account = book.account(with: id) else {
+            throw AccountDeletionError.notFound
+        }
+        let plan = deletionPlan(for: id) ?? AccountDeletionPlan(splitCount: 0, childCount: 0,
+                                                               descendantSplitCount: 0)
+        let subtree = Set(([account] + account.descendants).map(\.guid))
+
+        var moveSplitsTo: Account?
+        if plan.needsTransactionTarget {
+            guard let targetID = transactionTarget else {
+                throw AccountDeletionError.transactionsNeedTarget
+            }
+            guard let target = book.account(with: targetID) else {
+                throw AccountDeletionError.targetNotFound
+            }
+            guard !subtree.contains(targetID) else {
+                throw AccountDeletionError.targetIsSelfOrDescendant
+            }
+            guard target.commodity == account.commodity else {
+                throw AccountDeletionError.targetCommodityDiffers
+            }
+            moveSplitsTo = target
+        }
+
+        var moveChildrenTo: Account?
+        if plan.needsChildTarget {
+            guard let targetID = childTarget else {
+                throw AccountDeletionError.childrenNeedTarget
+            }
+            guard let target = book.account(with: targetID) else {
+                throw AccountDeletionError.targetNotFound
+            }
+            guard !subtree.contains(targetID) else {
+                throw AccountDeletionError.targetIsSelfOrDescendant
+            }
+            moveChildrenTo = target
+        }
+
         editingWholeBook(named: "Delete Account") {
+            if let moveSplitsTo {
+                for split in book.splits(for: account) { split.account = moveSplitsTo }
+            }
+            if let moveChildrenTo {
+                for child in account.children {
+                    account.removeChild(child)
+                    _ = moveChildrenTo.addChild(child)
+                }
+            }
             account.parent?.removeChild(account)
             if selectedAccountID == id { selectedAccountID = nil }
         }

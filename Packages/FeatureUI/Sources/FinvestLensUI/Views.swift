@@ -571,11 +571,120 @@ struct OnboardingSheet: View {
 enum AccountSheet: Identifiable {
     case edit(GncGUID)
     case reconcile(GncGUID)
+    case delete(GncGUID)
 
     var id: String {
         switch self {
         case .edit(let guid): return "edit-\(guid.hexString)"
         case .reconcile(let guid): return "rec-\(guid.hexString)"
+        case .delete(let guid): return "del-\(guid.hexString)"
+        }
+    }
+}
+
+/// GnuCash's Delete Account dialog: an account with postings or children can be
+/// deleted, but has to say where they go first (`FR-ACC-04`).
+struct DeleteAccountSheet: View {
+    @Bindable var model: AppModel
+    var accountID: GncGUID
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var transactionTarget: GncGUID?
+    @State private var childTarget: GncGUID?
+    @State private var failure: String?
+
+    private var plan: AppModel.AccountDeletionPlan? { model.deletionPlan(for: accountID) }
+    private var name: String { model.accountName(accountID) ?? "this account" }
+
+    /// "1 split" / "2,312 splits", grouped for reading.
+    ///
+    /// Spelled out rather than `^[\(n) split](inflect: true)`: automatic
+    /// grammatical agreement resolves only for a localized string resource, and
+    /// interpolating it into a `Text` renders the markup itself — this dialog
+    /// said "^[2312 split](inflect: true) posted to “ANZ Access”".
+    static func count(_ n: Int, _ noun: String) -> String {
+        let formatted = NumberFormatter.localizedString(from: NSNumber(value: n),
+                                                        number: .decimal)
+        return "\(formatted) \(noun)\(n == 1 ? "" : "s")"
+    }
+
+    private var isReady: Bool {
+        guard let plan else { return false }
+        if plan.needsTransactionTarget && transactionTarget == nil { return false }
+        if plan.needsChildTarget && childTarget == nil { return false }
+        return true
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let plan {
+                    if plan.isUnencumbered {
+                        Text("“\(name)” is empty and can be deleted.")
+                    }
+                    if plan.needsTransactionTarget {
+                        Section("Transactions") {
+                            Text("\(Self.count(plan.splitCount, "split")) posted to “\(name)” "
+                                 + "must move to another account.")
+                                .scaledFont(.caption)
+                                .foregroundStyle(.secondary)
+                            Picker("Move to", selection: $transactionTarget) {
+                                Text("Choose an account…").tag(GncGUID?.none)
+                                ForEach(model.transactionTargets(forDeleting: accountID)) { node in
+                                    Text(node.fullName).tag(GncGUID?.some(node.id))
+                                }
+                            }
+                            .labelsHidden()
+                        }
+                    }
+                    if plan.needsChildTarget {
+                        Section("Subaccounts") {
+                            Text(plan.descendantSplitCount > 0
+                                 ? "\(Self.count(plan.childCount, "subaccount")) — carrying "
+                                   + "\(Self.count(plan.descendantSplitCount, "split")) — must "
+                                   + "move to another parent."
+                                 : "\(Self.count(plan.childCount, "subaccount")) must move to "
+                                   + "another parent.")
+                                .scaledFont(.caption)
+                                .foregroundStyle(.secondary)
+                            Picker("Reparent to", selection: $childTarget) {
+                                Text("Choose an account…").tag(GncGUID?.none)
+                                ForEach(model.childTargets(forDeleting: accountID)) { node in
+                                    Text(node.fullName).tag(GncGUID?.some(node.id))
+                                }
+                            }
+                            .labelsHidden()
+                        }
+                    }
+                    if let failure {
+                        Text(failure).scaledFont(.caption).foregroundStyle(.red)
+                    }
+                } else {
+                    Text("This account no longer exists.")
+                }
+            }
+            .navigationTitle("Delete “\(name)”")
+            .onEscapeCommand { dismiss() }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Delete", role: .destructive) { commit() }
+                        .disabled(!isReady)
+                }
+            }
+        }
+        .frame(minWidth: 460, minHeight: 300)
+    }
+
+    private func commit() {
+        do {
+            try model.deleteAccount(accountID, movingTransactionsTo: transactionTarget,
+                                    movingChildrenTo: childTarget)
+            dismiss()
+        } catch {
+            failure = model.describe(error)
         }
     }
 }
@@ -612,9 +721,11 @@ struct AccountsSidebar: View {
                 .contextMenu {
                     Button("Edit…") { sheet = .edit(node.id) }
                     Button("Reconcile…") { sheet = .reconcile(node.id) }
-                    if model.canDeleteAccount(node.id) {
-                        Button("Delete", role: .destructive) { model.deleteAccount(node.id) }
-                    }
+                    // Always offered. It used to appear only for an account
+                    // with nothing in it, which on a real book is almost none
+                    // of them — so the answer to "why can't I delete this?"
+                    // was a button that wasn't there.
+                    Button("Delete…", role: .destructive) { sheet = .delete(node.id) }
                 }
             }
         }
@@ -625,6 +736,7 @@ struct AccountsSidebar: View {
             switch sheet {
             case .edit(let id): EditAccountSheet(model: model, accountID: id)
             case .reconcile(let id): ReconcileView(model: model, accountID: id)
+            case .delete(let id): DeleteAccountSheet(model: model, accountID: id)
             }
         }
     }
