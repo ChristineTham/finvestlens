@@ -71,7 +71,7 @@ Still deferred:
 
 ## HIG review (13 Jul 2026)
 
-Fixed: undo/redo (snapshot-based, Edit menu integrated), save-on-quit via
+Fixed: undo/redo (pre-capture, Edit menu integrated), save-on-quit via
 NSApplicationDelegate (⌘Q never loses data, releases the lock), Reports in
 its own window, window titled with document proxy icon, Esc/⌘. cancels
 sheets (+ Return confirms reconcile), toolbar help tags, Title Case buttons.
@@ -81,7 +81,7 @@ Known nuances / still deferred:
 | Item | Notes |
 | --- | --- |
 | Esc inside a focused text field | AppKit's field editor consumes the raw Escape (completion); ⌘. always cancels, Esc works otherwise. SwiftUI offers no clean override. |
-| Undo action names | Generic "Undo Change" — per-operation names ("Undo Delete Transaction") need call-site annotations. |
+| ~~Undo action names~~ | **Done (15 Jul 2026):** pre-capture undo names each edit at the call site, so the Edit menu reads "Undo Delete Transaction", "Undo Change Reconcile State", etc. |
 | Window/state restoration | App launches to the splash; does not reopen the last book automatically. |
 | Help menu | No help book / anchors. |
 
@@ -138,5 +138,5 @@ Known limits:
 | Smart Import: create transaction from unmatched invoice | FR-AI-07 | An invoice with no matching register transaction reports "import the bank statement first"; direct creation (with funding-account picker) not offered yet. | P8 |
 | ~~statementDate in GnuCash XML~~ | FR-AI-07 | **Done (14 Jul 2026):** with generic KVP round-trip, the `finvestlens/statement-date` slot now rides through XML export/import (timespec, full fidelity), so dual-date duplicate detection survives a GnuCash round-trip. GnuCash itself ignores but preserves the slot. | done |
 | Live-model tests under load | — | `LiveModelTests` can time out when the model daemon is busy; they self-skip without Apple Intelligence. Not in CI. | monitor |
-| Opening a book blocks the main thread | FR-DOC-01 | `AppModel.open(at:)` is synchronous, so the window can't repaint while it runs and there is no progress indication. Now **~7s** on the 46k-transaction Ashley Bears book, down from 45s (price index + single-pass balances); the residual is ~6s of `store.read` plus the undo baseline snapshot. Re-opening the already-open book is a no-op, so an impatient second click no longer closes and re-reads it. The remaining fix is to load off the main actor and show progress — `Book` is a reference graph and not `Sendable`. | P8 |
-| Undo snapshots serialise the whole book | FR-DOC-04 | `registerUndoSnapshot` runs after every mutation and captures the book as GnuCash XML: **5.8s and 115 MB** on the 46k-transaction book, so a one-character description edit or a reconcile-flag click costs both, and `levelsOfUndo = 25` can retain ~2.9 GB. Snapshot undo is inherently O(book) per edit; the fix is inverse-command undo registered by each mutation site (`AppModel+Editing` et al.), which also removes the 5.8s baseline capture from every open. | P8 |
+| Opening a book blocks the main thread | FR-DOC-01 | `AppModel.open(at:)` is synchronous, so the window can't repaint while it runs and there is no progress indication. Now **~6.5s** on the 46k-transaction Ashley Bears book, down from 45s (price index + single-pass balances, then pre-capture undo which removed the 5.8s baseline export); the residual is essentially all `store.read`. Re-opening the already-open book is a no-op, so an impatient second click no longer closes and re-reads it. The remaining fix is to load off the main actor and show progress — `Book` is a reference graph and not `Sendable`. | P8 |
+| Refreshing derived state re-sorts every price | FR-DOC-01 | `refreshAll()` runs after every mutation and `rebuildPrices` sorts all 102,706 prices (and `rebuildAccountTree` re-walks the book): **~0.25s per edit** on the Ashley Bears book, which is now the whole cost of a register edit since undo stopped serialising the book. Sorting is only needed for the price/rate editors, so the fix is to derive those rows lazily when the panel is shown rather than on every mutation. | P8 |

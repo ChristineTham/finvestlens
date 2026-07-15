@@ -134,8 +134,9 @@ extension AppModel {
         }
 
         guard txn.isBalanced else { throw StockEntryError.invalidInput }
-        book.addTransaction(txn)
-        markDirtyAndRefresh()
+        editing([txn.guid], named: "Add Stock Transaction") {
+            book.addTransaction(txn)
+        }
         return txn.guid
     }
 }

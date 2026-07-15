@@ -20,14 +20,14 @@ extension AppModel {
         } else {
             ruleGroups[0].rules.append(rule)
         }
-        commitKvpCollections()
+        commitKvpCollections(named: "Add Rule")
     }
 
     public func deleteRule(_ id: UUID) {
         for index in ruleGroups.indices {
             ruleGroups[index].rules.removeAll { $0.id == id }
         }
-        commitKvpCollections()
+        commitKvpCollections(named: "Delete Rule")
     }
 
     /// Convenience: evaluate the document's rules against a context.
@@ -75,16 +75,17 @@ extension AppModel {
     /// Applies the given previewed changes, re-pointing the income/expense leg
     /// and setting notes. Amounts and balance are untouched.
     public func applyHistoricalRules(_ items: [RuleApplication]) {
-        guard let book else { return }
-        for item in items {
-            guard let txn = book.transaction(with: item.id) else { continue }
-            if let catID = item.proposedCategoryID, let target = book.account(with: catID),
-               let leg = txn.splits.first(where: { isCategory($0.account?.type) }) {
-                leg.account = target
+        guard let book, !items.isEmpty else { return }
+        editing(items.map(\.id), named: "Apply Rules") {
+            for item in items {
+                guard let txn = book.transaction(with: item.id) else { continue }
+                if let catID = item.proposedCategoryID, let target = book.account(with: catID),
+                   let leg = txn.splits.first(where: { isCategory($0.account?.type) }) {
+                    leg.account = target
+                }
+                if let notes = item.proposedNotes { txn.notes = notes }
             }
-            if let notes = item.proposedNotes { txn.notes = notes }
         }
-        if !items.isEmpty { markDirtyAndRefresh() }
     }
 
     private func isCategory(_ type: AccountType?) -> Bool {

@@ -75,17 +75,24 @@ extension AppModel {
     @discardableResult
     public func reconcileMatchedDuplicates(_ results: [MatchResult]) -> Int {
         guard let book else { return 0 }
-        var updated = 0
-        for result in results where result.isDuplicate {
-            guard let splitID = result.matchedSplitID,
+        let matches = results.compactMap { result -> (split: Split, date: Date)? in
+            guard result.isDuplicate,
+                  let splitID = result.matchedSplitID,
                   let split = book.split(with: splitID),
                   split.reconcileState == .notReconciled
-            else { continue }
-            split.reconcileState = .cleared
-            split.reconcileDate = result.staged.date
-            updated += 1
+            else { return nil }
+            return (split, result.staged.date)
         }
-        if updated > 0 { markDirtyAndRefresh() }
+        let updated = matches.count
+        if updated > 0 {
+            let touched = Set(matches.compactMap { $0.split.transaction?.guid })
+            editing(Array(touched), named: "Clear Matched Splits") {
+                for (split, date) in matches {
+                    split.reconcileState = .cleared
+                    split.reconcileDate = date
+                }
+            }
+        }
         return updated
     }
 
@@ -164,15 +171,19 @@ extension AppModel {
     @discardableResult
     public func applyCategoryAssignments(_ assignments: [GncGUID: GncGUID]) -> Int {
         guard let book else { return 0 }
-        var applied = 0
-        for (splitID, accountID) in assignments {
+        let moves = assignments.compactMap { splitID, accountID -> (split: Split, account: Account)? in
             guard let split = book.split(with: splitID),
                   let account = book.account(with: accountID)
-            else { continue }
-            split.account = account
-            applied += 1
+            else { return nil }
+            return (split, account)
         }
-        if applied > 0 { markDirtyAndRefresh() }
+        let applied = moves.count
+        if applied > 0 {
+            let touched = Set(moves.compactMap { $0.split.transaction?.guid })
+            editing(Array(touched), named: "Categorise Transactions") {
+                for (split, account) in moves { split.account = account }
+            }
+        }
         return applied
     }
 

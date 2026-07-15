@@ -90,7 +90,7 @@ extension AppModel {
                               assignments: [UUID: GncGUID] = [:],
                               skipDuplicates: Bool = true) -> Int {
         guard let book, let target = book.account(with: id) else { return 0 }
-        var imported = 0
+        var created: [Transaction] = []
         for result in results {
             if skipDuplicates && result.isDuplicate { continue }
             let destinationID = assignments[result.staged.id] ?? result.suggestedAccountID
@@ -105,10 +105,14 @@ extension AppModel {
                                           description: name.isEmpty ? rawName : name)
             transaction.addSplit(account: target, value: staged.amount, memo: staged.memo)
             transaction.addSplit(account: destination, value: -staged.amount)
-            book.addTransaction(transaction)
-            imported += 1
+            created.append(transaction)
         }
-        if imported > 0 { markDirtyAndRefresh() }
+        let imported = created.count
+        if imported > 0 {
+            editing(created.map(\.guid), named: "Import Transactions") {
+                for transaction in created { book.addTransaction(transaction) }
+            }
+        }
         return imported
     }
 }

@@ -61,7 +61,7 @@ extension AppModel {
         } else {
             quoteSymbols[key] = nil
         }
-        commitKvpCollections()
+        commitKvpCollections(named: "Set Quote Symbol")
     }
 
     // MARK: Auto-refresh (`FR-INV-03`)
@@ -73,8 +73,9 @@ extension AppModel {
             return false
         }
         set {
-            book?.kvp["finvestlens/autoRefreshQuotes"] = .int64(newValue ? 1 : 0)
-            markDirtyAndRefresh()
+            editingWholeBook(named: "Change Quote Auto-Refresh Setting") {
+                book?.kvp["finvestlens/autoRefreshQuotes"] = .int64(newValue ? 1 : 0)
+            }
             startQuoteAutoRefresh()
         }
     }
@@ -123,20 +124,25 @@ extension AppModel {
         }
         quoteStatus = .fetching("latest quotes")
         let service = service()
-        var added = 0
+        var fetched: [Price] = []
         var failures: [String] = []
         for commodity in commodities {
             do {
-                let price = try await service.latestPrice(
+                fetched.append(try await service.latestPrice(
                     for: commodity, in: reportCurrency, using: kind,
-                    symbolOverride: quoteSymbol(for: commodity))
-                book?.addPrice(price)
-                added += 1
+                    symbolOverride: quoteSymbol(for: commodity)))
             } catch {
                 failures.append("\(commodity.mnemonic): \(Self.describe(error))")
             }
         }
-        if added > 0 { markDirtyAndRefresh() }
+        // Collected first, then applied in one go: the fetches await, and an
+        // edit has to snapshot and mutate without suspending in between.
+        let added = fetched.count
+        if added > 0 {
+            editingWholeBook(named: "Fetch Quotes") {
+                for price in fetched { book?.addPrice(price) }
+            }
+        }
         quoteStatus = failures.isEmpty
             ? .success(added)
             : .failure("Added \(added). Failed — " + failures.joined(separator: "; "))
@@ -151,8 +157,11 @@ extension AppModel {
             let prices = try await service().historicalPrices(
                 for: commodity, in: reportCurrency, from: from, to: to, using: kind,
                 symbolOverride: quoteSymbol(for: commodity))
-            for price in prices { book?.addPrice(price) }
-            if !prices.isEmpty { markDirtyAndRefresh() }
+            if !prices.isEmpty {
+                editingWholeBook(named: "Backfill Price History") {
+                    for price in prices { book?.addPrice(price) }
+                }
+            }
             quoteStatus = .success(prices.count)
         } catch {
             quoteStatus = .failure(Self.describe(error))

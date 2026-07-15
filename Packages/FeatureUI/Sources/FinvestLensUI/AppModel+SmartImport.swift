@@ -105,29 +105,36 @@ extension AppModel {
               })
         else { throw TransactionEntryError.notFound }
 
-        for split in transaction.splits where split !== cash {
-            transaction.removeSplit(split)
+        // Whole-book: the dividend legs land on income accounts that may have to
+        // be created, so the chart of accounts can change too.
+        var imbalance: Decimal?
+        editingWholeBook(named: "Apply Dividend Details") {
+            for split in transaction.splits where split !== cash {
+                transaction.removeSplit(split)
+            }
+            if details.frankedAmount != 0,
+               let account = ensureAccount(path: ["Income", "Dividends", "Franked Dividends"], type: .income) {
+                transaction.addSplit(account: account, value: -details.frankedAmount, memo: details.ticker)
+            }
+            if details.unfrankedAmount != 0,
+               let account = ensureAccount(path: ["Income", "Dividends", "Unfranked Dividends"], type: .income) {
+                transaction.addSplit(account: account, value: -details.unfrankedAmount, memo: details.ticker)
+            }
+            if details.frankingCredits != 0,
+               let income = ensureAccount(path: ["Income", "Dividends", "Franking Credits"], type: .income),
+               let receivable = ensureAccount(path: ["Assets", "Franking Credits Receivable"], type: .asset) {
+                transaction.addSplit(account: income, value: -details.frankingCredits, memo: details.ticker)
+                transaction.addSplit(account: receivable, value: details.frankingCredits, memo: details.ticker)
+            }
+            adoptEconomicDate(of: transaction, to: details.paymentDate)
+            if !transaction.tags.contains("dividend") {
+                transaction.tags.append("dividend")
+            }
+            if !transaction.isBalanced { imbalance = transaction.imbalance.amount }
         }
-        if details.frankedAmount != 0,
-           let account = ensureAccount(path: ["Income", "Dividends", "Franked Dividends"], type: .income) {
-            transaction.addSplit(account: account, value: -details.frankedAmount, memo: details.ticker)
-        }
-        if details.unfrankedAmount != 0,
-           let account = ensureAccount(path: ["Income", "Dividends", "Unfranked Dividends"], type: .income) {
-            transaction.addSplit(account: account, value: -details.unfrankedAmount, memo: details.ticker)
-        }
-        if details.frankingCredits != 0,
-           let income = ensureAccount(path: ["Income", "Dividends", "Franking Credits"], type: .income),
-           let receivable = ensureAccount(path: ["Assets", "Franking Credits Receivable"], type: .asset) {
-            transaction.addSplit(account: income, value: -details.frankingCredits, memo: details.ticker)
-            transaction.addSplit(account: receivable, value: details.frankingCredits, memo: details.ticker)
-        }
-        adoptEconomicDate(of: transaction, to: details.paymentDate)
-        if !transaction.tags.contains("dividend") {
-            transaction.tags.append("dividend")
-        }
-        guard transaction.isBalanced else { throw TransactionEntryError.unbalanced(transaction.imbalance.amount) }
-        markDirtyAndRefresh()
+        // As before, an unbalanced result is reported after the rewrite — but
+        // now the rewrite is on the undo stack, so it can be backed out.
+        if let imbalance { throw TransactionEntryError.unbalanced(imbalance) }
     }
 
     // MARK: Invoice matching (FR-AI-07)
@@ -215,31 +222,34 @@ extension AppModel {
             throw TransactionEntryError.unknownAccount
         }
 
-        for split in transaction.splits where split !== funding {
-            transaction.removeSplit(split)
+        var imbalance: Decimal?
+        editing([transactionID], named: "Apply Invoice Details") {
+            for split in transaction.splits where split !== funding {
+                transaction.removeSplit(split)
+            }
+            var allocated = Decimal(0)
+            for item in analysis.lineItems {
+                guard let account = item.suggestedCategoryID.flatMap({ book.account(with: $0) }) ?? fallback
+                else { continue }
+                transaction.addSplit(account: account, value: item.amount, memo: item.itemDescription)
+                allocated += item.amount
+            }
+            // The funding leg is the source of truth for the cash that moved;
+            // post any extraction residual rather than leaving an imbalance.
+            let residual = -funding.value - allocated
+            if residual != 0, let account = fallback
+                ?? analysis.lineItems.first?.suggestedCategoryID.flatMap({ book.account(with: $0) }) {
+                transaction.addSplit(account: account, value: residual, memo: "Invoice adjustment")
+            }
+            if !analysis.vendor.isEmpty && transaction.transactionDescription.isEmpty {
+                transaction.transactionDescription = analysis.vendor
+            }
+            if adjustDate {
+                adoptEconomicDate(of: transaction, to: analysis.date)
+            }
+            if !transaction.isBalanced { imbalance = transaction.imbalance.amount }
         }
-        var allocated = Decimal(0)
-        for item in analysis.lineItems {
-            guard let account = item.suggestedCategoryID.flatMap({ book.account(with: $0) }) ?? fallback
-            else { continue }
-            transaction.addSplit(account: account, value: item.amount, memo: item.itemDescription)
-            allocated += item.amount
-        }
-        // The funding leg is the source of truth for the cash that moved;
-        // post any extraction residual rather than leaving an imbalance.
-        let residual = -funding.value - allocated
-        if residual != 0, let account = fallback
-            ?? analysis.lineItems.first?.suggestedCategoryID.flatMap({ book.account(with: $0) }) {
-            transaction.addSplit(account: account, value: residual, memo: "Invoice adjustment")
-        }
-        if !analysis.vendor.isEmpty && transaction.transactionDescription.isEmpty {
-            transaction.transactionDescription = analysis.vendor
-        }
-        if adjustDate {
-            adoptEconomicDate(of: transaction, to: analysis.date)
-        }
-        guard transaction.isBalanced else { throw TransactionEntryError.unbalanced(transaction.imbalance.amount) }
-        markDirtyAndRefresh()
+        if let imbalance { throw TransactionEntryError.unbalanced(imbalance) }
     }
 
     // MARK: Date helpers

@@ -81,6 +81,20 @@ extension Split: Identifiable {
     public var id: GncGUID { guid }
 }
 
+public extension Split {
+    /// An unowned duplicate of the split, carrying the same ``guid`` and posting
+    /// to the same ``account``, but belonging to no transaction.
+    ///
+    /// Keeping the guid is what makes the copy a *snapshot* of this split rather
+    /// than a new one: restoring it re-establishes the same identity, so GnuCash
+    /// round-trips and any stored references still line up.
+    func detachedCopy() -> Split {
+        Split(guid: guid, account: account, value: value, quantity: quantity,
+              reconcileState: reconcileState, reconcileDate: reconcileDate,
+              memo: memo, action: action, kvp: kvp)
+    }
+}
+
 extension Split: Equatable, Hashable {
     public static func == (lhs: Split, rhs: Split) -> Bool { lhs === rhs }
     public func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }

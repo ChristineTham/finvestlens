@@ -37,13 +37,16 @@ extension AppModel {
     public func renameSecurity(_ commodity: Commodity, fullName: String, smallestFraction: Int? = nil) {
         guard let book else { return }
         let trimmed = fullName.trimmingCharacters(in: .whitespaces)
-        book.updateCommodityMetadata(commodity, fullName: trimmed, smallestFraction: smallestFraction)
-        for index in watchlist.indices where watchlist[index] == commodity {
-            if !trimmed.isEmpty { watchlist[index].fullName = trimmed }
-            if let smallestFraction, smallestFraction >= 1 { watchlist[index].smallestFraction = smallestFraction }
+        editingWholeBook(named: "Rename Security") {
+            book.updateCommodityMetadata(commodity, fullName: trimmed, smallestFraction: smallestFraction)
+            for index in watchlist.indices where watchlist[index] == commodity {
+                if !trimmed.isEmpty { watchlist[index].fullName = trimmed }
+                if let smallestFraction, smallestFraction >= 1 {
+                    watchlist[index].smallestFraction = smallestFraction
+                }
+            }
+            persistKvpCollections()
         }
-        persistKvpCollections()
-        markDirtyAndRefresh()
     }
 
     // MARK: Watch list (`FR-PLAN-07`)
@@ -59,11 +62,11 @@ extension AppModel {
         guard !pricableSecurities.contains(commodity) else { return }
         watchlist.append(commodity)
         book?.registerCommodity(commodity)
-        commitKvpCollections()
+        commitKvpCollections(named: "Add Watched Security")
     }
 
     public func removeWatchSecurity(_ commodity: Commodity) {
         watchlist.removeAll { $0 == commodity }
-        commitKvpCollections()
+        commitKvpCollections(named: "Remove Watched Security")
     }
 }

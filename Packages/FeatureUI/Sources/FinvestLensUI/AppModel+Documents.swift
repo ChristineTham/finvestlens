@@ -102,8 +102,10 @@ extension AppModel {
                 break
             }
         }
-        transaction.documentLink = candidate
-        markDirtyAndRefresh()
+        // Only the link is undoable — the copied file stays on disk.
+        editing([transactionID], named: "Attach Document") {
+            transaction.documentLink = candidate
+        }
         return candidate
     }
 

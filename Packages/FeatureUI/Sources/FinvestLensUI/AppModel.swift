@@ -228,10 +228,13 @@ public final class AppModel {
         book.kvp[KvpKey.priceTargets] = Self.encodeSlot(priceTargets)
     }
 
-    /// Persists the collections and refreshes derived UI state.
-    func commitKvpCollections() {
-        persistKvpCollections()
-        markDirtyAndRefresh()
+    /// Persists the collections and refreshes derived UI state, as one undoable
+    /// change. The collections live in the book's KVP slots rather than in any
+    /// transaction, so undoing one means restoring the book.
+    func commitKvpCollections(named: String = "Change") {
+        editingWholeBook(named: named) {
+            persistKvpCollections()
+        }
     }
 
     private static func decodeSlot<T: Decodable>(_ type: T.Type, _ value: KvpValue?) -> T? {
@@ -263,7 +266,7 @@ public final class AppModel {
         refreshAll()
         startQuoteAutoRefresh()
         recordLastBook(url)
-        resetUndoBaseline()
+        resetUndoStack()
     }
 
     public func open(at url: URL, breakStaleLock: Bool = false) throws {
@@ -284,7 +287,7 @@ public final class AppModel {
         lockIfNeeded()
         recordLastBook(accessURL)
         observeExternalChanges()
-        resetUndoBaseline()
+        resetUndoStack()
     }
 
     // MARK: Security-scoped access (iOS document-provider locations)
@@ -584,7 +587,7 @@ public final class AppModel {
         startQuoteAutoRefresh()
         startDocumentMaintenance()
         observeExternalChanges()
-        resetUndoBaseline()
+        resetUndoStack()
         return result.summary
     }
 
@@ -630,7 +633,7 @@ public final class AppModel {
         quoteSymbols = [:]
         quoteStatus = .idle
         whatIfEvents = []
-        resetUndoBaseline()
+        resetUndoStack()
     }
 
     // MARK: Mutations
@@ -641,8 +644,9 @@ public final class AppModel {
         guard let book else { return nil }
         let parent = parentID.flatMap { book.account(with: $0) } ?? book.rootAccount
         let account = Account(name: name, type: type, commodity: commodity ?? parent.commodity)
-        book.addAccount(account, under: parent)
-        markDirtyAndRefresh()
+        editingWholeBook(named: "Add Account") {
+            book.addAccount(account, under: parent)
+        }
         return account.guid
     }
 
@@ -654,15 +658,17 @@ public final class AppModel {
 
     public func deleteAccount(_ id: GncGUID) {
         guard let book, let account = book.account(with: id), canDeleteAccount(id) else { return }
-        account.parent?.removeChild(account)
-        if selectedAccountID == id { selectedAccountID = nil }
-        markDirtyAndRefresh()
+        editingWholeBook(named: "Delete Account") {
+            account.parent?.removeChild(account)
+            if selectedAccountID == id { selectedAccountID = nil }
+        }
     }
 
     public func renameAccount(_ id: GncGUID, to newName: String) {
         guard let book, let account = book.account(with: id) else { return }
-        account.name = newName
-        markDirtyAndRefresh()
+        editingWholeBook(named: "Rename Account") {
+            account.name = newName
+        }
     }
 
     /// Assigns sequential codes to the children of `parentID` (or the top level),
@@ -677,11 +683,12 @@ public final class AppModel {
         }
         guard !children.isEmpty else { return }
         let width = String((children.count) * max(interval, 1)).count
-        for (index, child) in children.enumerated() {
-            let number = (index + 1) * max(interval, 1)
-            child.code = prefix + String(format: "%0\(width)d", number)
+        editingWholeBook(named: "Renumber Accounts") {
+            for (index, child) in children.enumerated() {
+                let number = (index + 1) * max(interval, 1)
+                child.code = prefix + String(format: "%0\(width)d", number)
+            }
         }
-        markDirtyAndRefresh()
     }
 
     /// Records a simple two-account transaction moving `amount` from `sourceID`
@@ -696,8 +703,9 @@ public final class AppModel {
         let txn = Transaction(currency: destination.commodity, datePosted: date, description: description)
         txn.addSplit(account: destination, value: amount)
         txn.addSplit(account: source, value: -amount)
-        book.addTransaction(txn)
-        markDirtyAndRefresh()
+        editing([txn.guid], named: "Add Transfer") {
+            book.addTransaction(txn)
+        }
         return txn.guid
     }
 
@@ -725,54 +733,120 @@ public final class AppModel {
                            to: $0.currency.mnemonic, date: $0.date, value: $0.value) }
     }
 
-    func markDirtyAndRefresh() {
+    /// Marks the document dirty and rebuilds derived state. Records nothing on
+    /// the undo stack, so it is *not* how a user's edit gets applied — those go
+    /// through ``editing(_:named:)`` or ``editingWholeBook(named:)``, which call
+    /// this for you.
+    func refreshAfterChange() {
         document?.markDirty()
         refreshAll()
-        registerUndoSnapshot()
     }
 
     // MARK: Undo / redo (HIG: every edit must be undoable)
     //
-    // Snapshot-based: after every mutation the previous whole-book state (as
-    // GnuCash XML, which round-trips all data including KVP slots) is pushed
-    // onto the window's UndoManager. Undoing swaps the snapshot back in; the
-    // swap itself funnels through `markDirtyAndRefresh`, which is what makes
-    // redo work.
+    // Every edit captures what it is about to change *before* changing it, and
+    // registers the inverse on the window's UndoManager. Undo re-enters the same
+    // wrapper, so the state it replaces is captured in turn — that is what makes
+    // redo work, and it means undo and redo are one code path.
+    //
+    // `editing` copies only the transactions named, which is what keeps the
+    // register instant. `editingWholeBook` falls back to a GnuCash XML export
+    // (it round-trips everything, including KVP slots) and is for structural and
+    // bulk changes, where the touched transactions can't be named up front.
+    // Neither holds a baseline between edits, so opening a book pays nothing.
 
     /// The focused window's undo manager, injected by the root view.
     @ObservationIgnored public weak var undoManager: UndoManager? {
         didSet { undoManager?.levelsOfUndo = 25 }
     }
-    /// The book state after the previous mutation (== before the next one).
-    @ObservationIgnored var lastUndoSnapshot: Data?
 
-    /// Called from `markDirtyAndRefresh` after each mutation.
-    private func registerUndoSnapshot() {
+    /// A transaction as it stood before an edit. `state == nil` means it did not
+    /// exist — which is what makes undo-of-add and redo-of-delete the same
+    /// operation.
+    struct TransactionSnapshot {
+        let id: GncGUID
+        let state: Transaction?
+    }
+
+    /// Applies `body` as one undoable edit of the transactions named by `ids`.
+    ///
+    /// `ids` must name every transaction `body` touches, including any it
+    /// creates — generate the guid up front and pass it in. Anything `body`
+    /// changes outside those transactions will not be undone.
+    func editing(_ ids: [GncGUID], named: String, _ body: () -> Void) {
+        let before = ids.map {
+            TransactionSnapshot(id: $0, state: book?.transaction(with: $0)?.detachedCopy())
+        }
+        body()
+        refreshAfterChange()
         guard isOpen else { return }
-        let previous = lastUndoSnapshot
-        lastUndoSnapshot = gnuCashExportData()
-        guard let previous, previous != lastUndoSnapshot else { return }
         undoManager?.registerUndo(withTarget: self) { model in
-            model.restoreSnapshot(previous)
+            model.editing(ids, named: named) { model.restore(before) }
         }
-        if undoManager?.isUndoing != true && undoManager?.isRedoing != true {
-            undoManager?.setActionName("Change")
+        undoManager?.setActionName(named)
+    }
+
+    /// Applies `body` as one undoable edit of the whole book, exporting it
+    /// first. Costs a full serialisation — use ``editing(_:named:)`` whenever
+    /// the touched transactions can be named.
+    func editingWholeBook(named: String, _ body: () -> Void) {
+        let before = gnuCashExportData()
+        body()
+        refreshAfterChange()
+        guard isOpen, let before else { return }
+        undoManager?.registerUndo(withTarget: self) { model in
+            model.editingWholeBook(named: named) { model.restoreBook(before) }
+        }
+        undoManager?.setActionName(named)
+    }
+
+    /// Puts snapshotted transactions back as they were.
+    private func restore(_ snapshot: [TransactionSnapshot]) {
+        guard let book else { return }
+        for entry in snapshot {
+            let live = book.transaction(with: entry.id)
+            guard let state = entry.state else {
+                if let live { book.removeTransaction(live) }
+                continue
+            }
+            // Copy again so the snapshot itself stays pristine and can be
+            // restored a second time, and re-resolve accounts against the book
+            // that is live now — a whole-book undo swaps in a fresh object
+            // graph, which leaves an older snapshot holding accounts the book
+            // no longer knows.
+            let restored = state.detachedCopy()
+            for split in restored.splits {
+                split.account = split.account.flatMap { book.account(with: $0.guid) }
+            }
+            guard let live else {
+                book.addTransaction(restored)
+                continue
+            }
+            // Refill in place rather than remove-and-re-add, so the transaction
+            // keeps its identity and its position in the book.
+            live.currency = restored.currency
+            live.datePosted = restored.datePosted
+            live.dateEntered = restored.dateEntered
+            live.number = restored.number
+            live.transactionDescription = restored.transactionDescription
+            live.notes = restored.notes
+            live.kvp = restored.kvp
+            for split in Array(live.splits) { live.removeSplit(split) }
+            for split in restored.splits { live.addSplit(split) }
         }
     }
 
-    /// Resets the undo baseline (call when a book is opened/created/closed).
-    func resetUndoBaseline() {
-        undoManager?.removeAllActions(withTarget: self)
-        lastUndoSnapshot = isOpen ? gnuCashExportData() : nil
-    }
-
-    /// Restores a whole-book snapshot (the undo/redo primitive).
-    func restoreSnapshot(_ data: Data) {
+    /// Swaps a whole-book snapshot back in.
+    private func restoreBook(_ data: Data) {
         guard let document,
               let result = try? GnuCashXMLImporter.importBook(from: data) else { return }
         document.replaceBook(result.book)
         reloadKvpCollections()
-        markDirtyAndRefresh()
+    }
+
+    /// Clears the undo stack (call when a book is opened/created/closed).
+    func resetUndoStack() {
+        undoManager?.removeAllActions(withTarget: self)
     }
 
     private func rebuildAccountTree() {

@@ -103,8 +103,9 @@ extension AppModel {
         guard txn.isBalanced else {
             throw TransactionEntryError.unbalanced(txn.imbalance.rounded.amount)
         }
-        book.addTransaction(txn)
-        markDirtyAndRefresh()
+        editing([txn.guid], named: "Add Transaction") {
+            book.addTransaction(txn)
+        }
         return txn.guid
     }
 
@@ -137,19 +138,27 @@ extension AppModel {
         let residual = currency.round(realSplits.reduce(Decimal(0)) { $0 + $1.value })
         guard residual == 0 else { throw TransactionEntryError.unbalanced(residual) }
 
-        txn.datePosted = date
-        txn.dateEntered = date
-        txn.transactionDescription = description
-        txn.currency = currency
-        if let tags { txn.tags = tags }
-        for existing in Array(txn.splits) { txn.removeSplit(existing) }
-        for input in realSplits {
+        // Resolve the accounts before touching anything: an unknown one has to
+        // throw with the transaction still intact, not halfway rewritten.
+        let resolved: [(account: Account, input: SplitInput)] = try realSplits.map { input in
             guard let accountID = input.accountID, let account = book.account(with: accountID) else {
                 throw TransactionEntryError.unknownAccount
             }
-            txn.addSplit(account: account, value: input.value, quantity: input.quantity, memo: input.memo)
+            return (account, input)
         }
-        markDirtyAndRefresh()
+
+        editing([id], named: "Edit Transaction") {
+            txn.datePosted = date
+            txn.dateEntered = date
+            txn.transactionDescription = description
+            txn.currency = currency
+            if let tags { txn.tags = tags }
+            for existing in Array(txn.splits) { txn.removeSplit(existing) }
+            for (account, input) in resolved {
+                txn.addSplit(account: account, value: input.value,
+                             quantity: input.quantity, memo: input.memo)
+            }
+        }
         return txn.guid
     }
 
@@ -183,28 +192,31 @@ extension AppModel {
     public func updateAccount(id: GncGUID, name: String, code: String, description: String,
                               notes: String, isPlaceholder: Bool, isHidden: Bool) {
         guard let book, let account = book.account(with: id) else { return }
-        account.name = name
-        account.code = code
-        account.accountDescription = description
-        account.notes = notes
-        account.isPlaceholder = isPlaceholder
-        account.isHidden = isHidden
-        markDirtyAndRefresh()
+        editingWholeBook(named: "Edit Account") {
+            account.name = name
+            account.code = code
+            account.accountDescription = description
+            account.notes = notes
+            account.isPlaceholder = isPlaceholder
+            account.isHidden = isHidden
+        }
     }
 
     // MARK: Transaction operations
 
     public func deleteTransaction(_ id: GncGUID) {
         guard let book, let txn = book.transaction(with: id) else { return }
-        book.removeTransaction(txn)
-        markDirtyAndRefresh()
+        editing([id], named: "Delete Transaction") {
+            book.removeTransaction(txn)
+        }
     }
 
     /// Deletes the transaction that owns a given split (register-row action).
     public func deleteTransaction(forSplit splitID: GncGUID) {
         guard let book, let txn = book.split(with: splitID)?.transaction else { return }
-        book.removeTransaction(txn)
-        markDirtyAndRefresh()
+        editing([txn.guid], named: "Delete Transaction") {
+            book.removeTransaction(txn)
+        }
     }
 
     @discardableResult
@@ -217,8 +229,9 @@ extension AppModel {
             copy.addSplit(Split(account: split.account, value: split.value,
                                 quantity: split.quantity, memo: split.memo, action: split.action))
         }
-        book.addTransaction(copy)
-        markDirtyAndRefresh()
+        editing([copy.guid], named: "Duplicate Transaction") {
+            book.addTransaction(copy)
+        }
         return copy.guid
     }
 
@@ -236,16 +249,18 @@ extension AppModel {
             reversal.addSplit(Split(account: split.account, value: -split.value,
                                     quantity: -split.quantity, memo: split.memo))
         }
-        book.addTransaction(reversal)
-        markDirtyAndRefresh()
+        editing([reversal.guid], named: "Add Reversing Transaction") {
+            book.addTransaction(reversal)
+        }
         return reversal.guid
     }
 
     /// Voids a transaction: its splits stop counting toward balances.
     public func voidTransaction(_ id: GncGUID) {
         guard let book, let txn = book.transaction(with: id) else { return }
-        for split in txn.splits { split.reconcileState = .voided }
-        markDirtyAndRefresh()
+        editing([id], named: "Void Transaction") {
+            for split in txn.splits { split.reconcileState = .voided }
+        }
     }
 
     /// The GUID of the transaction owning a split (for register-row actions).
@@ -256,20 +271,24 @@ extension AppModel {
     // MARK: Reconciliation
 
     public func setReconcileState(splitID: GncGUID, to state: ReconcileState) {
-        guard let book, let split = book.split(with: splitID) else { return }
-        split.reconcileState = state
-        markDirtyAndRefresh()
+        guard let book, let split = book.split(with: splitID),
+              let txnID = split.transaction?.guid else { return }
+        editing([txnID], named: "Change Reconcile State") {
+            split.reconcileState = state
+        }
     }
 
     /// Cycles a split n → c → y → n (register click behaviour).
     public func cycleReconcileState(splitID: GncGUID) {
-        guard let book, let split = book.split(with: splitID) else { return }
-        switch split.reconcileState {
-        case .notReconciled: split.reconcileState = .cleared
-        case .cleared: split.reconcileState = .reconciled
-        default: split.reconcileState = .notReconciled
+        guard let book, let split = book.split(with: splitID),
+              let txnID = split.transaction?.guid else { return }
+        editing([txnID], named: "Change Reconcile State") {
+            switch split.reconcileState {
+            case .notReconciled: split.reconcileState = .cleared
+            case .cleared: split.reconcileState = .reconciled
+            default: split.reconcileState = .notReconciled
+            }
         }
-        markDirtyAndRefresh()
     }
 
     // MARK: Account structure
@@ -302,8 +321,9 @@ extension AppModel {
         if newParent === account || account.descendants.contains(where: { $0 === newParent }) {
             return false
         }
-        newParent.addChild(account)   // addChild reparents from the old parent
-        markDirtyAndRefresh()
+        editingWholeBook(named: "Move Account") {
+            newParent.addChild(account)   // addChild reparents from the old parent
+        }
         return true
     }
 
@@ -379,12 +399,12 @@ extension AppModel {
         guard !query.isEmpty else { return }
         let label = name.trimmingCharacters(in: .whitespaces)
         savedSearches.append(SavedSearch(name: label.isEmpty ? query : label, query: query))
-        commitKvpCollections()
+        commitKvpCollections(named: "Save Search")
     }
 
     public func deleteSavedSearch(_ id: UUID) {
         savedSearches.removeAll { $0.id == id }
-        commitKvpCollections()
+        commitKvpCollections(named: "Delete Saved Search")
     }
 
     /// Applies a saved search by setting the query (which re-runs the search).

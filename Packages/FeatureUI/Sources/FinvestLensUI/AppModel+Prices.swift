@@ -37,14 +37,16 @@ extension AppModel {
     /// Adds a price to the database (`FR-INV-02`).
     public func addPrice(commodity: Commodity, currency: Commodity, date: Date, value: Decimal) {
         guard let book else { return }
-        book.addPrice(Price(commodity: commodity, currency: currency, date: date, value: value))
-        markDirtyAndRefresh()
+        editingWholeBook(named: "Add Price") {
+            book.addPrice(Price(commodity: commodity, currency: currency, date: date, value: value))
+        }
     }
 
     public func deletePrice(_ id: GncGUID) {
         guard let book else { return }
-        book.removePrice(id)
-        markDirtyAndRefresh()
+        editingWholeBook(named: "Delete Price") {
+            book.removePrice(id)
+        }
     }
 
     /// The portfolio valuation over security accounts (`FR-RPT-02`).

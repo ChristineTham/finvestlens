@@ -30,12 +30,12 @@ extension AppModel {
     public func setPriceTarget(_ commodity: Commodity, target: Decimal, direction: PriceTarget.Direction) {
         priceTargets.removeAll { $0.commodity == commodity }
         priceTargets.append(PriceTarget(commodity: commodity, target: target, direction: direction))
-        commitKvpCollections()
+        commitKvpCollections(named: "Set Price Target")
     }
 
     public func removePriceTarget(_ commodity: Commodity) {
         priceTargets.removeAll { $0.commodity == commodity }
-        commitKvpCollections()
+        commitKvpCollections(named: "Remove Price Target")
     }
 
     /// The existing target for a security, if any.

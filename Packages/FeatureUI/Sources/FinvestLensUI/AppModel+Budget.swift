@@ -15,18 +15,18 @@ extension AppModel {
 
     public func addBudget(_ budget: Budget) {
         budgets.append(budget)
-        commitKvpCollections()
+        commitKvpCollections(named: "Add Budget")
     }
 
     public func updateBudget(_ budget: Budget) {
         guard let index = budgets.firstIndex(where: { $0.id == budget.id }) else { return }
         budgets[index] = budget
-        commitKvpCollections()
+        commitKvpCollections(named: "Edit Budget")
     }
 
     public func deleteBudget(_ id: GncGUID) {
         budgets.removeAll { $0.id == id }
-        commitKvpCollections()
+        commitKvpCollections(named: "Delete Budget")
     }
 
     /// Budget-vs-actual for the calendar month containing `month` (`FR-BUD-02`).
@@ -53,7 +53,7 @@ extension AppModel {
     public func setBudgetRollover(_ rollover: Bool, for accountID: GncGUID, in budgetID: GncGUID) {
         guard let index = budgets.firstIndex(where: { $0.id == budgetID }) else { return }
         budgets[index].setRollover(rollover, for: accountID)
-        commitKvpCollections()
+        commitKvpCollections(named: "Change Budget Rollover")
     }
 
     /// Auto-replenish (auto-budget): sets each income/expense line to the
@@ -85,6 +85,6 @@ extension AppModel {
             budget.setAmount(average, for: line.accountGUID)
         }
         budgets[index] = budget
-        commitKvpCollections()
+        commitKvpCollections(named: "Auto-Fill Budget")
     }
 }

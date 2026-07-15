@@ -242,7 +242,7 @@ struct StatementDatePersistenceTests {
         )
         let book = try #require(model.book)
         try #require(book.transaction(with: id)).statementDate = utcDate(2026, 6, 6)
-        model.markDirtyAndRefresh()
+        model.refreshAfterChange()
         try model.save()
         model.close()
 

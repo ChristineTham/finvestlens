@@ -55,8 +55,9 @@ extension AppModel {
     /// Records an exchange rate (a price between two currencies).
     public func addExchangeRate(from: Commodity, to: Commodity, rate: Decimal, date: Date) {
         guard let book, rate > 0, from != to else { return }
-        book.setExchangeRate(from: from, to: to, rate: rate, date: date, source: "user:rate")
-        markDirtyAndRefresh()
+        editingWholeBook(named: "Add Exchange Rate") {
+            book.setExchangeRate(from: from, to: to, rate: rate, date: date, source: "user:rate")
+        }
     }
 
     /// Records a cross-currency transfer moving `sourceAmount` out of `fromID`
@@ -85,21 +86,25 @@ extension AppModel {
         // destination currency (the amount actually received).
         txn.addSplit(account: to, value: sourceAmount, quantity: destAmount)
 
-        // Optional trading accounts make the transaction balance in *each*
-        // currency (not just by value), so the balance sheet stays balanced and
-        // unrealised FX is captured (`FR-REG-07`).
-        if useTradingAccounts,
-           let tradingFrom = tradingAccount(for: from.commodity),
-           let tradingTo = tradingAccount(for: to.commodity) {
-            txn.addSplit(account: tradingFrom, value: sourceAmount, quantity: sourceAmount)
-            txn.addSplit(account: tradingTo, value: -sourceAmount, quantity: -destAmount)
-        }
-        book.addTransaction(txn)
+        // Whole-book, not `editing`: the implied rate is a price, which lives
+        // outside any transaction, and the trading accounts are created on
+        // demand — both have to happen inside the snapshot to be undone.
+        editingWholeBook(named: "Record Currency Transfer") {
+            // Optional trading accounts make the transaction balance in *each*
+            // currency (not just by value), so the balance sheet stays balanced
+            // and unrealised FX is captured (`FR-REG-07`).
+            if useTradingAccounts,
+               let tradingFrom = tradingAccount(for: from.commodity),
+               let tradingTo = tradingAccount(for: to.commodity) {
+                txn.addSplit(account: tradingFrom, value: sourceAmount, quantity: sourceAmount)
+                txn.addSplit(account: tradingTo, value: -sourceAmount, quantity: -destAmount)
+            }
+            book.addTransaction(txn)
 
-        // Persist the implied rate so reports can value either currency.
-        book.setExchangeRate(from: from.commodity, to: to.commodity,
-                             rate: destAmount / sourceAmount, date: date, source: "user:xfer")
-        markDirtyAndRefresh()
+            // Persist the implied rate so reports can value either currency.
+            book.setExchangeRate(from: from.commodity, to: to.commodity,
+                                 rate: destAmount / sourceAmount, date: date, source: "user:xfer")
+        }
         return txn.guid
     }
 
@@ -113,8 +118,9 @@ extension AppModel {
             return false
         }
         set {
-            book?.kvp["finvestlens/useTradingAccounts"] = .int64(newValue ? 1 : 0)
-            markDirtyAndRefresh()
+            editingWholeBook(named: "Change Trading Accounts Setting") {
+                book?.kvp["finvestlens/useTradingAccounts"] = .int64(newValue ? 1 : 0)
+            }
         }
     }
 

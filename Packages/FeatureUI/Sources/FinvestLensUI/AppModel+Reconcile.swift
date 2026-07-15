@@ -98,17 +98,21 @@ extension AppModel {
     @discardableResult
     public func finishReconcile() -> Bool {
         guard let book, let session = reconcileSession, session.isBalanced else { return false }
-        for item in session.items {
-            guard let split = book.split(with: item.id) else { continue }
-            if item.isCleared {
-                split.reconcileState = .reconciled
-                split.reconcileDate = session.statementDate
-            } else if split.reconcileState == .cleared {
-                split.reconcileState = .notReconciled
+        let splits = session.items.compactMap { item in
+            book.split(with: item.id).map { (item: item, split: $0) }
+        }
+        let touched = Set(splits.compactMap { $0.split.transaction?.guid })
+        editing(Array(touched), named: "Reconcile") {
+            for (item, split) in splits {
+                if item.isCleared {
+                    split.reconcileState = .reconciled
+                    split.reconcileDate = session.statementDate
+                } else if split.reconcileState == .cleared {
+                    split.reconcileState = .notReconciled
+                }
             }
         }
         reconcileSession = nil
-        markDirtyAndRefresh()
         return true
     }
 

@@ -14,12 +14,12 @@ extension AppModel {
 
     public func addScheduledTransaction(_ scheduled: ScheduledTransaction) {
         scheduledTransactions.append(scheduled)
-        commitKvpCollections()
+        commitKvpCollections(named: "Add Scheduled Transaction")
     }
 
     public func deleteScheduledTransaction(_ id: GncGUID) {
         scheduledTransactions.removeAll { $0.id == id }
-        commitKvpCollections()
+        commitKvpCollections(named: "Delete Scheduled Transaction")
     }
 
     /// Instances due to be entered up to `through` ("since last run").
@@ -45,7 +45,7 @@ extension AppModel {
         }
         if created > 0 {
             scheduledTransactions = list
-            commitKvpCollections()   // persists lastPosted + refreshes
+            commitKvpCollections(named: "Post Scheduled Transactions")   // persists lastPosted + refreshes
         }
         return created
     }

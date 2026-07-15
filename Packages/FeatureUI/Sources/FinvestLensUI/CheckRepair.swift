@@ -64,9 +64,15 @@ extension AppModel {
     /// and reports what was done.
     public func applyCleanup() {
         guard let book else { return }
-        let summary = Scrub.clean(book)
+        // One `editingWholeBook` around the whole scrub, so the repairs undo as
+        // a single action however many transactions they touched — and because
+        // the scrub also files orphans under new accounts.
+        var cleaned: Scrub.CleanupSummary?
+        editingWholeBook(named: "Check & Repair") {
+            cleaned = Scrub.clean(book)
+        }
+        guard let summary = cleaned else { return }
         pendingCleanup = nil
-        markDirtyAndRefresh()
         var parts: [String] = []
         if summary.emptiesRemoved > 0 { parts.append("removed \(summary.emptiesRemoved) empty transaction(s)") }
         if summary.orphansAssigned > 0 { parts.append("filed \(summary.orphansAssigned) split(s) under Orphan") }
@@ -87,8 +93,9 @@ extension AppModel {
     public func setAccountColor(_ id: GncGUID, colorString: String?) {
         guard let book, let account = book.account(with: id),
               account.color != colorString else { return }
-        account.color = colorString
-        markDirtyAndRefresh()
+        editingWholeBook(named: "Change Account Colour") {
+            account.color = colorString
+        }
     }
 }
 

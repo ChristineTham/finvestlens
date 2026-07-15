@@ -158,6 +158,22 @@ extension Transaction: Identifiable {
     public var id: GncGUID { guid }
 }
 
+public extension Transaction {
+    /// An unowned duplicate of the transaction and its splits, carrying the same
+    /// guids throughout and posting to the same accounts, but held by no book.
+    ///
+    /// This is the undo primitive: a copy taken before an edit records exactly
+    /// what the transaction was, and stays untouched by whatever the edit then
+    /// does to the original.
+    func detachedCopy() -> Transaction {
+        let copy = Transaction(guid: guid, currency: currency, datePosted: datePosted,
+                               dateEntered: dateEntered, number: number,
+                               description: transactionDescription, notes: notes, kvp: kvp)
+        for split in splits { copy.addSplit(split.detachedCopy()) }
+        return copy
+    }
+}
+
 extension Transaction: Equatable, Hashable {
     public static func == (lhs: Transaction, rhs: Transaction) -> Bool { lhs === rhs }
     public func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }
