@@ -65,6 +65,17 @@ reverted):
 | Voided splits still moved the register's running balance | `Book.balance` excludes voided (`Book.matches`), `refreshRegister` did not — so the register's last balance disagreed with the sidebar and every report. | The row still shows with its amount and `v`; it no longer moves the balance. |
 | No Unvoid, and the R column silently un-voided | `cycleReconcileState`'s `default` mapped voided → `n`, one split at a time. | `unvoidTransaction`/`isVoided` added (context menu shows Void or Unvoid); the cycle leaves voided **and** frozen alone. |
 
+A note on this list, after auditing it against the source on 15 Jul 2026:
+five of its rows were wrong, all in the direction of overstating the gap.
+"Hidden accounts always shown (no toggle)" — the toggle to *mark* an account
+hidden existed; only the view filter was missing. "Account-tree filter" — the
+filter was already written and tested one file over, for Find. "None available
+in Journal style" — Journal had Edit. "Per-split memo/action … preserved
+through an edit" — `action` was not preserved, it was destroyed. And
+`setReconcileState`/AND-OR were partly surfaced rather than absent. The rows
+below are what survived checking; the lesson is that a row here is a claim
+about code and ages like one.
+
 Parity gaps found, not yet built (ranked):
 
 | Item | Notes | Target |
@@ -75,12 +86,19 @@ Parity gaps found, not yet built (ranked):
 | Find Account (⌘I) | GnuCash has a separate Find Account dialog. Not started. | P7 |
 | ~~Free-text `date:2026` degraded silently~~ | **Done (15 Jul 2026):** an unknown `key:` now raises a notice naming the real keys and pointing at ⌘F, and the results pane appears whenever a query is live so "No Results" is visible — previously an empty result showed the *dashboard*, hiding the fact the search ran. It still searches literally rather than erroring, because it has to: this book's memos really contain "Value Date:", and ~20 rows legitimately match it. | done |
 | ~~Register Sort By / Filter By~~ | **Done (15 Jul 2026):** Sort menu (Standard Order, Date, Date of Entry, Number, Amount, Description, Memo + Reverse Order) and a Filter sheet (date range + the 5 reconcile statuses), both mirroring GnuCash's View menu. The load-bearing rule came from GnuCash itself, not from guessing: the Balance column is the account's balance **as of that posting**, computed in date order — sort by amount and every row keeps the balance it had; filter rows away and the survivors keep theirs. So the balance is computed once in canonical order, then filtered, then sorted; both are display-only. Verified on CDIA against GnuCash with the same filter and sort: identical rows, order and balances to the cent (238,358.52 → 294,057.07). Not persisted per account (GnuCash's "Save Sort Order"/"Save Filter"); no click-to-sort headers. | mostly / P8 |
-| Double-line mode | `Transaction.notes` is stored and round-trips but is never shown or editable. | P7 |
+| ~~Double-line mode~~ | **Done (15 Jul 2026):** the editor has a Notes field, each split has its own memo and action, and the register has GnuCash's View ▸ Double Line, joining notes · memo · action under the description and only where there is something to say. This was the largest of these gaps by data: 18,641 of 46,553 transactions carry notes (40%), 10,876 splits a memo and 280 an action — all imported from the bank's OFX, round-tripped faithfully, and impossible to read. | done |
 | Register ops absent | Cut/Copy/Paste transaction, Blank-transaction in-register entry, Go to Date (⌘G), Edit Exchange Rate on an existing txn, Schedule-from-transaction, Auto-Split Ledger style. | P7/P8 |
-| Register ops unreachable | Every txn action is context-menu-only — no menu-bar items, no shortcuts, and none available in Journal/General Ledger style. | P7 |
-| Per-split memo/action fields | Now preserved through an edit, but still not *editable* — GnuCash shows both per split. | P7 |
-| Account gaps | Cascade Account Properties, Auto-clear, Open SubAccounts (subtree register), account-tree filter, reconcile report. Delete Account has no move-transactions-to; type/commodity not editable after creation; hidden accounts always shown (no toggle). | P7/P8 |
-| Data ahead of UI | `setReconcileState` (all 5 states), multi-trigger AND/OR rules, `setNotes`, rule groups, `Book.allTags` all exist and are tested but have no surface. Wiring, not building. | P7 |
+| ~~Register ops unreachable~~ | **Done (15 Jul 2026):** a Transaction menu with Edit ⌘E, Go to Other Account ⌘J, Reconcile State, Duplicate ⌘D, Add Reversing, Void/Unvoid and Delete ⌘⌫, and Journal/General Ledger now offer all of them rather than Edit alone. The menu bar cannot see a register's `@State`, so the selection moved onto the model; one `TransactionActions` view serves all three context menus and the menu bar, which is what stops the lists drifting apart again — they already had. | done |
+| ~~Per-split memo/action fields~~ | **Done (15 Jul 2026):** both editable, on a second line under each split as GnuCash lays them out. `action` was worse than "not editable": `SplitInput` had no such field, so an edit erased it — see §Data-integrity below. | done |
+| Account gaps | Cascade Account Properties, Auto-clear (`gnc-autoclear`, P4), Open SubAccounts (subtree register — `Book.balance(includingDescendants:)` exists and is unused), reconcile report. Type/commodity still not editable after creation, which is arguably right: changing an account's commodity reinterprets every quantity posted to it. | P7/P8 |
+| ~~Account gaps: delete, filter, hidden~~ | **Done (15 Jul 2026):** Delete Account now asks GnuCash's question — where do the postings and children go — instead of refusing outright for any account that has been used, which on 559 accounts was nearly all of them. The sidebar has a filter (reusing Find's tested `matching`) and a show-hidden toggle, so `isHidden` finally does something. | done |
+| ~~Data ahead of UI~~ | **Done (15 Jul 2026):** all of it has a surface now. Frozen (`f`) is reachable from a Reconcile State submenu — `setReconcileState` handled all five states from the start and had no caller outside its tests. Rules gained multi-trigger AND/OR, the `setNotes` action, groups with ordering and per-group/per-rule switches, and tag autocomplete from `Book.allTags`. The pattern is worth naming: each of these was *implemented and tested* and simply had no way in, so the tests all passed while the feature did not exist. | done |
+
+Data-integrity bug found while auditing this list (15 Jul 2026):
+
+| Bug | Was | Now |
+|---|---|---|
+| Editing a transaction silently un-reconciled it | `updateTransaction` rebuilt every split from `SplitInput`, which carried only account, value, quantity and memo. Everything else came back as a constructor default: `reconcileState` reset to `n`, `reconcileDate` and the preserved KVP slots dropped, `action` lost, the split's guid regenerated. Retyping a description was enough. 34,939 of 46,553 transactions have a reconciled or cleared split, so the status-bar Reconciled balance — $57,909.82, matching GnuCash to the cent — would have walked down as transactions were edited. As with the share-count bug, the values still balanced, so nothing downstream could see it. | The save re-attaches to the split each row came from, keyed by a `splitID` the row carries; what the editor never showed survives because it is never copied. Separately, the save assigned `dateEntered = datePosted` on every edit — every transaction in this book has an entry date later than its posting date, and the register sorts by it. |
 
 ## Usability review (July 2026)
 
