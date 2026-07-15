@@ -993,6 +993,15 @@ struct RegisterView: View {
             } else {
                 registerTable
             }
+        case .autoSplit:
+            if model.selectedAccountID == nil {
+                ContentUnavailableView("Select an account", systemImage: "list.bullet.rectangle",
+                                       description: Text("Choose an account to see its transactions."))
+            } else {
+                JournalView(model: model, accountID: model.selectedAccountID,
+                            editingTransactionID: $editingTransactionID, jump: $jump,
+                            autoSplit: true)
+            }
         case .journal:
             if model.selectedAccountID == nil {
                 ContentUnavailableView("Select an account", systemImage: "list.bullet.rectangle",
@@ -1100,6 +1109,9 @@ struct RegisterView: View {
         .sheet(item: $model.editingTransactionID) { id in
             TransactionEditorSheet(model: model, editingID: id)
         }
+        .sheet(item: $model.schedulingTransactionID) { id in
+            ScheduleTransactionSheet(model: model, transactionID: id)
+        }
         .onChange(of: selection) { model.selectedSplitID = selection.first }
     }
 
@@ -1146,11 +1158,25 @@ struct JournalView: View {
     let accountID: GncGUID?
     @Binding var editingTransactionID: GncGUID?
     @Binding var jump: RegisterEnd?
+    /// GnuCash's Auto-Split Ledger: the same rows, but only the selected
+    /// transaction opened out. The two styles differ by which rows are shown and
+    /// nothing else, so they are one view.
+    var autoSplit = false
     @State private var selection: Set<GncGUID> = []
     @Environment(\.appFontScale) private var appFontScale
 
+    /// The transaction to open out: whichever one the selected row belongs to,
+    /// so selecting either a heading or one of its legs keeps it open.
+    private var expandedTransactionID: GncGUID? {
+        guard autoSplit, let id = selection.first else { return nil }
+        return model.journalRows(forAccountID: accountID)
+            .first { $0.id == id }?.transactionID
+    }
+
     var body: some View {
-        let rows = model.journalRows(forAccountID: accountID)
+        let rows = autoSplit
+            ? model.autoSplitRows(forAccountID: accountID, expanding: expandedTransactionID)
+            : model.journalRows(forAccountID: accountID)
         if rows.isEmpty {
             ContentUnavailableView("No transactions", systemImage: "tray",
                                    description: Text("No postings to show."))
@@ -1214,6 +1240,9 @@ struct JournalView: View {
         .sheet(item: $model.editingTransactionID) { id in
             TransactionEditorSheet(model: model, editingID: id)
         }
+        .sheet(item: $model.schedulingTransactionID) { id in
+            ScheduleTransactionSheet(model: model, transactionID: id)
+        }
         .onChange(of: selection) {
             if let id = selection.first, let row = rows.first(where: { $0.id == id }) {
                 model.selectedSplitID = model.anySplitID(ofTransaction: row.transactionID)
@@ -1236,6 +1265,7 @@ public struct TransactionActions: View {
     /// The split the row stands for. `nil` when nothing is selected, which is
     /// what disables the menu-bar copy.
     var splitID: GncGUID?
+    @State private var pasteError: String?
 
     public init(model: AppModel, splitID: GncGUID?) {
         self.model = model
@@ -1244,14 +1274,22 @@ public struct TransactionActions: View {
 
     private var txnID: GncGUID? { splitID.flatMap { model.transactionID(ofSplit: $0) } }
 
+    /// Each item carries its own condition rather than the whole menu being
+    /// disabled together: `disabled` is inherited and cannot be undone by a
+    /// child, and Paste is the one item here that does not want a selected row —
+    /// it wants something on the clipboard.
+    private var needsRow: Bool { txnID == nil }
+
     public var body: some View {
         Group {
             Button("Edit Transaction…") { model.editingTransactionID = txnID }
                 .keyboardShortcut("e", modifiers: .command)
+                .disabled(needsRow)
             Button("Go to Other Account") {
                 if let splitID { model.jumpToOtherAccount(ofSplit: splitID) }
             }
             .keyboardShortcut("j", modifiers: .command)
+            .disabled(needsRow)
             if let txnID, model.hasLinkedDocument(txnID) {
                 Button("Open Linked Document", systemImage: "paperclip") {
                     model.openLinkedDocument(for: txnID)
@@ -1260,27 +1298,59 @@ public struct TransactionActions: View {
             Divider()
             reconcileStateMenu
             Divider()
+            // Shifted, because ⌘C/⌘X/⌘V belong to whatever text has focus, and
+            // taking them would make copying a description impossible.
+            Button("Cut Transaction") {
+                if let txnID { model.cutTransaction(txnID) }
+            }
+            .keyboardShortcut("x", modifiers: [.command, .shift])
+            .disabled(needsRow)
+            Button("Copy Transaction") {
+                if let txnID { model.copyTransaction(txnID) }
+            }
+            .keyboardShortcut("c", modifiers: [.command, .shift])
+            .disabled(needsRow)
+            Button("Paste Transaction") {
+                do { _ = try model.pasteTransaction() }
+                catch let error as AppModel.PasteError { pasteError = model.describe(error) }
+                catch { pasteError = error.localizedDescription }
+            }
+            .keyboardShortcut("v", modifiers: [.command, .shift])
+            .disabled(!model.canPasteTransaction)
+            Divider()
             Button("Duplicate Transaction") {
                 if let txnID { model.duplicateTransaction(txnID) }
             }
             .keyboardShortcut("d", modifiers: .command)
+            .disabled(needsRow)
             Button("Add Reversing Transaction") {
                 if let txnID { _ = model.addReversingTransaction(txnID) }
             }
+            .disabled(needsRow)
+            Button("Schedule…") { model.schedulingTransactionID = txnID }
+                .disabled(needsRow)
             if let txnID, model.isVoided(txnID) {
                 Button("Unvoid Transaction") { model.unvoidTransaction(txnID) }
             } else {
                 Button("Void Transaction") {
                     if let txnID { model.voidTransaction(txnID) }
                 }
+                .disabled(needsRow)
             }
             Divider()
             Button("Delete Transaction", role: .destructive) {
                 if let txnID { model.deleteTransaction(txnID) }
             }
             .keyboardShortcut(.delete, modifiers: .command)
+            .disabled(needsRow)
         }
-        .disabled(txnID == nil)
+        .alert("Paste Transaction", isPresented: Binding(
+            get: { pasteError != nil },
+            set: { if !$0 { pasteError = nil } })) {
+            Button("OK", role: .cancel) { pasteError = nil }
+        } message: {
+            Text(pasteError ?? "")
+        }
     }
 
     /// Every reconcile state, not just the three the R column cycles through.
@@ -1308,6 +1378,81 @@ public struct TransactionActions: View {
             .pickerStyle(.inline)
         }
         .disabled(splitID == nil || current == .voided)
+    }
+}
+
+/// GnuCash's Transaction ▸ Schedule…: turn a transaction you have already
+/// entered into a recurring one (`FR-SCH-01`).
+struct ScheduleTransactionSheet: View {
+    @Bindable var model: AppModel
+    var transactionID: GncGUID
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var loaded = false
+    @State private var name = ""
+    @State private var period: RecurrencePeriod = .monthly
+    @State private var interval = 1
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Repeat") {
+                    Picker("Every", selection: $period) {
+                        ForEach(RecurrencePeriod.allCases, id: \.self) {
+                            Text($0.rawValue.capitalized).tag($0)
+                        }
+                    }
+                    Stepper("Every \(interval) \(unitName)", value: $interval, in: 1...52)
+                }
+                Section("Name") {
+                    TextField("Name", text: $name)
+                }
+                Section {
+                    // The thing worth saying: this schedules the *next* one. The
+                    // transaction in front of you already exists and is not
+                    // about to be posted again.
+                    Text("The first occurrence will be the next one after this "
+                         + "transaction’s date. This transaction is left alone.")
+                        .scaledFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Schedule Transaction")
+            .onEscapeCommand { dismiss() }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Schedule") {
+                        model.scheduleTransaction(transactionID, period: period,
+                                                  interval: interval, name: name)
+                        dismiss()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+            .onAppear(perform: loadIfNeeded)
+        }
+        .frame(minWidth: 420, minHeight: 300)
+    }
+
+    private var unitName: String {
+        let singular = switch period {
+        case .daily: "day"
+        case .weekly: "week"
+        case .monthly: "month"
+        case .yearly: "year"
+        }
+        return interval == 1 ? singular : singular + "s"
+    }
+
+    private func loadIfNeeded() {
+        guard !loaded else { return }
+        loaded = true
+        if let edit = model.editData(forTransaction: transactionID) {
+            name = edit.description
+        }
     }
 }
 

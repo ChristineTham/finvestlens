@@ -351,6 +351,10 @@ public final class AppModel {
     /// or by a menu command; the register presents the sheet.
     public var editingTransactionID: GncGUID?
 
+    /// The transaction being turned into a schedule, if any. Same arrangement as
+    /// ``editingTransactionID``: the command sets it, the register shows it.
+    public var schedulingTransactionID: GncGUID?
+
     /// The transaction the selected row belongs to — what a menu command acts on.
     public var selectedTransactionID: GncGUID? {
         selectedSplitID.flatMap { transactionID(ofSplit: $0) }

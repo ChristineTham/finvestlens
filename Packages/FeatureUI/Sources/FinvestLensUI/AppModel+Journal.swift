@@ -33,6 +33,9 @@ public struct JournalRow: Identifiable, Hashable, Sendable {
 /// How the register presents transactions (`FR-REG-01`).
 public enum RegisterStyle: String, CaseIterable, Identifiable, Sendable {
     case basic = "Basic"
+    /// GnuCash's Auto-Split Ledger: one line per transaction, and the selected
+    /// one opened out into its legs.
+    case autoSplit = "Auto-Split"
     case journal = "Journal"
     case generalLedger = "General Ledger"
     public var id: String { rawValue }
@@ -69,6 +72,23 @@ extension AppModel {
         }
         journalRowCache[accountID] = rows
         return rows
+    }
+
+    /// GnuCash's Auto-Split Ledger (`FR-REG-03`): one line per transaction, with
+    /// the one you are looking at opened out into its legs.
+    ///
+    /// The style sits between the other two and is the one people actually keep
+    /// on: Basic never shows you a multi-split transaction's insides, and
+    /// Journal shows everyone's at once, which on a real account is mostly rows
+    /// you did not ask about.
+    ///
+    /// Filtered from the journal's own cached rows, so switching style or moving
+    /// the selection costs a pass over an array rather than a rebuild.
+    public func autoSplitRows(forAccountID accountID: GncGUID?,
+                              expanding transactionID: GncGUID?) -> [JournalRow] {
+        journalRows(forAccountID: accountID).filter { row in
+            row.isHeading || row.transactionID == transactionID
+        }
     }
 
     /// Transactions for `accountID` (its postings), or every transaction when

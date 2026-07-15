@@ -408,6 +408,107 @@ extension AppModel {
         return copy.guid
     }
 
+    // MARK: Cut / Copy / Paste (FR-REG-09)
+
+    /// Why a paste did not happen.
+    public enum PasteError: Error, Equatable {
+        case nothingToPaste
+        /// An account the transaction posts to is not in this book, named so the
+        /// message can say which.
+        case unknownAccount(String)
+    }
+
+    /// Puts a transaction on the clipboard.
+    @discardableResult
+    public func copyTransaction(_ id: GncGUID) -> Bool {
+        guard let book, let txn = book.transaction(with: id) else { return false }
+        let legs = txn.splits.map { split in
+            TransactionClipboard.Leg(
+                accountGUID: split.account?.guid ?? .random(),
+                accountFullName: split.account?.fullName ?? "",
+                value: split.value,
+                quantity: split.quantity,
+                memo: split.memo,
+                action: split.action)
+        }
+        TransactionPasteboard.write(TransactionClipboard(
+            datePosted: txn.datePosted,
+            number: txn.number,
+            transactionDescription: txn.transactionDescription,
+            notes: txn.notes,
+            currency: txn.currency,
+            legs: legs))
+        return true
+    }
+
+    /// Copies a transaction and then deletes it. Two edits in the model, one
+    /// action to the person doing it — so it is one Undo.
+    @discardableResult
+    public func cutTransaction(_ id: GncGUID) -> Bool {
+        guard copyTransaction(id), let book, let txn = book.transaction(with: id) else {
+            return false
+        }
+        editing([id], named: "Cut Transaction") {
+            book.removeTransaction(txn)
+        }
+        return true
+    }
+
+    /// Pastes the clipboard's transaction into the book as a new one.
+    ///
+    /// Accounts resolve by GUID, then by full name — the second is what makes a
+    /// paste into another book land where it should, since a GUID from someone
+    /// else's file means nothing here. An account that answers to neither is
+    /// refused by name rather than quietly re-pointed at Imbalance, which would
+    /// be this feature deciding where someone's money went.
+    ///
+    /// The pasted transaction keeps the copied date, as Duplicate does, and
+    /// arrives unreconciled: it is new, and nobody has agreed to it.
+    @discardableResult
+    public func pasteTransaction() throws -> GncGUID {
+        guard let book else { throw PasteError.nothingToPaste }
+        guard let clipboard = TransactionPasteboard.read() else { throw PasteError.nothingToPaste }
+
+        var resolved: [(Account, TransactionClipboard.Leg)] = []
+        for leg in clipboard.legs {
+            guard let account = book.account(with: leg.accountGUID)
+                    ?? book.accounts.first(where: { $0.fullName == leg.accountFullName })
+            else {
+                throw PasteError.unknownAccount(leg.accountFullName.isEmpty
+                                                ? "an account" : leg.accountFullName)
+            }
+            resolved.append((account, leg))
+        }
+        guard !resolved.isEmpty else { throw PasteError.nothingToPaste }
+
+        let txn = Transaction(currency: clipboard.currency, datePosted: clipboard.datePosted,
+                              number: clipboard.number,
+                              description: clipboard.transactionDescription,
+                              notes: clipboard.notes)
+        for (account, leg) in resolved {
+            txn.addSplit(Split(account: account, value: leg.value, quantity: leg.quantity,
+                               memo: leg.memo, action: leg.action))
+        }
+        editing([txn.guid], named: "Paste Transaction") {
+            book.addTransaction(txn)
+        }
+        return txn.guid
+    }
+
+    /// Whether there is a transaction on the clipboard to paste.
+    public var canPasteTransaction: Bool { TransactionPasteboard.hasTransaction }
+
+    /// Why a paste was refused, in words.
+    public func describe(_ error: PasteError) -> String {
+        switch error {
+        case .nothingToPaste:
+            "There is no transaction on the clipboard."
+        case .unknownAccount(let name):
+            "This book has no account called “\(name)”, so there is nowhere for that part of "
+            + "the transaction to go. Create it first, or paste into the book it came from."
+        }
+    }
+
     /// Adds a reversing transaction (negated splits) — GnuCash's "Add Reversing
     /// Transaction" (`FR-REG-08`).
     @discardableResult
