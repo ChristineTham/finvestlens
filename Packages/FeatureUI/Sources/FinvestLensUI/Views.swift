@@ -604,21 +604,65 @@ struct RegisterView: View {
     @State private var selection: Set<GncGUID> = []
     @State private var editingTransactionID: GncGUID?
     @State private var style: RegisterStyle = .basic
+    @State private var filterShown = false
     /// Set by the ⌘↑/⌘↓ shortcuts; the scrolling view consumes and clears it.
     @State private var jump: RegisterEnd?
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Style", selection: $style) {
-                ForEach(RegisterStyle.allCases) { Text($0.rawValue).tag($0) }
+            HStack {
+                Picker("Style", selection: $style) {
+                    ForEach(RegisterStyle.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented).labelsHidden()
+                .fixedSize()
+                if style == .basic {
+                    Spacer()
+                    sortMenu
+                    filterButton
+                }
             }
-            .pickerStyle(.segmented).labelsHidden()
-            .fixedSize().padding(6)
+            .padding(6)
             Divider()
             content
         }
         .navigationTitle(style == .generalLedger ? "General Ledger" : selectedName)
         .background { jumpShortcuts }
+        .sheet(isPresented: $filterShown) {
+            RegisterFilterSheet(model: model)
+        }
+    }
+
+    /// GnuCash's View ▸ Sort By, as a menu rather than a dialog — the options
+    /// are the point, not the panel.
+    private var sortMenu: some View {
+        Menu {
+            Picker("Sort By", selection: $model.registerSort) {
+                ForEach(RegisterSort.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.inline)
+            Divider()
+            Toggle("Reverse Order", isOn: $model.registerSortReversed)
+        } label: {
+            Label(model.registerSort == .standard && !model.registerSortReversed
+                  ? "Sort" : "Sort: \(model.registerSort.rawValue)",
+                  systemImage: "arrow.up.arrow.down")
+        }
+        .fixedSize()
+        .help("Choose the order transactions are listed in")
+    }
+
+    private var filterButton: some View {
+        Button {
+            filterShown = true
+        } label: {
+            Label(model.registerFilter.isShowingEverything ? "Filter" : "Filtered",
+                  systemImage: model.registerFilter.isShowingEverything
+                      ? "line.3.horizontal.decrease.circle"
+                      : "line.3.horizontal.decrease.circle.fill")
+        }
+        .fixedSize()
+        .help("Show only some transactions")
     }
 
     /// Keyboard-only buttons: a register spanning years of history is otherwise
@@ -861,6 +905,110 @@ struct JournalView: View {
         .sheet(item: $editingTransactionID) { id in
             TransactionEditorSheet(model: model, editingID: id)
         }
+    }
+}
+
+/// GnuCash's View ▸ Filter By: which rows the register shows, by date and by
+/// reconcile status. Edits a draft and applies on Done, so half-set criteria
+/// don't churn the register underneath the user.
+struct RegisterFilterSheet: View {
+    @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var limitDates = false
+    @State private var start = Date()
+    @State private var end = Date()
+    @State private var statuses: Set<ReconcileState> = Set(ReconcileState.allCases)
+    @State private var loaded = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Date") {
+                    Toggle("Limit to a date range", isOn: $limitDates)
+                    if limitDates {
+                        DatePicker("From", selection: $start, displayedComponents: .date)
+                        DatePicker("To", selection: $end, in: start..., displayedComponents: .date)
+                    }
+                }
+                Section("Status") {
+                    ForEach(ReconcileState.allCases, id: \.self) { state in
+                        Toggle(Self.name(state), isOn: binding(for: state))
+                    }
+                    HStack {
+                        Button("Select All") { statuses = Set(ReconcileState.allCases) }
+                        Spacer()
+                        Button("Clear All") { statuses = [] }
+                    }
+                }
+                if statuses.isEmpty {
+                    Text("No statuses selected — the register will be empty.")
+                        .scaledFont(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Filter Transactions")
+            .onEscapeCommand { dismiss() }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { apply() }
+                }
+                ToolbarItem(placement: .automatic) {
+                    Button("Show All") {
+                        model.registerFilter = .showAll
+                        dismiss()
+                    }
+                    .disabled(model.registerFilter.isShowingEverything)
+                }
+            }
+            .onAppear(perform: loadIfNeeded)
+        }
+    }
+
+    private func binding(for state: ReconcileState) -> Binding<Bool> {
+        Binding(
+            get: { statuses.contains(state) },
+            set: { isOn in
+                if isOn { statuses.insert(state) } else { statuses.remove(state) }
+            }
+        )
+    }
+
+    private static func name(_ state: ReconcileState) -> String {
+        switch state {
+        case .notReconciled: "Unreconciled"
+        case .cleared: "Cleared"
+        case .reconciled: "Reconciled"
+        case .frozen: "Frozen"
+        case .voided: "Voided"
+        }
+    }
+
+    private func loadIfNeeded() {
+        guard !loaded else { return }
+        loaded = true
+        let filter = model.registerFilter
+        statuses = filter.statuses
+        if let from = filter.startDate, let to = filter.endDate {
+            limitDates = true
+            start = from
+            end = to
+        } else {
+            // Default the range to the span actually on screen, so turning the
+            // toggle on doesn't blank the register.
+            start = model.registerRows.first?.date ?? Date()
+            end = model.registerRows.last?.date ?? Date()
+        }
+    }
+
+    private func apply() {
+        model.registerFilter = RegisterFilter(
+            statuses: statuses,
+            startDate: limitDates ? start : nil,
+            endDate: limitDates ? end : nil)
+        dismiss()
     }
 }
 

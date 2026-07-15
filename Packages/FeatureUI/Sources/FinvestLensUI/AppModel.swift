@@ -34,12 +34,61 @@ public struct AccountNode: Identifiable, Hashable, Sendable {
 public struct RegisterRow: Identifiable, Hashable, Sendable {
     public let id: GncGUID
     public var date: Date
+    /// When the transaction was entered, as opposed to posted — GnuCash sorts
+    /// by this ("Date of Entry") to see what was keyed in when.
+    public var dateEntered: Date
     public var number: String
     public var description: String
     public var transfer: String
     public var reconcile: String
+    /// The split's own memo. Carried for sorting; the register has no column
+    /// for it yet (that is double-line mode, still to come).
+    public var memo: String
     public var amount: Decimal
     public var runningBalance: Decimal
+}
+
+/// How a register orders its rows for display (GnuCash View ▸ Sort By).
+///
+/// Display only. The running balance is always computed in ``standard`` order
+/// and carried on the row, so re-sorting never changes what a row's balance
+/// says — which is what GnuCash does: sort its register by amount and each row
+/// keeps the balance it had in date order.
+public enum RegisterSort: String, CaseIterable, Identifiable, Sendable {
+    case standard = "Standard Order"
+    case date = "Date"
+    case dateEntered = "Date of Entry"
+    case number = "Number"
+    case amount = "Amount"
+    case description = "Description"
+    case memo = "Memo"
+    public var id: String { rawValue }
+}
+
+/// Which rows a register shows (GnuCash View ▸ Filter By).
+///
+/// Filtering hides rows; it does not re-compute balances. A hidden split still
+/// moved the account, so the rows either side of it keep the balances they have
+/// in the unfiltered register.
+public struct RegisterFilter: Equatable, Sendable {
+    /// Reconcile states to show. Empty shows nothing — as in GnuCash, where
+    /// "Clear All" leaves an empty register rather than meaning "no filter".
+    public var statuses: Set<ReconcileState>
+    /// Inclusive posting-date bounds; `nil` means unbounded.
+    public var startDate: Date?
+    public var endDate: Date?
+
+    public static let showAll = RegisterFilter(
+        statuses: Set(ReconcileState.allCases), startDate: nil, endDate: nil)
+
+    /// True when this filter hides nothing — drives the "Filtered" hint.
+    public var isShowingEverything: Bool { self == .showAll }
+
+    public init(statuses: Set<ReconcileState>, startDate: Date? = nil, endDate: Date? = nil) {
+        self.statuses = statuses
+        self.startDate = startDate
+        self.endDate = endDate
+    }
 }
 
 /// A tool panel presented over the root view. Routed through
@@ -127,6 +176,27 @@ public final class AppModel {
 
     public var selectedAccountID: GncGUID? {
         didSet { refreshRegister() }
+    }
+
+    /// Display order of the register (`FR-REG-01`).
+    public var registerSort: RegisterSort = .standard {
+        didSet { if oldValue != registerSort { refreshRegister() } }
+    }
+    /// Reverses ``registerSort``.
+    public var registerSortReversed = false {
+        didSet { if oldValue != registerSortReversed { refreshRegister() } }
+    }
+    /// Which rows the register shows (`FR-REG-01`).
+    public var registerFilter: RegisterFilter = .showAll {
+        didSet { if oldValue != registerFilter { refreshRegister() } }
+    }
+
+    /// Resets the register's view options — called when the book closes, so a
+    /// filter set on one book can't quietly hide rows in the next.
+    func resetRegisterView() {
+        registerSort = .standard
+        registerSortReversed = false
+        registerFilter = .showAll
     }
 
     /// A register row to select and scroll to the next time a register shows —
@@ -703,6 +773,7 @@ public final class AppModel {
         accountTree = []
         registerRows = []
         selectedAccountID = nil
+        resetRegisterView()
         ruleGroups = []
         scheduledTransactions = []
         budgets = []
@@ -1002,11 +1073,16 @@ public final class AppModel {
             registerRows = []
             return
         }
+        // Canonical order first, and the balance with it: a row's balance is the
+        // account's balance as of that posting, so it must be accumulated over
+        // *every* split in date order — before any filter hides rows and before
+        // any sort moves them. GnuCash does the same: sort its register by
+        // amount and each row still shows the balance it had in date order.
         let splits = book.splits(for: account).sorted {
             ($0.transaction?.datePosted ?? .distantPast) < ($1.transaction?.datePosted ?? .distantPast)
         }
         var running = Decimal(0)
-        registerRows = splits.map { split in
+        let rows = splits.map { split in
             // A voided split still shows, with its amount, but must not move the
             // balance — `Book.balance` excludes it, so counting it here made the
             // register's last running balance disagree with the figure the
@@ -1015,14 +1091,64 @@ public final class AppModel {
             return RegisterRow(
                 id: split.guid,
                 date: split.transaction?.datePosted ?? Date(timeIntervalSince1970: 0),
+                dateEntered: split.transaction?.dateEntered ?? Date(timeIntervalSince1970: 0),
                 number: split.transaction?.number ?? "",
                 description: split.transaction?.transactionDescription ?? "",
                 transfer: transferDescription(for: split, in: account),
                 reconcile: split.reconcileState.rawValue,
+                memo: split.memo,
                 amount: split.quantity,
                 runningBalance: running
             )
         }
+        registerRows = ordered(filtered(rows))
+    }
+
+    /// Hides rows the filter excludes. Balances are already fixed, so a hidden
+    /// split still counts toward the rows around it — as it must: the money
+    /// moved whether or not you are looking at it.
+    private func filtered(_ rows: [RegisterRow]) -> [RegisterRow] {
+        let filter = registerFilter
+        guard !filter.isShowingEverything else { return rows }
+        let calendar = Calendar.current
+        let start = filter.startDate.map { calendar.startOfDay(for: $0) }
+        let end = filter.endDate.map { calendar.startOfDay(for: $0) }
+        return rows.filter { row in
+            guard let state = ReconcileState(rawValue: row.reconcile),
+                  filter.statuses.contains(state) else { return false }
+            // Whole-day bounds, inclusive at both ends — a range of "the 3rd to
+            // the 3rd" has to include the 3rd.
+            let day = calendar.startOfDay(for: row.date)
+            if let start, day < start { return false }
+            if let end, day > end { return false }
+            return true
+        }
+    }
+
+    /// Re-orders rows for display only.
+    private func ordered(_ rows: [RegisterRow]) -> [RegisterRow] {
+        let sorted: [RegisterRow]
+        switch registerSort {
+        case .standard:
+            sorted = rows   // already in canonical order
+        case .date:
+            sorted = rows.sorted { $0.date < $1.date }
+        case .dateEntered:
+            sorted = rows.sorted { $0.dateEntered < $1.dateEntered }
+        case .number:
+            sorted = rows.sorted { $0.number.localizedStandardCompare($1.number) == .orderedAscending }
+        case .amount:
+            sorted = rows.sorted { $0.amount < $1.amount }
+        case .description:
+            sorted = rows.sorted {
+                $0.description.localizedCaseInsensitiveCompare($1.description) == .orderedAscending
+            }
+        case .memo:
+            sorted = rows.sorted {
+                $0.memo.localizedCaseInsensitiveCompare($1.memo) == .orderedAscending
+            }
+        }
+        return registerSortReversed ? sorted.reversed() : sorted
     }
 
     private func transferDescription(for split: Split, in account: Account) -> String {
