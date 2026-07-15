@@ -99,6 +99,7 @@ public enum RootPanel: String, Identifiable, Sendable {
     case reports, rules, scheduled, budget, prices, saveSearch, onboarding
     case reconcile
     case autoCategorize
+    case find
     public var id: String { rawValue }
 }
 
@@ -216,6 +217,28 @@ public final class AppModel {
         didSet { runSearch() }
     }
     public internal(set) var searchResults: [TransactionSummary] = []
+
+    /// The active structured query (Find, ⌘F), or `nil` when the free-text bar
+    /// is the search. The two are alternatives: running one clears the other.
+    public internal(set) var findQuery: FindQuery?
+
+    /// For each transaction in ``searchResults`` found by a structured Find, the
+    /// split that actually matched. A free-text search leaves this empty.
+    ///
+    /// Worth keeping: it is the difference between guessing which register a
+    /// result belongs in and knowing. The user asked for *that* split.
+    @ObservationIgnored var findMatchedSplitID: [GncGUID: GncGUID] = [:]
+
+    /// True while a query is present — including one that matched nothing, which
+    /// is why this is not `!searchResults.isEmpty`: a search that found no rows
+    /// still has to say so rather than drop the user back on the dashboard.
+    public var isSearching: Bool {
+        findQuery != nil || !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Things the query did that the user did not ask for, in their words.
+    /// Populated by ``runSearch``; see ``SearchNotice``.
+    public internal(set) var searchNotices: [SearchNotice] = []
 
     /// The active reconciliation session, or `nil` when not reconciling.
     public internal(set) var reconcileSession: ReconcileSessionState?
@@ -762,6 +785,7 @@ public final class AppModel {
         externalChangePending = false
         presentedPanel = nil
         searchQuery = ""
+        clearFind()
         document?.discard()
         document = nil
         endBookAccess()
@@ -869,7 +893,9 @@ public final class AppModel {
         derivedRevision &+= 1
         rebuildAccountTree()
         refreshRegister()
-        runSearch()
+        // Whichever search is showing has to survive an edit: editing a result
+        // from the results table must leave the other results on screen.
+        if let findQuery { runFind(findQuery) } else { runSearch() }
     }
 
     /// Marks the document dirty and rebuilds derived state. Records nothing on

@@ -110,6 +110,16 @@ struct finvestlensApp: App {
                     .keyboardShortcut("w", modifiers: [.command, .shift])
                     .disabled(!model.isOpen)
             }
+            // Find sits in Edit, under Cut/Copy/Paste, where GnuCash puts it
+            // (Edit ▸ Find…, ⌘F) and where macOS users look for it.
+            CommandGroup(after: .pasteboard) {
+                Divider()
+                Button("Find…") { model.presentedPanel = .find }
+                    .keyboardShortcut("f", modifiers: .command)
+                    .disabled(!model.isOpen)
+                Button("Clear Find") { model.clearFind() }
+                    .disabled(model.findQuery == nil)
+            }
             // Book: every tool panel, so all functionality is reachable (and
             // discoverable, with shortcuts) from the menu bar.
             CommandMenu("Book") {

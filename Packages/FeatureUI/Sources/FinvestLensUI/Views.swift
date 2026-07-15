@@ -181,7 +181,7 @@ public struct FinvestLensRootView: View {
             AccountsSidebar(model: model)
                 .navigationTitle("Accounts")
         } detail: {
-            if !model.searchResults.isEmpty {
+            if model.isSearching {
                 SearchResultsView(model: model)
             } else if model.selectedAccountID == nil {
                 DashboardView(model: model)
@@ -302,6 +302,7 @@ public struct FinvestLensRootView: View {
                     ReconcileView(model: model, accountID: id)
                 }
             case .autoCategorize: AutoCategorizeSheet(model: model)
+            case .find: FindSheet(model: model)
             }
         }
         #if os(macOS)
@@ -1052,7 +1053,70 @@ struct SearchResultsView: View {
         .sheet(item: $editingTransactionID) { id in
             TransactionEditorSheet(model: model, editingID: id)
         }
-        .navigationTitle("Results for “\(model.searchQuery)”")
+        .overlay {
+            if model.searchResults.isEmpty { noResults }
+        }
+        .safeAreaInset(edge: .top) {
+            if !model.searchNotices.isEmpty { noticeBanner }
+        }
+        .toolbar {
+            if model.findQuery != nil {
+                ToolbarItemGroup {
+                    Button("Edit Find…", systemImage: "slider.horizontal.3") {
+                        model.presentedPanel = .find
+                    }
+                    .help("Change the search criteria (⌘F)")
+                    Button("Clear", systemImage: "xmark.circle") { model.clearFind() }
+                        .help("Stop showing find results")
+                }
+            }
+        }
+        .navigationTitle(title)
+    }
+
+    private var title: String {
+        model.findQuery == nil
+            ? "Results for “\(model.searchQuery)”"
+            : "Find Results (\(model.searchResults.count))"
+    }
+
+    /// Finding nothing is a result. Saying nothing is not: without this the
+    /// detail pane fell back to the dashboard and the search vanished.
+    private var noResults: some View {
+        ContentUnavailableView {
+            Label("No Results", systemImage: "magnifyingglass")
+        } description: {
+            if model.findQuery == nil {
+                Text("No transactions match “\(model.searchQuery)”.")
+            } else {
+                Text("No splits match these criteria.")
+            }
+        } actions: {
+            if model.findQuery != nil {
+                Button("Edit Criteria…") { model.presentedPanel = .find }
+            }
+        }
+    }
+
+    private var noticeBanner: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(model.searchNotices) { notice in
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(notice.message).scaledFont(.callout)
+                        Text(notice.recovery)
+                            .scaledFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(.bar)
     }
 }
 

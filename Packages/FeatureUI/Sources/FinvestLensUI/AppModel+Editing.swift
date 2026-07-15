@@ -40,6 +40,33 @@ public struct SavedSearch: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+/// Something the free-text query did that the user did not ask for.
+public enum SearchNotice: Identifiable, Hashable, Sendable {
+    /// `key:` is not an operator, so the whole token was searched as text.
+    case unknownKey(String)
+
+    public var id: String {
+        switch self {
+        case .unknownKey(let key): "unknownKey.\(key)"
+        }
+    }
+
+    public var message: String {
+        switch self {
+        case .unknownKey(let key):
+            "“\(key):” isn’t a search key, so it was searched for as ordinary text."
+        }
+    }
+
+    public var recovery: String {
+        switch self {
+        case .unknownKey:
+            "Keys are tag:, account:, memo:, desc: and amount:. To search by date, "
+            + "amount range, reconcile state or notes, use Find (⌘F)."
+        }
+    }
+}
+
 /// A transaction-level row used by search results.
 public struct TransactionSummary: Identifiable, Hashable, Sendable {
     public let id: GncGUID
@@ -208,11 +235,20 @@ extension AppModel {
     /// keeps the results in the detail pane, so without this the register the
     /// caller asked for would never come on screen.
     public func showInRegister(_ id: GncGUID) {
-        guard let book, let txn = book.transaction(with: id),
-              let accountID = registerAccountID(forTransaction: id) else { return }
+        guard let book, let txn = book.transaction(with: id) else { return }
+
+        // A structured find already knows which split matched, so use it rather
+        // than re-deriving one: if you searched "Account is AGL", the AGL leg is
+        // the answer, even though the heuristic would prefer the cash leg.
+        let matchedSplit = findMatchedSplitID[id].flatMap { book.split(with: $0) }
+        guard let accountID = matchedSplit?.account?.guid
+                ?? registerAccountID(forTransaction: id) else { return }
+
         searchQuery = ""                 // → runSearch() empties the results
+        clearFind()
         selectedAccountID = accountID    // → refreshRegister()
-        pendingRegisterSplitID = txn.splits.first { $0.account?.guid == accountID }?.guid
+        pendingRegisterSplitID = matchedSplit?.guid
+            ?? txn.splits.first { $0.account?.guid == accountID }?.guid
     }
 
     // MARK: Account editing
@@ -400,11 +436,77 @@ extension AppModel {
     func runSearch() {
         guard let book, !searchQuery.trimmingCharacters(in: .whitespaces).isEmpty else {
             searchResults = []
+            searchNotices = []
             return
         }
+        findQuery = nil                  // typing replaces a structured find
+        findMatchedSplitID = [:]
+        searchNotices = notices(for: searchQuery)
         searchResults = transactionsMatching(searchQuery, in: book)
             .sorted { $0.datePosted > $1.datePosted }
             .map { summary(for: $0) }
+    }
+
+    // MARK: Structured find (GnuCash Edit ▸ Find…, `FR-FIND-01`)
+
+    /// Runs a structured query, replacing whatever search is showing.
+    ///
+    /// GnuCash finds *splits* and opens them as a register. We roll the hits up
+    /// to their transactions — one row per transaction, as the results table
+    /// already shows — but keep which split matched, so "Show in Register"
+    /// opens the account the user actually searched for rather than guessing.
+    public func runFind(_ query: FindQuery) {
+        guard let book else { return }
+        // Order matters: emptying the bar fires `runSearch`, so `findQuery` is
+        // set after that has run rather than before it.
+        searchQuery = ""
+        searchNotices = []
+        findQuery = query
+
+        var matched: [GncGUID: GncGUID] = [:]
+        var ordered: [Transaction] = []
+        for split in book.splitsMatching(query) {
+            guard let txn = split.transaction else { continue }
+            if matched[txn.guid] == nil {
+                matched[txn.guid] = split.guid
+                ordered.append(txn)
+            }
+        }
+        findMatchedSplitID = matched
+        searchResults = ordered
+            .sorted { $0.datePosted > $1.datePosted }
+            .map { summary(for: $0) }
+    }
+
+    /// Ends a structured find, returning the detail pane to the register.
+    public func clearFind() {
+        findQuery = nil
+        findMatchedSplitID = [:]
+        searchResults = []
+    }
+
+    /// The known `key:` operators, for both matching and telling the user what
+    /// exists when they reach for one that doesn't.
+    static let searchKeys: Set<String> = [
+        "tag", "account", "acct", "memo", "desc", "description", "amount",
+    ]
+
+    /// A token like `date:2026` looks like an operator and is not one, so it is
+    /// searched for as literal text. That is a reasonable thing to do — one of
+    /// this book's descriptions really does read "Value Date: 09/04/2026" — but
+    /// doing it *silently* is not: the query appears to run and simply finds
+    /// nothing. Say what happened, and where the real thing lives.
+    func notices(for query: String) -> [SearchNotice] {
+        let tokens = query.split(separator: " ").map(String.init)
+        var seen: [String] = []
+        for token in tokens {
+            guard let colon = token.firstIndex(of: ":") else { continue }
+            let key = String(token[..<colon]).lowercased()
+            guard !key.isEmpty, key.allSatisfy(\.isLetter) else { continue }
+            guard !Self.searchKeys.contains(key), !seen.contains(key) else { continue }
+            seen.append(key)
+        }
+        return seen.map { .unknownKey($0) }
     }
 
     /// Transactions matching an operator query. Whitespace-separated tokens are
