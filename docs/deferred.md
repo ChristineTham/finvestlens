@@ -69,7 +69,7 @@ Parity gaps found, not yet built (ranked):
 
 | Item | Notes | Target |
 |---|---|---|
-| Search results are read-only | GnuCash's Find opens results **as an editable register** — that is its bulk edit. Ours is a `Table` with no selection/context menu/jump, and a non-empty query hijacks the detail pane. Result rows already carry the txn GUID, so a jump is cheap. | P7 |
+| ~~Search results are read-only~~ | **Partly done (15 Jul 2026):** a result now selects, and offers **Edit…** (double-click or context menu — the editor opens over the results, so "find, then fix each one" works without leaving them) and **Show in Register**, which clears the query (a non-empty one keeps the results in the detail pane, so the register would never appear), selects the account and scrolls to the row. It opens the *balance-sheet* leg, skipping `Imbalance-*`/`Orphan-*` — those are typed `.bank` by `Scrub`, so on this book "the first split" landed in Imbalance-AUD, which says nothing about where the money went. Still not GnuCash's editable-register-of-results, and still no multi-select bulk action. | partial / P7 |
 | No structured Find, no ⌘F, no Find Account | GnuCash: 16 criteria, all/any, refine/add/delete-results. Ours: one free-text field, 5 AND-only operators (`tag:`/`account:`/`memo:`/`desc:`/`amount:`); no date, notes, number or reconcile-state search. An unknown key (`date:2026`) silently degrades to a literal substring. | P7 |
 | Register Sort By / Filter By | GnuCash sorts by 10 fields (+reverse, save) and filters by date range + 5 statuses. Ours: hardcoded oldest-first, no filter, headers not sortable. | P7 |
 | Double-line mode | `Transaction.notes` is stored and round-trips but is never shown or editable. | P7 |

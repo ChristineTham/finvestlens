@@ -131,9 +131,7 @@ extension AppModel {
     /// All splits currently posted to Imbalance/Orphan accounts.
     public func uncategorizedItems() -> [UncategorizedItem] {
         guard let book else { return [] }
-        let holders = book.accounts.filter {
-            $0.name.hasPrefix("Imbalance") || $0.name.hasPrefix("Orphan")
-        }
+        let holders = book.accounts.filter(\.isImbalanceOrOrphan)
         return holders.flatMap { holder in
             book.splits(for: holder).compactMap { split -> UncategorizedItem? in
                 guard let transaction = split.transaction else { return nil }

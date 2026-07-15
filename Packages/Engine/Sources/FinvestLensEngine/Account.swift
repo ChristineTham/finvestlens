@@ -50,6 +50,17 @@ public final class Account {
     }
     private static let colorKey = "color"
 
+    /// Whether this is one of GnuCash's holding accounts for postings that have
+    /// nowhere else to go — `Imbalance-<CUR>` or `Orphan-<CUR>`, as created by
+    /// ``Scrub``.
+    ///
+    /// They are typed `.bank`, so type alone cannot tell them apart from a real
+    /// account, but no money sits in them: they are a to-do list. Anything
+    /// choosing an account *for* the user should look past them.
+    public var isImbalanceOrOrphan: Bool {
+        name.hasPrefix("Imbalance") || name.hasPrefix("Orphan")
+    }
+
     /// The parent account, or `nil` for the root. Weak to avoid a retain cycle.
     public private(set) weak var parent: Account?
     /// Child accounts, owned strongly by this account.

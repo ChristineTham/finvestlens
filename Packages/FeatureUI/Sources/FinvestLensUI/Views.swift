@@ -666,14 +666,34 @@ struct RegisterView: View {
     private var registerTable: some View {
         ScrollViewReader { proxy in
             registerTableBody
-                .onAppear { scroll(proxy, to: .newest) }
-                .onChange(of: model.selectedAccountID) { scroll(proxy, to: .newest) }
+                .onAppear { showPendingOrNewest(proxy) }
+                .onChange(of: model.selectedAccountID) { showPendingOrNewest(proxy) }
+                .onChange(of: model.pendingRegisterSplitID) { showPendingOrNewest(proxy) }
                 .onChange(of: jump) { _, target in
                     guard let target else { return }
                     scroll(proxy, to: target)
                     jump = nil
                 }
         }
+    }
+
+    /// Lands on the row a jump asked for, or the newest when nothing did.
+    ///
+    /// The pending row is consumed whichever way this goes: it names one split
+    /// of one account, so leaving it set would let it re-apply to a register it
+    /// was never meant for. If it isn't in these rows — a jump made while a
+    /// journal style was showing — fall back to the newest rather than nothing.
+    private func showPendingOrNewest(_ proxy: ScrollViewProxy) {
+        guard let target = model.consumePendingRegisterSelection() else {
+            scroll(proxy, to: .newest)
+            return
+        }
+        guard model.registerRows.contains(where: { $0.id == target }) else {
+            scroll(proxy, to: .newest)
+            return
+        }
+        selection = [target]
+        proxy.scrollTo(target, anchor: .center)
     }
 
     private var registerTableBody: some View {
@@ -848,9 +868,11 @@ struct JournalView: View {
 
 struct SearchResultsView: View {
     @Bindable var model: AppModel
+    @State private var selection: Set<GncGUID> = []
+    @State private var editingTransactionID: GncGUID?
 
     var body: some View {
-        Table(model.searchResults) {
+        Table(model.searchResults, selection: $selection) {
             TableColumn("Date") { row in
                 Text(row.date, format: .dateTime.year().month().day())
                     .scaledFont(.body)
@@ -866,6 +888,21 @@ struct SearchResultsView: View {
                     .scaledFont(.body)
                     .monospacedDigit()
             }
+        }
+        // A result is a transaction, so it can be worked on like one. Editing
+        // in place is what makes "find, then fix each one" possible without
+        // leaving the results — the nearest thing we have to GnuCash, whose
+        // Find opens its results as a register.
+        .contextMenu(forSelectionType: GncGUID.self) { ids in
+            if let id = ids.first {
+                Button("Edit…") { editingTransactionID = id }
+                Button("Show in Register") { model.showInRegister(id) }
+            }
+        } primaryAction: { ids in
+            if let id = ids.first { editingTransactionID = id }
+        }
+        .sheet(item: $editingTransactionID) { id in
+            TransactionEditorSheet(model: model, editingID: id)
         }
         .navigationTitle("Results for “\(model.searchQuery)”")
     }

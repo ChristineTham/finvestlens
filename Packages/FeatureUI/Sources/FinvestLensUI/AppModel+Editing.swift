@@ -175,6 +175,46 @@ extension AppModel {
         if let other = otherAccountID(ofSplit: splitID) { selectedAccountID = other }
     }
 
+    /// The account a transaction is best opened in.
+    ///
+    /// The balance-sheet leg — the bank account or card the money actually
+    /// moved through — because that is the register a person thinks in. Taking
+    /// the first split instead lands you in the *category*, and imported
+    /// transactions are written category-leg-first.
+    ///
+    /// `Imbalance-*`/`Orphan-*` are skipped even though they are typed `.bank`:
+    /// on this book every imported transaction has one, and landing there tells
+    /// you nothing about where the money went. Falls back to the first split
+    /// when there is no real balance-sheet leg (a category-to-category
+    /// correction), because the result still has to open somewhere.
+    public func registerAccountID(forTransaction id: GncGUID) -> GncGUID? {
+        guard let txn = book?.transaction(with: id) else { return nil }
+        let onBalanceSheet = txn.splits.first { split in
+            guard let account = split.account, !account.isImbalanceOrOrphan else { return false }
+            switch account.type {
+            case .bank, .cash, .credit, .asset, .liability, .stock, .mutualFund,
+                 .receivable, .payable:
+                return true
+            default:
+                return false
+            }
+        }
+        return (onBalanceSheet ?? txn.splits.first)?.account?.guid
+    }
+
+    /// Opens a transaction in its register, selected and scrolled to.
+    ///
+    /// Clearing the query is the point, not a side effect: a non-empty search
+    /// keeps the results in the detail pane, so without this the register the
+    /// caller asked for would never come on screen.
+    public func showInRegister(_ id: GncGUID) {
+        guard let book, let txn = book.transaction(with: id),
+              let accountID = registerAccountID(forTransaction: id) else { return }
+        searchQuery = ""                 // → runSearch() empties the results
+        selectedAccountID = accountID    // → refreshRegister()
+        pendingRegisterSplitID = txn.splits.first { $0.account?.guid == accountID }?.guid
+    }
+
     // MARK: Account editing
 
     public func editData(forAccount id: GncGUID) -> AccountEdit? {

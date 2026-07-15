@@ -129,6 +129,18 @@ public final class AppModel {
         didSet { refreshRegister() }
     }
 
+    /// A register row to select and scroll to the next time a register shows —
+    /// set by ``showInRegister(_:)`` when jumping to a transaction from a search
+    /// result. One-shot: the register consumes it, because it names a specific
+    /// split and must not re-apply to a later, unrelated register.
+    public internal(set) var pendingRegisterSplitID: GncGUID?
+
+    /// Takes the pending selection, if any, clearing it.
+    func consumePendingRegisterSelection() -> GncGUID? {
+        defer { pendingRegisterSplitID = nil }
+        return pendingRegisterSplitID
+    }
+
     /// Free-text query; setting it recomputes ``searchResults``.
     public var searchQuery: String = "" {
         didSet { runSearch() }
