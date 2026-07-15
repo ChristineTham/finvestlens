@@ -10,20 +10,35 @@ import Foundation
 import FinvestLensEngine
 
 /// One leg of a transaction being entered in the UI.
+///
+/// A split carries more than a UI can sensibly show — reconcile state and date,
+/// preserved KVP slots, its own identity. Rather than widen this type until it
+/// mirrors ``Split``, an edit **reuses the split object** the row came from and
+/// assigns only the fields below; see
+/// ``AppModel/updateTransaction(id:date:description:currency:splits:tags:)``.
+/// ``splitID`` is what makes that possible, so a row that came from an existing
+/// split must carry it.
 public struct SplitInput: Identifiable, Hashable, Sendable {
     public var id = UUID()
+    /// The existing split this row edits, or `nil` for a newly added leg.
+    public var splitID: GncGUID?
     public var accountID: GncGUID?
     public var value: Decimal
     /// Amount in the account's own commodity (e.g. share count for a security).
     /// `nil` defaults to `value`, correct for same-currency cash postings.
     public var quantity: Decimal?
     public var memo: String
+    /// GnuCash's per-split Action (e.g. "Buy", "Withdrawal", a cheque number).
+    public var action: String
 
-    public init(accountID: GncGUID? = nil, value: Decimal = 0, quantity: Decimal? = nil, memo: String = "") {
+    public init(splitID: GncGUID? = nil, accountID: GncGUID? = nil, value: Decimal = 0,
+                quantity: Decimal? = nil, memo: String = "", action: String = "") {
+        self.splitID = splitID
         self.accountID = accountID
         self.value = value
         self.quantity = quantity
         self.memo = memo
+        self.action = action
     }
 }
 
@@ -124,7 +139,8 @@ extension AppModel {
             guard let id = input.accountID, let account = book.account(with: id) else {
                 throw TransactionEntryError.unknownAccount
             }
-            txn.addSplit(account: account, value: input.value, quantity: input.quantity, memo: input.memo)
+            txn.addSplit(Split(account: account, value: input.value, quantity: input.quantity,
+                               memo: input.memo, action: input.action))
         }
         txn.tags = tags
         guard txn.isBalanced else {
@@ -145,9 +161,11 @@ extension AppModel {
             currency: txn.currency,
             splits: txn.splits.map {
                 // Preserve share counts when the quantity differs from the value
-                // (security / foreign-currency legs).
-                SplitInput(accountID: $0.account?.guid, value: $0.value,
-                           quantity: $0.quantity == $0.value ? nil : $0.quantity, memo: $0.memo)
+                // (security / foreign-currency legs). `splitID` is what lets the
+                // save reuse this very split rather than build a replacement.
+                SplitInput(splitID: $0.guid, accountID: $0.account?.guid, value: $0.value,
+                           quantity: $0.quantity == $0.value ? nil : $0.quantity,
+                           memo: $0.memo, action: $0.action)
             },
             tags: txn.tags
         )
@@ -174,16 +192,37 @@ extension AppModel {
             return (account, input)
         }
 
+        // The rows are re-attached to the splits they came from, so that a save
+        // carries everything the editor never showed: reconcile state and date,
+        // the split's identity, and its preserved slots. Rebuilding them instead
+        // — which is what this did — silently cleared the reconcile state of any
+        // transaction anyone edited, and the values still balanced, so nothing
+        // downstream could notice.
+        let reusable = Dictionary(txn.splits.map { ($0.guid, $0) }, uniquingKeysWith: { first, _ in first })
+
         editing([id], named: "Edit Transaction") {
             txn.datePosted = date
-            txn.dateEntered = date
+            // `dateEntered` is when the transaction was entered, not when it was
+            // last touched: GnuCash sets it once and leaves it. Assigning the
+            // posting date here rewrote it on every edit, which the register's
+            // "Date of Entry" sort would then order by.
             txn.transactionDescription = description
             txn.currency = currency
             if let tags { txn.tags = tags }
             for existing in Array(txn.splits) { txn.removeSplit(existing) }
             for (account, input) in resolved {
-                txn.addSplit(account: account, value: input.value,
-                             quantity: input.quantity, memo: input.memo)
+                if let splitID = input.splitID, let split = reusable[splitID] {
+                    split.account = account
+                    split.value = input.value
+                    split.quantity = input.quantity ?? input.value
+                    split.memo = input.memo
+                    split.action = input.action
+                    txn.addSplit(split)
+                } else {
+                    txn.addSplit(Split(account: account, value: input.value,
+                                       quantity: input.quantity, memo: input.memo,
+                                       action: input.action))
+                }
             }
         }
         return txn.guid

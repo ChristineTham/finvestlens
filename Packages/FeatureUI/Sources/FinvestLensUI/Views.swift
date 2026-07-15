@@ -1315,6 +1315,11 @@ struct NewAccountSheet: View {
 /// save, and the fields it forgets are the fields the save destroys.
 struct EditableSplit: Identifiable {
     let id = UUID()
+
+    /// The split this row came from, or `nil` for a leg the user just added.
+    /// Carried so the save can re-attach to that split instead of replacing it,
+    /// which is what keeps its reconcile state, identity and slots alive.
+    var splitID: GncGUID?
     var accountID: GncGUID?
     var amountText: String = ""
 
@@ -1328,8 +1333,10 @@ struct EditableSplit: Identifiable {
     /// share counts to the dollar value and silently destroyed a holding.
     var quantity: Decimal?
 
-    /// Per-split memo, likewise carried through so an edit cannot erase it.
+    /// Per-split memo and GnuCash's per-split Action. Both are editable below;
+    /// both were previously carried blind, and `action` was not carried at all.
     var memo: String = ""
+    var action: String = ""
 
     var amount: Decimal { Decimal(string: amountText) ?? 0 }
 
@@ -1339,16 +1346,19 @@ struct EditableSplit: Identifiable {
     }
 
     init(_ input: SplitInput) {
+        self.splitID = input.splitID
         self.accountID = input.accountID
         self.amountText = NSDecimalNumber(decimal: input.value).stringValue
         self.quantity = input.quantity
         self.memo = input.memo
+        self.action = input.action
     }
 
     /// The row as the engine takes it. Everything the editor knows about a
     /// split has to come back out here, including the parts it never showed.
     var asInput: SplitInput {
-        SplitInput(accountID: accountID, value: amount, quantity: quantity, memo: memo)
+        SplitInput(splitID: splitID, accountID: accountID, value: amount,
+                   quantity: quantity, memo: memo, action: action)
     }
 }
 
