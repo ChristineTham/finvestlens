@@ -40,15 +40,19 @@ struct AccountMatchPicker: View {
     /// Filtering flattens: when you have typed "cdia" you want the account, not
     /// its ancestry. Matching on the **full** name is what makes "joint:cdia"
     /// narrow further, and what lets a parent's name find its children.
-    /// Placeholders never match — they cannot be chosen, so offering them as
-    /// search results would be offering nothing.
-    static func matching(_ tree: [AccountNode], filter: String) -> [AccountNode] {
+    ///
+    /// Placeholders are excluded by default: here they cannot be chosen, so
+    /// offering them as search results would be offering nothing. The account
+    /// sidebar passes `includingPlaceholders: true` — there a placeholder is a
+    /// real destination, since selecting one opens its register.
+    static func matching(_ tree: [AccountNode], filter: String,
+                         includingPlaceholders: Bool = false) -> [AccountNode] {
         func flatten(_ nodes: [AccountNode]) -> [AccountNode] {
             nodes.flatMap { [$0] + flatten($0.children ?? []) }
         }
         let needle = filter.lowercased()
         return flatten(tree).filter { node in
-            guard !node.isPlaceholder else { return false }
+            guard includingPlaceholders || !node.isPlaceholder else { return false }
             // `"abc".contains("")` is false in Swift, so an empty needle has to
             // be handled rather than left to fall through as "matches nothing".
             return needle.isEmpty || node.fullName.lowercased().contains(needle)

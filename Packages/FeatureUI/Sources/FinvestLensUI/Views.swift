@@ -692,42 +692,47 @@ struct DeleteAccountSheet: View {
 struct AccountsSidebar: View {
     @Bindable var model: AppModel
     @State private var sheet: AccountSheet?
+    @State private var filter = ""
+    /// GnuCash's "show hidden accounts". `isHidden` has been settable, stored
+    /// and round-tripped all along, and the tree showed every account anyway —
+    /// so marking one hidden greyed its name and changed nothing else.
+    @AppStorage("showHiddenAccounts") private var showHidden = false
     @Environment(\.appFontScale) private var appFontScale
 
+    private var trimmedFilter: String { filter.trimmingCharacters(in: .whitespaces) }
+
+    private var visibleTree: [AccountNode] {
+        showHidden ? model.accountTree : Self.pruningHidden(model.accountTree)
+    }
+
+    /// Drops hidden accounts and everything under them. Hiding a parent hides
+    /// the subtree, as in GnuCash — a visible child of a hidden parent would
+    /// have nowhere to hang.
+    static func pruningHidden(_ nodes: [AccountNode]) -> [AccountNode] {
+        nodes.compactMap { node in
+            guard !node.isHidden else { return nil }
+            guard let children = node.children else { return node }
+            var copy = node
+            copy.children = pruningHidden(children)
+            return copy
+        }
+    }
+
     var body: some View {
-        List(selection: $model.selectedAccountID) {
-            OutlineGroup(model.accountTree, children: \.children) { node in
-                HStack {
-                    // GnuCash account colour, shown Finder-tag style.
-                    if let dot = node.color.flatMap(GnuCashColor.color(from:)) {
-                        Circle()
-                            .fill(dot)
-                            .frame(width: 9, height: 9)
-                            .accessibilityHidden(true)
-                    }
-                    Text(node.name)
-                        .scaledFont(.body)
-                        .foregroundStyle(node.isHidden ? .secondary : .primary)
-                    Spacer()
-                    Text(AmountFormat.string(node.balance, code: node.currencyCode))
-                        .scaledFont(.body)
-                        .monospacedDigit()
-                        .foregroundStyle(node.balance < 0 ? .red : .secondary)
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                TextField("Filter accounts", text: $filter)
+                    .textFieldStyle(.roundedBorder)
+                Toggle(isOn: $showHidden) {
+                    Image(systemName: showHidden ? "eye" : "eye.slash")
+                        .accessibilityLabel("Show hidden accounts")
                 }
-                .tag(node.id)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(node.name)
-                .accessibilityValue(AmountFormat.string(node.balance, code: node.currencyCode))
-                .contextMenu {
-                    Button("Edit…") { sheet = .edit(node.id) }
-                    Button("Reconcile…") { sheet = .reconcile(node.id) }
-                    // Always offered. It used to appear only for an account
-                    // with nothing in it, which on a real book is almost none
-                    // of them — so the answer to "why can't I delete this?"
-                    // was a button that wasn't there.
-                    Button("Delete…", role: .destructive) { sheet = .delete(node.id) }
-                }
+                .toggleStyle(.button)
+                .help("Show hidden accounts")
             }
+            .padding(8)
+            Divider()
+            list
         }
         .navigationSplitViewColumnWidth(min: 200 * appFontScale,
                                         ideal: 240 * appFontScale,
@@ -738,6 +743,65 @@ struct AccountsSidebar: View {
             case .reconcile(let id): ReconcileView(model: model, accountID: id)
             case .delete(let id): DeleteAccountSheet(model: model, accountID: id)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var list: some View {
+        List(selection: $model.selectedAccountID) {
+            if trimmedFilter.isEmpty {
+                OutlineGroup(visibleTree, children: \.children) { node in
+                    row(node, label: node.name)
+                }
+            } else {
+                // Filtering flattens to matches and shows full names — the same
+                // shape as Find's account picker, and the reason typing "cdia"
+                // beats opening three disclosure triangles on 559 accounts.
+                let matches = AccountMatchPicker.matching(visibleTree, filter: trimmedFilter,
+                                                          includingPlaceholders: true)
+                if matches.isEmpty {
+                    Text("No accounts match “\(trimmedFilter)”.")
+                        .scaledFont(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(matches) { node in
+                        row(node, label: node.fullName)
+                    }
+                }
+            }
+        }
+    }
+
+    private func row(_ node: AccountNode, label: String) -> some View {
+        HStack {
+            // GnuCash account colour, shown Finder-tag style.
+            if let dot = node.color.flatMap(GnuCashColor.color(from:)) {
+                Circle()
+                    .fill(dot)
+                    .frame(width: 9, height: 9)
+                    .accessibilityHidden(true)
+            }
+            Text(label)
+                .scaledFont(.body)
+                .foregroundStyle(node.isHidden ? .secondary : .primary)
+            Spacer()
+            Text(AmountFormat.string(node.balance, code: node.currencyCode))
+                .scaledFont(.body)
+                .monospacedDigit()
+                .foregroundStyle(node.balance < 0 ? .red : .secondary)
+        }
+        .tag(node.id)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue(AmountFormat.string(node.balance, code: node.currencyCode))
+        .contextMenu {
+            Button("Edit…") { sheet = .edit(node.id) }
+            Button("Reconcile…") { sheet = .reconcile(node.id) }
+            // Always offered. It used to appear only for an account with
+            // nothing in it, which on a real book is almost none of them — so
+            // the answer to "why can't I delete this?" was a button that wasn't
+            // there.
+            Button("Delete…", role: .destructive) { sheet = .delete(node.id) }
         }
     }
 }
