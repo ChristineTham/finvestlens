@@ -301,6 +301,28 @@ public final class AppModel {
     /// is reachable from the menu bar as well as the toolbar.
     public var presentedPanel: RootPanel?
 
+    /// The register row the user has selected.
+    ///
+    /// Held here rather than in the register's own `@State` so that the menu
+    /// bar can act on the same row the context menu does. Every per-transaction
+    /// operation used to be context-menu-only: no menu items, no shortcuts, and
+    /// nothing at all in the Journal and General Ledger styles, which offered
+    /// Edit and nothing else.
+    public var selectedSplitID: GncGUID?
+
+    /// The transaction whose editor should be open, if any. Set by the register
+    /// or by a menu command; the register presents the sheet.
+    public var editingTransactionID: GncGUID?
+
+    /// The transaction the selected row belongs to — what a menu command acts on.
+    public var selectedTransactionID: GncGUID? {
+        selectedSplitID.flatMap { transactionID(ofSplit: $0) }
+    }
+
+    /// Whether there is a register row to act on. Menu items are disabled rather
+    /// than hidden, so the shortcuts are discoverable before you select a row.
+    public var hasSelectedTransaction: Bool { selectedTransactionID != nil }
+
     /// Books opened recently (most recent first), for Open Recent / welcome.
     public private(set) var recentBooks: [URL] = AppModel.loadRecents()
 

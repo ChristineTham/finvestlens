@@ -120,6 +120,16 @@ struct finvestlensApp: App {
                 Button("Clear Find") { model.clearFind() }
                     .disabled(model.findQuery == nil)
             }
+            // Transaction: what you can do to the selected register row.
+            //
+            // These were context-menu-only — no menu items, no shortcuts, and
+            // in the Journal and General Ledger styles no way to reach them at
+            // all. `TransactionActions` is the same view the context menus use,
+            // so the menu bar cannot drift out of step with them.
+            CommandMenu("Transaction") {
+                TransactionActions(model: model, splitID: model.selectedSplitID)
+                    .disabled(!model.isOpen)
+            }
             // Book: every tool panel, so all functionality is reachable (and
             // discoverable, with shortcuts) from the menu bar.
             CommandMenu("Book") {

@@ -416,6 +416,13 @@ extension AppModel {
         book?.split(with: splitID)?.reconcileState
     }
 
+    /// Any split of a transaction, for a row that stands for the transaction
+    /// rather than one of its legs — a journal heading, say. The per-transaction
+    /// operations do not care which leg they are reached through.
+    public func anySplitID(ofTransaction id: GncGUID) -> GncGUID? {
+        book?.transaction(with: id)?.splits.first?.guid
+    }
+
     /// Every tag in the book. `Book.allTags` has existed and been tested from
     /// the start with no caller: the editor's Tags field was free text, so the
     /// only way to reuse a tag was to remember how you spelled it, and a typo

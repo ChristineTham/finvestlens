@@ -1012,56 +1012,12 @@ struct RegisterView: View {
             }
         }
         .contextMenu(forSelectionType: GncGUID.self) { ids in
-            if let splitID = ids.first, let txnID = model.transactionID(ofSplit: splitID) {
-                Button("Edit…") { editingTransactionID = txnID }
-                Button("Go to Other Account") { model.jumpToOtherAccount(ofSplit: splitID) }
-                if model.hasLinkedDocument(txnID) {
-                    Button("Open Linked Document", systemImage: "paperclip") {
-                        model.openLinkedDocument(for: txnID)
-                    }
-                }
-                Divider()
-                reconcileStateMenu(splitID: splitID)
-                Divider()
-                Button("Duplicate") { model.duplicateTransaction(txnID) }
-                Button("Add Reversing Transaction") { _ = model.addReversingTransaction(txnID) }
-                if model.isVoided(txnID) {
-                    Button("Unvoid") { model.unvoidTransaction(txnID) }
-                } else {
-                    Button("Void") { model.voidTransaction(txnID) }
-                }
-                Divider()
-                Button("Delete", role: .destructive) { model.deleteTransaction(txnID) }
-            }
+            TransactionActions(model: model, splitID: ids.first)
         }
-        .sheet(item: $editingTransactionID) { id in
+        .sheet(item: $model.editingTransactionID) { id in
             TransactionEditorSheet(model: model, editingID: id)
         }
-    }
-
-    /// Every reconcile state, not just the three the R column cycles through.
-    ///
-    /// `setReconcileState` has handled all five since it was written, and had no
-    /// caller outside its tests — so frozen (`f`) could be imported, stored,
-    /// exported and shown, but never set. Clicking the R column still cycles
-    /// n → c → y, which is the common path; this is where the other two live.
-    /// Voided is absent on purpose: it is not a flag but an operation, and it
-    /// has its own Void/Unvoid item that rewrites the whole transaction.
-    @ViewBuilder
-    private func reconcileStateMenu(splitID: GncGUID) -> some View {
-        let current = model.reconcileState(ofSplit: splitID)
-        Menu("Reconcile State") {
-            Picker("Reconcile State", selection: Binding(
-                get: { current ?? .notReconciled },
-                set: { model.setReconcileState(splitID: splitID, to: $0) }
-            )) {
-                ForEach(ReconcileState.settableInRegister, id: \.self) { state in
-                    Text(state.label).tag(state)
-                }
-            }
-            .pickerStyle(.inline)
-        }
-        .disabled(current == .voided)
+        .onChange(of: selection) { model.selectedSplitID = selection.first }
     }
 
     /// Rows are ordered oldest first, so the newest posting is the last row.
@@ -1165,13 +1121,110 @@ struct JournalView: View {
             .width(min: 100, ideal: 130)
         }
         .contextMenu(forSelectionType: GncGUID.self) { ids in
+            // A journal row is a heading or a leg. A heading has no split of its
+            // own, so act on the transaction's first leg — the same transaction
+            // either way, which is what the operations are about.
             if let id = ids.first, let row = rows.first(where: { $0.id == id }) {
-                Button("Edit…") { editingTransactionID = row.transactionID }
+                TransactionActions(model: model, splitID: model.anySplitID(ofTransaction: row.transactionID))
             }
         }
-        .sheet(item: $editingTransactionID) { id in
+        .sheet(item: $model.editingTransactionID) { id in
             TransactionEditorSheet(model: model, editingID: id)
         }
+        .onChange(of: selection) {
+            if let id = selection.first, let row = rows.first(where: { $0.id == id }) {
+                model.selectedSplitID = model.anySplitID(ofTransaction: row.transactionID)
+            } else {
+                model.selectedSplitID = nil
+            }
+        }
+    }
+}
+
+/// Everything you can do to the selected transaction.
+///
+/// One definition, used by the Basic register's context menu, the Journal's,
+/// the General Ledger's, and the Transaction menu in the menu bar. They were
+/// three different lists before — Basic had seven operations, Journal had Edit,
+/// and the menu bar had none — and the only way to keep them the same is for
+/// there to be one of them.
+public struct TransactionActions: View {
+    @Bindable var model: AppModel
+    /// The split the row stands for. `nil` when nothing is selected, which is
+    /// what disables the menu-bar copy.
+    var splitID: GncGUID?
+
+    public init(model: AppModel, splitID: GncGUID?) {
+        self.model = model
+        self.splitID = splitID
+    }
+
+    private var txnID: GncGUID? { splitID.flatMap { model.transactionID(ofSplit: $0) } }
+
+    public var body: some View {
+        Group {
+            Button("Edit Transaction…") { model.editingTransactionID = txnID }
+                .keyboardShortcut("e", modifiers: .command)
+            Button("Go to Other Account") {
+                if let splitID { model.jumpToOtherAccount(ofSplit: splitID) }
+            }
+            .keyboardShortcut("j", modifiers: .command)
+            if let txnID, model.hasLinkedDocument(txnID) {
+                Button("Open Linked Document", systemImage: "paperclip") {
+                    model.openLinkedDocument(for: txnID)
+                }
+            }
+            Divider()
+            reconcileStateMenu
+            Divider()
+            Button("Duplicate Transaction") {
+                if let txnID { model.duplicateTransaction(txnID) }
+            }
+            .keyboardShortcut("d", modifiers: .command)
+            Button("Add Reversing Transaction") {
+                if let txnID { _ = model.addReversingTransaction(txnID) }
+            }
+            if let txnID, model.isVoided(txnID) {
+                Button("Unvoid Transaction") { model.unvoidTransaction(txnID) }
+            } else {
+                Button("Void Transaction") {
+                    if let txnID { model.voidTransaction(txnID) }
+                }
+            }
+            Divider()
+            Button("Delete Transaction", role: .destructive) {
+                if let txnID { model.deleteTransaction(txnID) }
+            }
+            .keyboardShortcut(.delete, modifiers: .command)
+        }
+        .disabled(txnID == nil)
+    }
+
+    /// Every reconcile state, not just the three the R column cycles through.
+    ///
+    /// `setReconcileState` has handled all five since it was written, and had no
+    /// caller outside its tests — so frozen (`f`) could be imported, stored,
+    /// exported and shown, but never set. Clicking the R column still cycles
+    /// n → c → y, which is the common path; this is where the other two live.
+    /// Voided is absent on purpose: it is not a flag but an operation, and it
+    /// has its own Void/Unvoid item that rewrites the whole transaction.
+    @ViewBuilder
+    private var reconcileStateMenu: some View {
+        let current = splitID.flatMap { model.reconcileState(ofSplit: $0) }
+        Menu("Reconcile State") {
+            Picker("Reconcile State", selection: Binding(
+                get: { current ?? .notReconciled },
+                set: { state in
+                    if let splitID { model.setReconcileState(splitID: splitID, to: state) }
+                }
+            )) {
+                ForEach(ReconcileState.settableInRegister, id: \.self) { state in
+                    Text(state.label).tag(state)
+                }
+            }
+            .pickerStyle(.inline)
+        }
+        .disabled(splitID == nil || current == .voided)
     }
 }
 
