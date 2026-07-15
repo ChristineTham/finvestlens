@@ -1021,6 +1021,8 @@ struct RegisterView: View {
                     }
                 }
                 Divider()
+                reconcileStateMenu(splitID: splitID)
+                Divider()
                 Button("Duplicate") { model.duplicateTransaction(txnID) }
                 Button("Add Reversing Transaction") { _ = model.addReversingTransaction(txnID) }
                 if model.isVoided(txnID) {
@@ -1035,6 +1037,31 @@ struct RegisterView: View {
         .sheet(item: $editingTransactionID) { id in
             TransactionEditorSheet(model: model, editingID: id)
         }
+    }
+
+    /// Every reconcile state, not just the three the R column cycles through.
+    ///
+    /// `setReconcileState` has handled all five since it was written, and had no
+    /// caller outside its tests — so frozen (`f`) could be imported, stored,
+    /// exported and shown, but never set. Clicking the R column still cycles
+    /// n → c → y, which is the common path; this is where the other two live.
+    /// Voided is absent on purpose: it is not a flag but an operation, and it
+    /// has its own Void/Unvoid item that rewrites the whole transaction.
+    @ViewBuilder
+    private func reconcileStateMenu(splitID: GncGUID) -> some View {
+        let current = model.reconcileState(ofSplit: splitID)
+        Menu("Reconcile State") {
+            Picker("Reconcile State", selection: Binding(
+                get: { current ?? .notReconciled },
+                set: { model.setReconcileState(splitID: splitID, to: $0) }
+            )) {
+                ForEach(ReconcileState.settableInRegister, id: \.self) { state in
+                    Text(state.label).tag(state)
+                }
+            }
+            .pickerStyle(.inline)
+        }
+        .disabled(current == .voided)
     }
 
     /// Rows are ordered oldest first, so the newest posting is the last row.

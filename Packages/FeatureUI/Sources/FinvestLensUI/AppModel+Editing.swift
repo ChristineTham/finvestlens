@@ -410,6 +410,12 @@ extension AppModel {
         book?.split(with: splitID)?.transaction?.guid
     }
 
+    /// A split's current reconcile state, for a menu that has to show a tick
+    /// against it.
+    public func reconcileState(ofSplit splitID: GncGUID) -> ReconcileState? {
+        book?.split(with: splitID)?.reconcileState
+    }
+
     // MARK: Reconciliation
 
     public func setReconcileState(splitID: GncGUID, to state: ReconcileState) {
