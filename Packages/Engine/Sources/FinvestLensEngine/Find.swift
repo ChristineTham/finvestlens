@@ -82,16 +82,25 @@ public enum NumberComparator: String, CaseIterable, Sendable, Hashable {
     }
 }
 
-/// Membership, for the criteria whose value is a set (GnuCash's "is" / "is not"
-/// next to a row of checkboxes).
+/// Membership, for the criteria whose value is a set.
 public enum SetComparator: String, CaseIterable, Sendable, Hashable {
     case isOneOf
     case isNotOneOf
 
+    /// Reads next to a row of checkboxes, as GnuCash words the reconcile row.
     public var label: String {
         switch self {
         case .isOneOf: "is"
         case .isNotOneOf: "is not"
+        }
+    }
+
+    /// GnuCash words the account row differently, and better: the set is a list
+    /// of accounts, so "is" would read as though only one could be chosen.
+    public var accountLabel: String {
+        switch self {
+        case .isOneOf: "matches any account"
+        case .isNotOneOf: "matches no accounts"
         }
     }
 }

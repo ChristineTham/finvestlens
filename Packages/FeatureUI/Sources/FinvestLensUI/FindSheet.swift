@@ -118,6 +118,7 @@ struct FindSheet: View {
                         FindCriterionRow(
                             criterion: $criterion,
                             accounts: model.postableAccounts,
+                            accountTree: model.accountTree,
                             onRemove: { criteria.removeAll { $0.id == criterion.id } },
                             canRemove: criteria.count > 1)
                     }
@@ -166,9 +167,13 @@ struct FindSheet: View {
 /// One criterion: field, comparator, value, and Remove — GnuCash's row.
 struct FindCriterionRow: View {
     @Binding var criterion: FindCriterion
+    /// Flat, for naming a chosen account; `accountTree` is what the picker shows.
     let accounts: [AccountNode]
+    let accountTree: [AccountNode]
     let onRemove: () -> Void
     let canRemove: Bool
+
+    @State private var accountPickerShown = false
 
     private var choice: FindFieldChoice { FindFieldChoice(criterion.test) }
 
@@ -277,25 +282,20 @@ struct FindCriterionRow: View {
                 get: { comparator },
                 set: { criterion.test = .account($0, ids) })
             ) {
-                ForEach(SetComparator.allCases, id: \.self) { Text($0.label).tag($0) }
+                ForEach(SetComparator.allCases, id: \.self) { Text($0.accountLabel).tag($0) }
             }
             .labelsHidden()
-            .frame(width: 70)
+            .frame(width: 190)
 
-            Menu {
-                ForEach(accounts) { account in
-                    Toggle(account.fullName, isOn: Binding(
-                        get: { ids.contains(account.id) },
-                        set: { on in
-                            var next = ids
-                            if on { next.insert(account.id) } else { next.remove(account.id) }
-                            criterion.test = .account(comparator, next)
-                        }))
+            // A tree behind a button, as GnuCash does it — 559 accounts is far
+            // too many for an inline menu.
+            Button(accountLabel(ids)) { accountPickerShown = true }
+                .frame(width: 200)
+                .popover(isPresented: $accountPickerShown) {
+                    AccountMatchPicker(tree: accountTree, selection: Binding(
+                        get: { ids },
+                        set: { criterion.test = .account(comparator, $0) }))
                 }
-            } label: {
-                Text(accountLabel(ids))
-            }
-            .frame(width: 220)
 
         case .balanced(let want):
             Picker("", selection: Binding(
