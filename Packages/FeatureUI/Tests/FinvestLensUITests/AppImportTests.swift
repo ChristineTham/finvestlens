@@ -69,7 +69,7 @@ struct AppImportTests {
     }
 
     @Test("GnuCash import preserves prices, book GUID, and KVP into the saved document")
-    func gnuCashImportKeepsEverything() throws {
+    func gnuCashImportKeepsEverything() async throws {
         let bookGUID = GncGUID.random().hexString
         let root = GncGUID.random().hexString
         let bank = GncGUID.random().hexString
@@ -127,7 +127,7 @@ struct AppImportTests {
         model.close()
 
         // On disk (after reopen): all of it persisted.
-        try model.open(at: destination)
+        try await model.open(at: destination)
         defer { model.close() }
         #expect(model.book?.prices.count == 1)
         #expect(model.book?.prices.first?.value == Decimal(string: "45.12"))

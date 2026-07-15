@@ -95,7 +95,7 @@ struct AppModelTests {
     }
 
     @Test("Save then reopen preserves the model")
-    func saveReopen() throws {
+    func saveReopen() async throws {
         let url = tempURL()
         defer { try? FileManager.default.removeItem(at: url) }
 
@@ -108,7 +108,7 @@ struct AppModelTests {
         model.close()
 
         let reopened = AppModel()
-        try reopened.open(at: url)
+        try await reopened.open(at: url)
         defer { reopened.close() }
         #expect(reopened.accountTree.count == 2)
         reopened.selectedAccountID = reopened.accountTree.first { $0.name == "Bank" }?.id

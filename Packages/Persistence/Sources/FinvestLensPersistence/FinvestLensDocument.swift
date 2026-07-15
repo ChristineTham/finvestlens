@@ -10,6 +10,20 @@ import Foundation
 import CryptoKit
 import FinvestLensEngine
 
+/// The executor that materialises books, off the main actor.
+///
+/// Reading a book is CPU-bound work over a reference graph that is deliberately
+/// **not** `Sendable` (`Book` is a cyclic graph of classes; making it `Sendable`
+/// would mean locking every access on the hot path). A global actor gives that
+/// work a home off the main thread without changing the graph: the document is
+/// built here, then handed to the caller as a `sending` value — the compiler
+/// checks the freshly-built graph is unreachable from this actor, so exactly one
+/// isolation domain can see it at a time.
+@globalActor
+public actor DocumentLoader {
+    public static let shared = DocumentLoader()
+}
+
 /// A `.finvestlens` document with the check-out / edit-locally / explicit-save
 /// lifecycle (Architecture §3 & §6.2).
 ///
@@ -130,6 +144,18 @@ public final class FinvestLensDocument {
                                    lockHeld: lockHeld,
                                    workingCopyURL: workingCopyURL, store: store,
                                    fingerprint: fingerprint, dirty: false)
+    }
+
+    /// ``open(at:breakStaleLock:)`` performed off the main actor.
+    ///
+    /// This is how the app opens a book: materialising the reference book takes
+    /// seconds on a large file, and on the main actor that time is a frozen,
+    /// unrepainting window. The result is `sending`, so the built document
+    /// leaves this actor entirely rather than being shared with it.
+    @DocumentLoader
+    public static func load(at fileURL: URL,
+                            breakStaleLock: Bool = false) throws -> sending FinvestLensDocument {
+        try open(at: fileURL, breakStaleLock: breakStaleLock)
     }
 
     // MARK: Editing

@@ -22,7 +22,7 @@ private func tempURL() -> URL {
 struct BudgetIntegrationTests {
 
     @Test("Budget-vs-actual reflects this month's spending and persists")
-    func budgetActualsAndPersist() throws {
+    func budgetActualsAndPersist() async throws {
         let url = tempURL()
         let model = AppModel()
         try model.newDocument(at: url)
@@ -49,7 +49,7 @@ struct BudgetIntegrationTests {
         model.close()
 
         let reopened = AppModel()
-        try reopened.open(at: url)
+        try await reopened.open(at: url)
         defer { reopened.close(); try? FileManager.default.removeItem(at: url) }
         #expect(reopened.budgets.first?.name == "Monthly")
         #expect(reopened.budgets.first?.amount(for: groceries) == Decimal(400))

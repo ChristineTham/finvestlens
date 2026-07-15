@@ -64,10 +64,66 @@ public enum RootPanel: String, Identifiable, Sendable {
 public final class AppModel {
 
     public private(set) var document: FinvestLensDocument?
+
+    /// The book currently being opened, or `nil`. The load runs off the main
+    /// actor, so the window stays live and can say what it is doing rather than
+    /// appearing to ignore the click — on the reference book the read alone is
+    /// seconds long.
+    public private(set) var openingURL: URL?
+
+    /// True while a book is being opened.
+    public var isOpening: Bool { openingURL != nil }
+
     public private(set) var accountTree: [AccountNode] = []
     public private(set) var registerRows: [RegisterRow] = []
-    public private(set) var priceRows: [PriceRow] = []
-    public private(set) var rateRows: [RateRow] = []
+
+    /// Bumped by ``refreshAll()`` whenever derived state is invalidated. The
+    /// lazily-derived rows below read it, which is what registers them as
+    /// observation dependencies — so a view showing them redraws after an edit
+    /// even though the rows themselves are not stored observed properties.
+    private var derivedRevision = 0
+
+    /// Price/rate rows for the price and rate editors, sorted newest first.
+    ///
+    /// Derived on demand rather than in ``refreshAll()``: sorting all 102,706
+    /// prices of the reference book and building a row per price cost ~0.09s of
+    /// every edit, for two panels that are usually closed. Building them here
+    /// means an edit pays nothing and the panel pays once per change.
+    public var priceRows: [PriceRow] {
+        _ = derivedRevision
+        buildPriceRowsIfNeeded()
+        return priceRowCache ?? []
+    }
+
+    public var rateRows: [RateRow] {
+        _ = derivedRevision
+        buildPriceRowsIfNeeded()
+        return rateRowCache ?? []
+    }
+
+    /// Caches for the two properties above. Not observed: they are a pure
+    /// function of the book, and ``refreshAll()`` drops them alongside the
+    /// observed state that does drive the redraw. Writing them from a getter
+    /// must not notify observers, or reading a row inside a view's body would
+    /// invalidate that body.
+    @ObservationIgnored private var priceRowCache: [PriceRow]?
+    @ObservationIgnored private var rateRowCache: [RateRow]?
+
+    /// Fills both caches from **one** sort — the editor shows prices and rates
+    /// together, and sorting 102,706 prices once per property would pay the
+    /// dominant cost twice. The sorted array itself is not retained.
+    private func buildPriceRowsIfNeeded() {
+        guard priceRowCache == nil || rateRowCache == nil else { return }
+        let sorted = book?.prices.sorted { $0.date > $1.date } ?? []
+        priceRowCache = sorted
+            .filter { $0.commodity.namespace != .currency }
+            .map { PriceRow(id: $0.guid, symbol: $0.commodity.mnemonic,
+                            currencyCode: $0.currency.mnemonic, date: $0.date, value: $0.value) }
+        rateRowCache = sorted
+            .filter { $0.commodity.namespace == .currency }
+            .map { RateRow(id: $0.guid, from: $0.commodity.mnemonic,
+                           to: $0.currency.mnemonic, date: $0.date, value: $0.value) }
+    }
 
     public var selectedAccountID: GncGUID? {
         didSet { refreshRegister() }
@@ -269,14 +325,16 @@ public final class AppModel {
         resetUndoStack()
     }
 
-    public func open(at url: URL, breakStaleLock: Bool = false) throws {
+    public func open(at url: URL, breakStaleLock: Bool = false) async throws {
         // Books picked via the iOS document picker (iCloud Drive, Box,
         // Dropbox, …) are security-scoped; access must span the whole session
         // because saves write back to the shared file.
         let accessURL = beginBookAccess(to: url)
         do {
-            document = try FinvestLensDocument.open(at: accessURL,
-                                                    breakStaleLock: breakStaleLock)
+            // Off the main actor: materialising the book is seconds of CPU on a
+            // large file, and the window cannot repaint while it runs.
+            document = try await FinvestLensDocument.load(at: accessURL,
+                                                          breakStaleLock: breakStaleLock)
         } catch {
             endBookAccess()
             throw error
@@ -501,16 +559,22 @@ public final class AppModel {
 
     /// Saves any open book, then opens `url`; failures land in
     /// ``documentError`` (with Break-Lock recovery for stale locks).
-    public func openBook(at url: URL, breakStaleLock: Bool = false) {
+    public func openBook(at url: URL, breakStaleLock: Bool = false) async {
         // Re-opening the book that is already open is a no-op, not a reload.
-        // Opening blocks the main thread (~45s on a 46k-transaction book), so
-        // the window can't repaint and the click looks ignored — people click
-        // again, and that second click would otherwise close the book that had
-        // just opened and read the whole thing back in. Use Revert to reload.
+        // Use Revert to reload.
         if isOpen, documentURL?.standardizedFileURL == url.standardizedFileURL { return }
+        // The load runs off the main actor, so the window stays live while it
+        // runs — which means a second click *can* arrive mid-load. Without this
+        // guard it would open a second document over the first, orphaning the
+        // first one's lock and working copy. The check and the set are both on
+        // the main actor with no suspension between them, so two clicks cannot
+        // both get past it.
+        if isOpening { return }
         guard saveAndCloseIfOpen() else { return }
+        openingURL = url
+        defer { openingURL = nil }
         do {
-            try open(at: url, breakStaleLock: breakStaleLock)
+            try await open(at: url, breakStaleLock: breakStaleLock)
         } catch {
             // A recent whose file has gone is dead weight: drop it now rather
             // than leave the user to hit the same error on every launch.
@@ -621,6 +685,9 @@ public final class AppModel {
         endBookAccess()
         journalTransactionCache = [:]
         journalRowCache = [:]
+        priceRowCache = nil
+        rateRowCache = nil
+        derivedRevision &+= 1
         accountTree = []
         registerRows = []
         selectedAccountID = nil
@@ -714,23 +781,12 @@ public final class AppModel {
     func refreshAll() {
         journalTransactionCache = [:]
         journalRowCache = [:]
+        priceRowCache = nil
+        rateRowCache = nil
+        derivedRevision &+= 1
         rebuildAccountTree()
         refreshRegister()
-        rebuildPrices()
         runSearch()
-    }
-
-    private func rebuildPrices() {
-        guard let book else { priceRows = []; rateRows = []; return }
-        let sorted = book.prices.sorted { $0.date > $1.date }
-        priceRows = sorted
-            .filter { $0.commodity.namespace != .currency }
-            .map { PriceRow(id: $0.guid, symbol: $0.commodity.mnemonic,
-                            currencyCode: $0.currency.mnemonic, date: $0.date, value: $0.value) }
-        rateRows = sorted
-            .filter { $0.commodity.namespace == .currency }
-            .map { RateRow(id: $0.guid, from: $0.commodity.mnemonic,
-                           to: $0.currency.mnemonic, date: $0.date, value: $0.value) }
     }
 
     /// Marks the document dirty and rebuilds derived state. Records nothing on

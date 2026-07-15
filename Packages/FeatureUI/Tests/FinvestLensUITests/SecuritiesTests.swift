@@ -41,7 +41,7 @@ struct SecuritiesTests {
     }
 
     @Test("Watch list adds a pricable, unheld security and persists")
-    func watchlist() throws {
+    func watchlist() async throws {
         let url = tempURL()
         let model = AppModel()
         try model.newDocument(at: url)
@@ -55,7 +55,7 @@ struct SecuritiesTests {
 
         try model.save(); model.close()
         let reopened = AppModel()
-        try reopened.open(at: url)
+        try await reopened.open(at: url)
         defer { reopened.close(); try? FileManager.default.removeItem(at: url) }
         #expect(reopened.watchlist.first?.mnemonic == "AAPL")
     }

@@ -68,14 +68,14 @@ struct ScheduledIntegrationTests {
     }
 
     @Test("Scheduled transactions persist across save and reopen")
-    func persist() throws {
+    func persist() async throws {
         let (model, from, to, url) = try setup()
         model.addScheduledTransaction(rentSX(from: from, to: to))
         try model.save()
         model.close()
 
         let reopened = AppModel()
-        try reopened.open(at: url)
+        try await reopened.open(at: url)
         defer { reopened.close(); try? FileManager.default.removeItem(at: url) }
         #expect(reopened.scheduledTransactions.first?.name == "Rent")
         #expect(reopened.scheduledTransactions.first?.isBalanced == true)

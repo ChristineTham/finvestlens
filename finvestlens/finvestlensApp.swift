@@ -54,7 +54,7 @@ struct finvestlensApp: App {
                 .onOpenURL { url in
                     // Opened from Finder / another app via the .finvestlens type.
                     guard url.pathExtension == "finvestlens" else { return }
-                    model.openBook(at: url)
+                    Task { await model.openBook(at: url) }
                 }
                 .finvestLensAppearance()
             #if os(macOS)
@@ -75,12 +75,12 @@ struct finvestlensApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("New Book…") { DocumentDialogs.newBook(model) }
                     .keyboardShortcut("n", modifiers: .command)
-                Button("Open…") { DocumentDialogs.openBook(model) }
+                Button("Open…") { Task { await DocumentDialogs.openBook(model) } }
                     .keyboardShortcut("o", modifiers: .command)
                 Menu("Open Recent") {
                     ForEach(model.recentBooks, id: \.self) { url in
                         Button(url.deletingPathExtension().lastPathComponent) {
-                            model.openBook(at: url)
+                            Task { await model.openBook(at: url) }
                         }
                     }
                     if model.recentBooks.isEmpty {

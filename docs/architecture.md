@@ -426,9 +426,34 @@ With no baseline to maintain, opening a book stops exporting entirely.
 
 This had to be **all-or-nothing**. With the baseline gone, any site left on the old path would apply its edit and silently register no undo — worse than slow undo, on financial data. So the bare `markDirtyAndRefresh` was removed outright, making every one of the 40 call sites a compile error until converted, and the compiler the checklist. A partial migration here is not a smaller version of this change; it is a broken one.
 
-### 12.5 What is deliberately still slow
+### 12.5 Derive the price rows only when something looks at them
 
-Opening a book is synchronous and takes ~6.5s on the reference file, essentially all of it `store.read`; the window cannot repaint while it runs, so the click looks ignored. `refreshAll()` re-sorts all 102,706 prices per edit for the price/rate editors. Both are recorded in [deferred.md](deferred.md) with what they need — the former wants the load off the main actor (`Book` is a reference graph and not `Sendable`), the latter wants those rows derived lazily.
+`refreshAll()` sorted all 102,706 prices and built a row per price on **every** mutation — for the price and rate editors, two panels that are almost always closed. That was most of what an edit cost.
+
+`priceRows`/`rateRows` are now computed properties over a cache dropped in `refreshAll()`/`close()`, like the journal rows above. The subtlety is observation: the cache is `@ObservationIgnored` (writing it from a getter must not invalidate the body doing the reading), so the properties read a `derivedRevision` counter that `refreshAll()` bumps. That counter is the observation dependency — a panel showing the rows still redraws after an edit, while an edit with no panel open sorts nothing.
+
+> `refreshAll()` (release) 0.158s → **0.041s**; with a 9,018-split register selected 0.174s → **0.062s**. An edit is now dominated by `rebuildAccountTree`, not prices.
+
+### 12.6 Read the book off the main actor
+
+`store.read` is ~1.5s of CPU (release) on the reference book, and it ran on the main actor: the window could not repaint, so the click looked ignored.
+
+`Book` is a cyclic graph of classes and deliberately not `Sendable` — making it so would mean locking every access on the hot path, to solve a problem that only exists for the few seconds it is being built. Instead the *work* moves: `FinvestLensDocument.load` is isolated to a `DocumentLoader` global actor and returns `sending FinvestLensDocument`. The compiler checks the freshly-built graph is unreachable from the loader, so it transfers to the main actor with exactly one isolation domain able to see it at a time — no locks, no `Sendable`.
+
+Because the window now stays live, a second click can arrive *during* a load; `openBook` guards on `isOpening` (checked and set with no suspension between) so it cannot open a second document over the first and orphan the first one's lock. `openBook` is `async` for the same reason: it returns before the book is open, and a caller that assumed otherwise would silently act on the previous book.
+
+> Open (release) 1.97s wall, of which the main actor is blocked for ~0.1s instead of ~1.5s; the window shows "Opening <book>…" throughout. Debug is ~4× slower on the read (5.8s) — worth knowing when judging a measurement.
+
+### 12.7 Measure in the configuration you ship
+
+Debug and release differ by ~4× on this workload, and the difference is all in the `Decimal`/row-building loops. `store.read` is 5.79s debug / 1.49s release; `refreshAll` was 0.247s debug / 0.158s release. Xcode's Run action is Debug, so figures gathered by using the app are the debug ones — quote which configuration a number came from, or it will be read as the shipping cost.
+
+Both harnesses are re-runnable and skip unless pointed at a real book:
+
+```
+FL_PERF_FILE="…/Book.finvestlens" swift test -c release --filter LiveOpenPerfTests     # Persistence: open phases
+FL_PERF_FILE="…/Book.finvestlens" swift test -c release --filter LiveRefreshPerfTests  # FeatureUI: cost of an edit
+```
 
 ---
 

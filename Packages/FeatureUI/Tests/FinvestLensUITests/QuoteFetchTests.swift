@@ -70,7 +70,7 @@ struct QuoteFetchTests {
     }
 
     @Test("Ticker override persists via the book KVP")
-    func symbolPersists() throws {
+    func symbolPersists() async throws {
         let (model, cba, url) = try modelWithSecurity(FixedHTTP(chartJSON))
         model.setQuoteSymbol("CBA.AX", for: cba)
         #expect(model.quoteSymbol(for: cba) == "CBA.AX")
@@ -78,7 +78,7 @@ struct QuoteFetchTests {
         model.close()
 
         let reopened = AppModel()
-        try reopened.open(at: url)
+        try await reopened.open(at: url)
         defer { reopened.close(); try? FileManager.default.removeItem(at: url) }
         #expect(reopened.quoteSymbol(for: cba) == "CBA.AX")
     }

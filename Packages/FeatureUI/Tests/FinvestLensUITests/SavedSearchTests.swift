@@ -21,7 +21,7 @@ private func tempURL() -> URL {
 struct SavedSearchTests {
 
     @Test("Save, persist, reopen, apply")
-    func lifecycle() throws {
+    func lifecycle() async throws {
         let url = tempURL()
         let model = AppModel()
         try model.newDocument(at: url)
@@ -32,7 +32,7 @@ struct SavedSearchTests {
         model.close()
 
         let reopened = AppModel()
-        try reopened.open(at: url)
+        try await reopened.open(at: url)
         defer { reopened.close(); try? FileManager.default.removeItem(at: url) }
         #expect(reopened.savedSearches.first?.name == "Big work")
         reopened.applySavedSearch(reopened.savedSearches.first!.id)

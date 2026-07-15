@@ -142,7 +142,7 @@ struct AccountColorTests {
     }
 
     @Test("Setting an account colour lands in the tree, the slot, and the file")
-    func colorPersists() throws {
+    func colorPersists() async throws {
         let url = tempURL()
         defer { try? FileManager.default.removeItem(at: url) }
         let model = AppModel()
@@ -155,7 +155,7 @@ struct AccountColorTests {
         try model.save()
         model.close()
 
-        try model.open(at: url)
+        try await model.open(at: url)
         defer { model.close() }
         #expect(model.accountColor(bank) == "rgb(144,144,238)")
 

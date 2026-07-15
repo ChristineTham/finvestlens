@@ -131,6 +131,31 @@ public struct LockView: View {
     }
 }
 
+/// Shown while a book is being read. The read runs off the main actor, so this
+/// view actually animates — the point of it is that a large book no longer looks
+/// like a click that did nothing.
+public struct OpeningBookView: View {
+    let url: URL
+    @Environment(\.appFontScale) private var appFontScale
+
+    public init(url: URL) { self.url = url }
+
+    public var body: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .controlSize(.large)
+            Text("Opening \(url.deletingPathExtension().lastPathComponent)…")
+                .scaledFont(.title3, weight: .semibold)
+            Text("Reading accounts, transactions and prices.")
+                .foregroundStyle(.secondary)
+        }
+        .padding(48)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Opening \(url.deletingPathExtension().lastPathComponent)")
+    }
+}
+
 // MARK: - Root
 
 /// The main document view: accounts sidebar + register (or search results).

@@ -79,7 +79,7 @@ struct UsabilityGapTests {
     }
 
     @Test("openBook surfaces a lock error with Break-Lock recovery, which works")
-    func staleLockRecovery() throws {
+    func staleLockRecovery() async throws {
         let url = tempURL()
         let lockURL = url.deletingPathExtension().appendingPathExtension("lock")
         defer { try? FileManager.default.removeItem(at: url)
@@ -99,21 +99,21 @@ struct UsabilityGapTests {
 
         // A plain open refuses and surfaces Break-Lock recovery…
         let second = AppModel()
-        second.openBook(at: url)
+        await second.openBook(at: url)
         #expect(!second.isOpen)
         let error = try #require(second.documentError)
         #expect(error.lockedURL == url)
 
         // …and breaking the stale lock opens the book.
         second.documentError = nil
-        second.openBook(at: url, breakStaleLock: true)
+        await second.openBook(at: url, breakStaleLock: true)
         #expect(second.isOpen)
         #expect(second.documentError == nil)
         second.close()
     }
 
     @Test("openBook auto-saves and closes the previous book")
-    func switchingBooksSaves() throws {
+    func switchingBooksSaves() async throws {
         let a = tempURL(), b = tempURL()
         defer { try? FileManager.default.removeItem(at: a)
                 try? FileManager.default.removeItem(at: b) }
@@ -126,13 +126,13 @@ struct UsabilityGapTests {
         // Create book B, then switch back to A — the edit must have been saved.
         model.newBook(at: b)
         #expect(model.isOpen)
-        model.openBook(at: a)
+        await model.openBook(at: a)
         #expect(model.accountTree.contains { $0.name == "Assets" })
         model.close()
     }
 
     @Test("Recents list is most-recent-first, deduplicated, capped at 5")
-    func recents() throws {
+    func recents() async throws {
         UserDefaults.standard.removeObject(forKey: "finvestlens.recentBookPaths")
         var urls: [URL] = []
         defer { urls.forEach { try? FileManager.default.removeItem(at: $0) } }
@@ -145,7 +145,7 @@ struct UsabilityGapTests {
             model.close()
         }
         // Re-open the 3rd book: it should move to the front, no duplicate.
-        model.openBook(at: urls[2])
+        await model.openBook(at: urls[2])
         model.close()
 
         #expect(model.recentBooks.count == 5)

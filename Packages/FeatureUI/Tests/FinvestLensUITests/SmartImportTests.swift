@@ -227,7 +227,7 @@ struct SmartInvoiceTests {
 struct StatementDatePersistenceTests {
 
     @Test("statementDate survives save and reopen in the native document")
-    func roundTrip() throws {
+    func roundTrip() async throws {
         let url = tempURL()
         defer { try? FileManager.default.removeItem(at: url) }
         let model = AppModel()
@@ -247,7 +247,7 @@ struct StatementDatePersistenceTests {
         model.close()
 
         let reopened = AppModel()
-        try reopened.open(at: url)
+        try await reopened.open(at: url)
         defer { reopened.close() }
         let transaction = try #require(reopened.book?.transaction(with: id))
         #expect(transaction.statementDate == utcDate(2026, 6, 6))

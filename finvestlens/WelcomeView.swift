@@ -220,7 +220,7 @@ struct WelcomeView: View {
                     .textCase(.uppercase)
                 ForEach(model.recentBooks.prefix(3), id: \.self) { url in
                     Button {
-                        model.openBook(at: url)
+                        Task { await model.openBook(at: url) }
                     } label: {
                         Label(url.deletingPathExtension().lastPathComponent,
                               systemImage: "clock.arrow.circlepath")

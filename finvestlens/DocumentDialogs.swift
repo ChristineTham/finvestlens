@@ -33,13 +33,13 @@ enum DocumentDialogs {
     }
 
     /// File ▸ Open…: pick an existing .finvestlens book.
-    static func openBook(_ model: AppModel) {
+    static func openBook(_ model: AppModel) async {
         let panel = NSOpenPanel()
         panel.title = "Open Book"
         panel.allowedContentTypes = [documentType, .data]
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        model.openBook(at: url)
+        await model.openBook(at: url)
     }
 
     /// File ▸ Import GnuCash…: pick the GnuCash XML, then where to save the

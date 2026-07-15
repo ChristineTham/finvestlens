@@ -39,7 +39,9 @@ struct RootHost: View {
 
     var body: some View {
         Group {
-            if model.isOpen && model.isLocked {
+            if let openingURL = model.openingURL {
+                OpeningBookView(url: openingURL)
+            } else if model.isOpen && model.isLocked {
                 LockView(model: model)
             } else if model.isOpen, let url = model.documentURL {
                 FinvestLensRootView(model: model)
@@ -53,7 +55,7 @@ struct RootHost: View {
         .onAppear { model.undoManager = undoManager }
         .onChange(of: undoManager == nil) { model.undoManager = undoManager }
         .fileImporter(isPresented: $importing, allowedContentTypes: [Self.documentType, .data]) { result in
-            if case .success(let url) = result { model.openBook(at: url) }
+            if case .success(let url) = result { Task { await model.openBook(at: url) } }
         }
         // Check & Repair review (offered after GnuCash import, or from the
         // Book menu). Anchored on a background view so it can't clobber the
@@ -69,7 +71,7 @@ struct RootHost: View {
                presenting: model.documentError) { error in
             if let lockedURL = error.lockedURL {
                 Button("Break Lock and Open") {
-                    model.openBook(at: lockedURL, breakStaleLock: true)
+                    Task { await model.openBook(at: lockedURL, breakStaleLock: true) }
                 }
                 Button("Cancel", role: .cancel) {}
             } else {
@@ -101,7 +103,7 @@ struct RootHost: View {
 
     private func openBook() {
         #if os(macOS)
-        DocumentDialogs.openBook(model)
+        Task { await DocumentDialogs.openBook(model) }
         #else
         importing = true
         #endif

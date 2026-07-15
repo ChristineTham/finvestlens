@@ -30,7 +30,7 @@ struct BookLockTests {
         model.close()
 
         let reopened = AppModel(authenticator: AllowAllAuthenticator())
-        try reopened.open(at: url)
+        try await reopened.open(at: url)
         defer { reopened.close(); try? FileManager.default.removeItem(at: url) }
         #expect(reopened.requireAuthentication)
         #expect(reopened.isLocked)                    // locked on open

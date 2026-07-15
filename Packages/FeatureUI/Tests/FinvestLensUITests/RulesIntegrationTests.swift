@@ -51,7 +51,7 @@ struct RulesIntegrationTests {
     }
 
     @Test("Rules persist across save and reopen")
-    func rulesPersist() throws {
+    func rulesPersist() async throws {
         let url = tempURL()
         let model = AppModel()
         try model.newDocument(at: url)
@@ -65,7 +65,7 @@ struct RulesIntegrationTests {
         model.close()
 
         let reopened = AppModel()
-        try reopened.open(at: url)
+        try await reopened.open(at: url)
         defer { reopened.close(); try? FileManager.default.removeItem(at: url) }
         #expect(reopened.ruleGroups.first?.rules.first?.name == "R")
     }

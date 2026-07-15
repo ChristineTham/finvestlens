@@ -22,7 +22,7 @@ private func tempURL() -> URL {
 struct PortfolioIntegrationTests {
 
     @Test("Add a price, value the portfolio, and persist")
-    func portfolioAndPersist() throws {
+    func portfolioAndPersist() async throws {
         let url = tempURL()
         let model = AppModel()
         try model.newDocument(at: url)
@@ -54,7 +54,7 @@ struct PortfolioIntegrationTests {
         model.close()
 
         let reopened = AppModel()
-        try reopened.open(at: url)
+        try await reopened.open(at: url)
         defer { reopened.close(); try? FileManager.default.removeItem(at: url) }
         #expect(reopened.priceRows.count == 1)
         #expect(reopened.priceRows.first?.symbol == "CBA")
