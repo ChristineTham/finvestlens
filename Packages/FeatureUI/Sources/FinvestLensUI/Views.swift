@@ -819,6 +819,7 @@ struct RegisterView: View {
     @State private var editingTransactionID: GncGUID?
     @State private var style: RegisterStyle = .basic
     @State private var filterShown = false
+    @State private var goToDateShown = false
     /// GnuCash's View ▸ Double Line. A preference rather than per-register
     /// state, as in GnuCash, so it survives moving between accounts.
     @AppStorage("registerDoubleLine") private var doubleLine = false
@@ -835,6 +836,7 @@ struct RegisterView: View {
                 .fixedSize()
                 if style == .basic {
                     Spacer()
+                    if model.selectedAccountHasChildren { subaccountsToggle }
                     doubleLineToggle
                     sortMenu
                     filterButton
@@ -849,6 +851,20 @@ struct RegisterView: View {
         .sheet(isPresented: $filterShown) {
             RegisterFilterSheet(model: model)
         }
+        .sheet(isPresented: $goToDateShown) {
+            GoToDateSheet(model: model)
+        }
+    }
+
+    /// GnuCash's Open Subaccounts, as a toggle rather than a second window:
+    /// show the whole subtree's postings in this register. Only offered when
+    /// the account has something under it — on a leaf it would do nothing.
+    private var subaccountsToggle: some View {
+        Toggle(isOn: $model.registerIncludesSubaccounts) {
+            Label("Subaccounts", systemImage: "list.bullet.indent")
+        }
+        .toggleStyle(.button)
+        .help("Include this account’s subaccounts in the register")
     }
 
     /// GnuCash's View ▸ Double Line: show each row's notes, memo and action
@@ -905,6 +921,8 @@ struct RegisterView: View {
                 .keyboardShortcut(.upArrow, modifiers: .command)
             Button("Go to Newest Transaction") { jump = .newest }
                 .keyboardShortcut(.downArrow, modifiers: .command)
+            Button("Go to Date…") { goToDateShown = true }
+                .keyboardShortcut("g", modifiers: .command)
         }
         .opacity(0)
         .accessibilityHidden(true)
@@ -989,6 +1007,12 @@ struct RegisterView: View {
                     }
                 }
             }
+            // Which account a row posted to, which only a subtree register has
+            // to answer — in a single-account register every row is the same
+            // account and the column would say nothing.
+            TableColumn("Account") { row in
+                Text(row.accountName).scaledFont(.body).foregroundStyle(.secondary)
+            }
             TableColumn("Transfer") { row in
                 Text(row.transfer).scaledFont(.body)
             }
@@ -1006,11 +1030,18 @@ struct RegisterView: View {
                     .foregroundStyle(row.amount < 0 ? .red : .primary)
             }
             TableColumn("Balance") { row in
-                Text(AmountFormat.string(row.runningBalance, code: currencyCode))
-                    .scaledFont(.body)
-                    .monospacedDigit()
+                // Absent for a subtree spanning several commodities: a running
+                // total of shares and dollars is a number of nothing.
+                if let balance = row.runningBalance {
+                    Text(AmountFormat.string(balance, code: currencyCode))
+                        .scaledFont(.body)
+                        .monospacedDigit()
+                } else {
+                    Text("—").foregroundStyle(.tertiary)
+                }
             }
         }
+        .tableColumnHeaders(.visible)
         .contextMenu(forSelectionType: GncGUID.self) { ids in
             TransactionActions(model: model, splitID: ids.first)
         }
@@ -1225,6 +1256,44 @@ public struct TransactionActions: View {
             .pickerStyle(.inline)
         }
         .disabled(splitID == nil || current == .voided)
+    }
+}
+
+/// GnuCash's Go to Date (⌘G): jump the register to where a day begins.
+struct GoToDateSheet: View {
+    @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var date = Date()
+    @State private var missed = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                DatePicker("Date", selection: $date, displayedComponents: .date)
+                if missed {
+                    Text("No transaction on or after that date.")
+                        .scaledFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Go to Date")
+            .onEscapeCommand { dismiss() }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Go") {
+                        // Say so rather than dismissing onto an unchanged
+                        // register, which would read as the jump being ignored.
+                        if model.goToDate(date) { dismiss() } else { missed = true }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+            .onChange(of: date) { missed = false }
+        }
+        .frame(minWidth: 340, minHeight: 180)
     }
 }
 

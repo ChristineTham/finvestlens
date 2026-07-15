@@ -47,8 +47,14 @@ public struct RegisterRow: Identifiable, Hashable, Sendable {
     public var memo: String
     public var notes: String
     public var action: String
+    /// The account this row posted to. Empty unless the register is showing a
+    /// subtree, where "which account" is the question a single-account register
+    /// never had to answer.
+    public var accountName: String = ""
     public var amount: Decimal
-    public var runningBalance: Decimal
+    /// The account's balance as of this posting, or `nil` when the register
+    /// spans more than one commodity and a running total would mean nothing.
+    public var runningBalance: Decimal?
 
     /// What double-line mode shows beneath the description: the transaction's
     /// notes, then this split's own memo, then its action. Any of the three can
@@ -217,6 +223,11 @@ public final class AppModel {
     public var registerFilter: RegisterFilter = .showAll {
         didSet { if oldValue != registerFilter { refreshRegister() } }
     }
+    /// GnuCash's Open Subaccounts: show the selected account's whole subtree in
+    /// one register, not just its own postings (`FR-ACC-03`).
+    public var registerIncludesSubaccounts = false {
+        didSet { if oldValue != registerIncludesSubaccounts { refreshRegister() } }
+    }
 
     /// Resets the register's view options — called when the book closes, so a
     /// filter set on one book can't quietly hide rows in the next.
@@ -224,6 +235,7 @@ public final class AppModel {
         registerSort = .standard
         registerSortReversed = false
         registerFilter = .showAll
+        registerIncludesSubaccounts = false
     }
 
     /// A register row to select and scroll to the next time a register shows —
@@ -236,6 +248,31 @@ public final class AppModel {
     func consumePendingRegisterSelection() -> GncGUID? {
         defer { pendingRegisterSplitID = nil }
         return pendingRegisterSplitID
+    }
+
+    /// GnuCash's Go to Date (`FR-REG-08`): select the first row posted on or
+    /// after `date`, so the register lands where that day begins.
+    ///
+    /// On or *after*, not on: most dates in a year have no posting, and a jump
+    /// that only worked when you named a day something happened would be a jump
+    /// you could not use to look around. Answers against the rows as displayed,
+    /// so a filtered-out row is not somewhere the register can land — it isn't
+    /// there to land on.
+    ///
+    /// Returns whether it found one; nothing after the last posting is a
+    /// question with no answer rather than a reason to jump to the end.
+    @discardableResult
+    public func goToDate(_ date: Date) -> Bool {
+        let day = Calendar.current.startOfDay(for: date)
+        // The rows carry the display order, which the sort may have reversed or
+        // ordered by amount — "the first one on or after" means the earliest by
+        // date, whatever order they happen to be shown in.
+        guard let target = registerRows
+            .filter({ Calendar.current.startOfDay(for: $0.date) >= day })
+            .min(by: { $0.date < $1.date })
+        else { return false }
+        pendingRegisterSplitID = target.id
+        return true
     }
 
     /// Free-text query; setting it recomputes ``searchResults``.
@@ -1308,14 +1345,31 @@ public final class AppModel {
             registerRows = []
             return
         }
+        // GnuCash's Open Subaccounts shows the subtree's postings in one
+        // register. The accounts, not just the one, decide which splits belong.
+        let focus = registerIncludesSubaccounts ? [account] + account.descendants : [account]
+        let focusSet = Set(focus.map { ObjectIdentifier($0) })
+
         // Canonical order first, and the balance with it: a row's balance is the
         // account's balance as of that posting, so it must be accumulated over
         // *every* split in date order — before any filter hides rows and before
         // any sort moves them. GnuCash does the same: sort its register by
         // amount and each row still shows the balance it had in date order.
-        let splits = book.splits(for: account).sorted {
-            ($0.transaction?.datePosted ?? .distantPast) < ($1.transaction?.datePosted ?? .distantPast)
-        }
+        let splits = book.transactions
+            .flatMap(\.splits)
+            .filter { $0.account.map { focusSet.contains(ObjectIdentifier($0)) } ?? false }
+            .sorted {
+                ($0.transaction?.datePosted ?? .distantPast) < ($1.transaction?.datePosted ?? .distantPast)
+            }
+
+        // A running balance adds quantities up, and a quantity means "so many of
+        // the account's own commodity". Across a subtree holding more than one
+        // of them that sum is not a number of anything — 10 BHP shares plus $10
+        // is 20 of nothing. `Book.balance(includingDescendants:)` carries the
+        // same caveat in its own doc. So the column is dropped for a mixed
+        // subtree rather than filled with a figure that would be wrong.
+        let balancesAreMeaningful = Set(focus.map(\.commodity)).count == 1
+
         var running = Decimal(0)
         let rows = splits.map { split in
             // A voided split still shows, with its amount, but must not move the
@@ -1334,11 +1388,28 @@ public final class AppModel {
                 memo: split.memo,
                 notes: split.transaction?.notes ?? "",
                 action: split.action,
+                // In a subtree register a row belongs to whichever account it
+                // posted to, which is the one thing the single-account register
+                // never had to say.
+                accountName: registerIncludesSubaccounts ? (split.account?.name ?? "") : "",
                 amount: split.quantity,
-                runningBalance: running
+                runningBalance: balancesAreMeaningful ? running : nil
             )
         }
         registerRows = ordered(filtered(rows))
+    }
+
+    /// Whether the current register can show a running balance. False for a
+    /// subtree spanning more than one commodity, where the sum means nothing.
+    public var registerHasBalances: Bool {
+        registerRows.first?.runningBalance != nil || registerRows.isEmpty
+    }
+
+    /// Whether the selected account has anything under it — Open Subaccounts is
+    /// meaningless for a leaf.
+    public var selectedAccountHasChildren: Bool {
+        guard let book, let id = selectedAccountID else { return false }
+        return !(book.account(with: id)?.children.isEmpty ?? true)
     }
 
     /// Hides rows the filter excludes. Balances are already fixed, so a hidden
