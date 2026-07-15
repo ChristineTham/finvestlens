@@ -572,13 +572,60 @@ enum AccountSheet: Identifiable {
     case edit(GncGUID)
     case reconcile(GncGUID)
     case delete(GncGUID)
+    case cascade(GncGUID)
 
     var id: String {
         switch self {
         case .edit(let guid): return "edit-\(guid.hexString)"
         case .reconcile(let guid): return "rec-\(guid.hexString)"
         case .delete(let guid): return "del-\(guid.hexString)"
+        case .cascade(let guid): return "casc-\(guid.hexString)"
         }
+    }
+}
+
+/// GnuCash's Cascade Account Properties: copy this account's colour,
+/// placeholder and hidden flags down its subtree (`FR-ACC-02`).
+struct CascadeAccountSheet: View {
+    @Bindable var model: AppModel
+    var accountID: GncGUID
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var options = AppModel.CascadeOptions()
+
+    private var name: String { model.accountName(accountID) ?? "this account" }
+    private var count: Int { model.descendantCount(of: accountID) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text("Copy the properties you tick from “\(name)” onto "
+                         + "\(DeleteAccountSheet.count(count, "account")) beneath it.")
+                        .scaledFont(.caption)
+                        .foregroundStyle(.secondary)
+                    Toggle("Colour", isOn: $options.color)
+                    Toggle("Placeholder", isOn: $options.isPlaceholder)
+                    Toggle("Hidden", isOn: $options.isHidden)
+                }
+            }
+            .navigationTitle("Cascade Properties")
+            .onEscapeCommand { dismiss() }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Apply") {
+                        model.cascadeProperties(from: accountID, options)
+                        dismiss()
+                    }
+                    // Nothing ticked would be a no-op dressed as an action.
+                    .disabled(options.isEmpty || count == 0)
+                }
+            }
+        }
+        .frame(minWidth: 420, minHeight: 260)
     }
 }
 
@@ -742,6 +789,7 @@ struct AccountsSidebar: View {
             case .edit(let id): EditAccountSheet(model: model, accountID: id)
             case .reconcile(let id): ReconcileView(model: model, accountID: id)
             case .delete(let id): DeleteAccountSheet(model: model, accountID: id)
+            case .cascade(let id): CascadeAccountSheet(model: model, accountID: id)
             }
         }
     }
@@ -797,6 +845,10 @@ struct AccountsSidebar: View {
         .contextMenu {
             Button("Edit…") { sheet = .edit(node.id) }
             Button("Reconcile…") { sheet = .reconcile(node.id) }
+            // Only where there is a subtree to cascade onto.
+            if !(node.children ?? []).isEmpty {
+                Button("Cascade Properties…") { sheet = .cascade(node.id) }
+            }
             // Always offered. It used to appear only for an account with
             // nothing in it, which on a real book is almost none of them — so
             // the answer to "why can't I delete this?" was a button that wasn't

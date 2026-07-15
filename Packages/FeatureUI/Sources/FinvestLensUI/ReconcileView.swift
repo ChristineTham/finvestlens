@@ -20,6 +20,9 @@ struct ReconcileView: View {
 
     @State private var statementDate = Date()
     @State private var endingBalanceText = ""
+    /// Why an auto-clear did not happen. Worth saying out loud: "nothing
+    /// changed" and "two answers, so I won't guess" look identical otherwise.
+    @State private var autoClearMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -90,9 +93,27 @@ struct ReconcileView: View {
         }
         .navigationTitle("Reconcile \(session.accountName)")
         .onEscapeCommand { model.cancelReconcile(); dismiss() }
+        .alert("Auto-clear", isPresented: Binding(
+            get: { autoClearMessage != nil },
+            set: { if !$0 { autoClearMessage = nil } })) {
+            Button("OK", role: .cancel) { autoClearMessage = nil }
+        } message: {
+            Text(autoClearMessage ?? "")
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { model.cancelReconcile(); dismiss() }.keyboardShortcut(.cancelAction)
+            }
+            ToolbarItem {
+                // Only ticks the boxes — nothing reaches the book until Finish,
+                // so an answer you disagree with costs a Cancel, not an undo.
+                Button("Auto-clear", systemImage: "wand.and.stars") {
+                    switch model.autoClear() {
+                    case .success: break
+                    case .failure(let failure): autoClearMessage = model.describe(failure)
+                    }
+                }
+                .help("Tick the transactions that add up to the statement balance")
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Finish") {

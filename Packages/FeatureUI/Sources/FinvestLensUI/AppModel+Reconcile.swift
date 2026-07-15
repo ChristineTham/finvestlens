@@ -120,4 +120,58 @@ extension AppModel {
     public func cancelReconcile() {
         reconcileSession = nil
     }
+
+    // MARK: Auto-clear (FR-REC-03)
+
+    /// Ticks the items that add up to the statement balance (GnuCash's
+    /// Auto-clear), or says why it will not.
+    ///
+    /// Only the session's own tick boxes move: nothing is written to the book
+    /// until Finish, exactly as if the items had been ticked by hand. That is
+    /// what makes an auto-clear you disagree with cost a Cancel rather than an
+    /// undo — and it is why this can afford to act without a confirmation step.
+    @discardableResult
+    public func autoClear() -> Result<Int, AutoClear.Failure> {
+        guard let book, let session = reconcileSession,
+              let account = book.account(with: session.accountID)
+        else { return .failure(.nothingUncleared) }
+
+        do {
+            let splits = try AutoClear.splitsToClear(in: account, of: book,
+                                                     targetBalance: session.statementBalance)
+            let found = Set(splits.map(\.guid))
+            var updated = session
+            for index in updated.items.indices {
+                // Only the items the solver chose end up ticked: an item ticked
+                // by hand that the solver did not pick was not part of the
+                // answer, and leaving it on would make the total disagree with
+                // the statement it just matched.
+                updated.items[index].isCleared = found.contains(updated.items[index].id)
+            }
+            reconcileSession = updated
+            return .success(splits.count)
+        } catch let failure as AutoClear.Failure {
+            return .failure(failure)
+        } catch {
+            return .failure(.unreachable)
+        }
+    }
+
+    /// Why an auto-clear did not happen, in words for the person who asked.
+    public func describe(_ failure: AutoClear.Failure) -> String {
+        switch failure {
+        case .alreadyAtTarget:
+            "This account is already at the statement balance."
+        case .nothingUncleared:
+            "There are no uncleared transactions to choose from."
+        case .unreachable:
+            "No combination of the uncleared transactions adds up to the statement balance."
+        case .ambiguous:
+            "More than one combination adds up to the statement balance, so there is no "
+            + "way to tell which transactions cleared. Tick them yourself."
+        case .tooComplex:
+            "There are too many uncleared transactions to work through. Reconcile some of "
+            + "them first, or tick them yourself."
+        }
+    }
 }

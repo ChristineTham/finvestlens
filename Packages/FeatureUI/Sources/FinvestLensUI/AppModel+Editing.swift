@@ -324,6 +324,57 @@ extension AppModel {
         }
     }
 
+    // MARK: Cascade account properties (FR-ACC-02)
+
+    /// Which of an account's properties to push down its subtree.
+    ///
+    /// Each is opt-in and applied independently, because they are unrelated
+    /// decisions: colouring a subtree to match its parent is routine, hiding one
+    /// is not, and doing the second because you asked for the first would be a
+    /// surprise. GnuCash's dialog offers the same three with the same tick boxes
+    /// — colour, placeholder, hidden — and nothing else, since name, code and
+    /// notes are what tell two accounts apart.
+    public struct CascadeOptions: Sendable, Equatable {
+        public var color = false
+        public var isPlaceholder = false
+        public var isHidden = false
+
+        public init(color: Bool = false, isPlaceholder: Bool = false, isHidden: Bool = false) {
+            self.color = color
+            self.isPlaceholder = isPlaceholder
+            self.isHidden = isHidden
+        }
+
+        public var isEmpty: Bool { !color && !isPlaceholder && !isHidden }
+    }
+
+    /// Copies the chosen properties from `id` onto every account beneath it
+    /// (GnuCash's Cascade Account Properties), and returns how many it changed.
+    ///
+    /// The whole subtree, not just the children: a property that stopped one
+    /// level down would leave the tree in a state you could not have asked for
+    /// and could not see. `Account.descendants` has always been there for this.
+    @discardableResult
+    public func cascadeProperties(from id: GncGUID, _ options: CascadeOptions) -> Int {
+        guard let book, let account = book.account(with: id), !options.isEmpty else { return 0 }
+        let targets = account.descendants
+        guard !targets.isEmpty else { return 0 }
+
+        editingWholeBook(named: "Cascade Account Properties") {
+            for target in targets {
+                if options.color { target.color = account.color }
+                if options.isPlaceholder { target.isPlaceholder = account.isPlaceholder }
+                if options.isHidden { target.isHidden = account.isHidden }
+            }
+        }
+        return targets.count
+    }
+
+    /// How many accounts a cascade from `id` would touch.
+    public func descendantCount(of id: GncGUID) -> Int {
+        book?.account(with: id)?.descendants.count ?? 0
+    }
+
     // MARK: Transaction operations
 
     public func deleteTransaction(_ id: GncGUID) {
