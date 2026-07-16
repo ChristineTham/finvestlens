@@ -8,8 +8,9 @@
 //
 //  Alongside: the refresh bug the feature exposed. An edit used to re-run the
 //  last find query, which collapses a refined result set back to that one
-//  query's matches — the working set the user assembled has to survive edits,
-//  since editing the results is what the results are *for*.
+//  query's matches. The fix replays the whole search pipeline, so results stay
+//  live (rows re-evaluate as they are edited) *and* refinements stay in force —
+//  editing the results is what the results are for.
 //
 //  Copyright (C) 2026 Christine Tham
 //  SPDX-License-Identifier: GPL-3.0-or-later
@@ -143,8 +144,8 @@ struct BulkResultActionsTests {
                 == ["Cheque 0 (fixed)", "Cheque 1"])
     }
 
-    /// Deleting a result removes its row and keeps the rest — a deleted split
-    /// is pruned from the working set rather than lingering as a dead id.
+    /// Deleting a result removes its row and keeps the rest — the replayed
+    /// pipeline simply no longer finds it.
     @Test("Deleting results removes their rows and keeps the rest")
     func deletePrunesResults() throws {
         let f = try makeFixture()

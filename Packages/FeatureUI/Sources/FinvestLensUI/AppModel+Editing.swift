@@ -729,47 +729,58 @@ extension AppModel {
     /// test splits: refining "account is CDIA" by "is reconciled" must mean one
     /// split that is both.
     public func runFind(_ query: FindQuery, mode: FindMode = .new) {
-        guard let book else { return }
+        guard book != nil else { return }
         // Order matters: emptying the bar fires `runSearch`, so `findQuery` is
         // set after that has run rather than before it.
         searchQuery = ""
         searchNotices = []
         findQuery = query
 
-        let matches = Set(book.splitsMatching(query).map(\.guid))
-        switch mode {
-        case .new: findSplitIDs = matches
-        case .refine: findSplitIDs.formIntersection(matches)
-        case .add: findSplitIDs.formUnion(matches)
-        case .delete: findSplitIDs.subtract(matches)
+        if mode == .new {
+            findPipeline = [FindStep(query: query, mode: .new)]
+        } else {
+            findPipeline.append(FindStep(query: query, mode: mode))
         }
-        rebuildFindResults()
+        recomputeFindResults()
     }
 
-    /// Rebuilds the result rows from the working set, without re-running the
-    /// query.
+    /// Recomputes the results by replaying every search step against the book
+    /// as it stands now.
     ///
-    /// This is what an edit refreshes through, and the distinction is the point:
-    /// re-running the last query would collapse a refined result set back to
-    /// that one query's matches, silently undoing the refine/add/delete steps
-    /// that built it. The set is what the user assembled; an edit prunes splits
-    /// that no longer exist and leaves the rest alone.
-    func rebuildFindResults() {
+    /// Two properties have to hold at once, and each rules out the obvious
+    /// implementation of the other. Results are *live*: editing a result
+    /// re-evaluates it, so a transaction edited out of the criteria leaves and
+    /// one edited into them appears — which rules out freezing the matched set.
+    /// And a *refined* result set stays refined across those edits — which
+    /// rules out re-running just the last query, since that would silently
+    /// undo the refine/add/delete steps that built the set. Replaying the
+    /// whole pipeline is the only shape that gives both: every step stays in
+    /// force, and every step is evaluated fresh.
+    func recomputeFindResults() {
         guard let book else { return }
+        var set: Set<GncGUID> = []
+        for step in findPipeline {
+            let matches = Set(book.splitsMatching(step.query).map(\.guid))
+            switch step.mode {
+            case .new: set = matches
+            case .refine: set.formIntersection(matches)
+            case .add: set.formUnion(matches)
+            case .delete: set.subtract(matches)
+            }
+        }
+        findSplitIDs = set
+
         // Roll up in book order so "first matched split" is deterministic.
-        var live: Set<GncGUID> = []
         var matched: [GncGUID: GncGUID] = [:]
         var ordered: [Transaction] = []
         for txn in book.transactions {
             for split in txn.splits where findSplitIDs.contains(split.guid) {
-                live.insert(split.guid)
                 if matched[txn.guid] == nil {
                     matched[txn.guid] = split.guid
                     ordered.append(txn)
                 }
             }
         }
-        findSplitIDs = live
         findMatchedSplitID = matched
         searchResults = ordered
             .sorted { $0.datePosted > $1.datePosted }
@@ -782,6 +793,7 @@ extension AppModel {
     /// Ends a structured find, returning the detail pane to the register.
     public func clearFind() {
         findQuery = nil
+        findPipeline = []
         findMatchedSplitID = [:]
         findSplitIDs = []
         searchResults = []

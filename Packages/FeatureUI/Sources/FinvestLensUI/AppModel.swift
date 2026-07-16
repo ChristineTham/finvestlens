@@ -367,6 +367,17 @@ public final class AppModel {
     /// all, or refining would test only the first hit of each transaction.
     @ObservationIgnored var findSplitIDs: Set<GncGUID> = []
 
+    /// One step of the search that built the current results.
+    struct FindStep {
+        var query: FindQuery
+        var mode: FindMode
+    }
+
+    /// The whole search as the user assembled it, replayed against the live
+    /// book on every refresh — see ``recomputeFindResults()`` for why neither
+    /// a frozen set nor the last query alone can be right.
+    @ObservationIgnored var findPipeline: [FindStep] = []
+
     /// True while a query is present — including one that matched nothing, which
     /// is why this is not `!searchResults.isEmpty`: a search that found no rows
     /// still has to say so rather than drop the user back on the dashboard.
@@ -1229,10 +1240,9 @@ public final class AppModel {
         refreshRegister()
         // Whichever search is showing has to survive an edit: editing a result
         // from the results table must leave the other results on screen. The
-        // find rebuilds from its working set rather than re-running the query —
-        // re-running would collapse a refined result set back to the last
-        // query's matches.
-        if findQuery != nil { rebuildFindResults() } else { runSearch() }
+        // find replays its whole pipeline — results are live, and refinements
+        // stay in force; see `recomputeFindResults()`.
+        if findQuery != nil { recomputeFindResults() } else { runSearch() }
     }
 
     /// Marks the document dirty and rebuilds derived state. Records nothing on
