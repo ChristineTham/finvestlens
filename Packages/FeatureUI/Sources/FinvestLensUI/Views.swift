@@ -1050,13 +1050,44 @@ struct RegisterView: View {
         proxy.scrollTo(target, anchor: .center)
     }
 
+    /// Click-to-sort, kept honest with the Sort menu: both read and write
+    /// ``AppModel/registerSort``, so clicking the Date header and picking Date
+    /// from the menu are the same setting, and the header arrow shows whichever
+    /// way it was set. The comparator itself is never applied — the model sorts,
+    /// as it always has, and the binding is just the header's handle on it.
+    private var tableSortOrder: Binding<[KeyPathComparator<RegisterRow>]> {
+        Binding(
+            get: {
+                switch model.registerSort {
+                case .date: [KeyPathComparator(\RegisterRow.date,
+                                               order: model.registerSortReversed ? .reverse : .forward)]
+                case .description: [KeyPathComparator(\RegisterRow.description,
+                                                      order: model.registerSortReversed ? .reverse : .forward)]
+                case .amount: [KeyPathComparator(\RegisterRow.amount,
+                                                 order: model.registerSortReversed ? .reverse : .forward)]
+                default: []
+                }
+            },
+            set: { comparators in
+                guard let first = comparators.first else {
+                    model.registerSort = .standard
+                    model.registerSortReversed = false
+                    return
+                }
+                if first.keyPath == \RegisterRow.date { model.registerSort = .date }
+                else if first.keyPath == \RegisterRow.description { model.registerSort = .description }
+                else if first.keyPath == \RegisterRow.amount { model.registerSort = .amount }
+                model.registerSortReversed = first.order == .reverse
+            })
+    }
+
     private var registerTableBody: some View {
-        Table(model.registerRows, selection: $selection) {
-            TableColumn("Date") { row in
+        Table(model.registerRows, selection: $selection, sortOrder: tableSortOrder) {
+            TableColumn("Date", value: \.date) { row in
                 Text(row.date, format: .dateTime.year().month().day())
                     .scaledFont(.body)
             }
-            TableColumn("Description") { row in
+            TableColumn("Description", value: \.description) { row in
                 VStack(alignment: .leading, spacing: 1) {
                     Text(row.description).scaledFont(.body)
                     // Only when there is something to say: an empty second line
@@ -1085,12 +1116,15 @@ struct RegisterView: View {
                     .accessibilityValue(reconcileWord(row.reconcile))
                     .accessibilityHint("Activate to change")
             }
-            TableColumn("Amount") { row in
+            TableColumn("Amount", value: \.amount) { row in
                 Text(AmountFormat.string(row.amount, code: currencyCode))
                     .scaledFont(.body)
                     .monospacedDigit()
                     .foregroundStyle(row.amount < 0 ? .red : .primary)
             }
+            // Balance has no sort on purpose: each row's balance is the
+            // account's balance *as of that posting*, computed in date order —
+            // ordering by it would order by an artefact.
             TableColumn("Balance") { row in
                 // Absent for a subtree spanning several commodities: a running
                 // total of shares and dollars is a number of nothing.

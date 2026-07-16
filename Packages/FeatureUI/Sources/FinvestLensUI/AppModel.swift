@@ -209,7 +209,18 @@ public final class AppModel {
     }
 
     public var selectedAccountID: GncGUID? {
-        didSet { refreshRegister() }
+        didSet {
+            // GnuCash's Save Sort Order / Save Filter, without the button:
+            // leaving a register remembers how it was arranged, returning
+            // restores it. Held outside the book, as GnuCash holds it in its
+            // state file — sorting a register is not an edit, and must not
+            // mark the document dirty or show up in an export.
+            if oldValue != selectedAccountID {
+                persistRegisterViewState(for: oldValue)
+                restoreRegisterViewState(for: selectedAccountID)
+            }
+            refreshRegister()
+        }
     }
 
     /// Display order of the register (`FR-REG-01`).
@@ -237,6 +248,63 @@ public final class AppModel {
         registerSortReversed = false
         registerFilter = .showAll
         registerIncludesSubaccounts = false
+    }
+
+    // MARK: Per-account register view state
+
+    /// What a register remembers about how it was shown. A value in
+    /// `UserDefaults`, not the book: GnuCash keeps the same facts in its state
+    /// file for the same reason — how you looked at an account is not part of
+    /// what the account is.
+    private struct RegisterViewState: Codable {
+        var sort: String
+        var reversed: Bool
+        var statuses: [String]
+        var startDate: Date?
+        var endDate: Date?
+        var subaccounts: Bool
+    }
+
+    private static func registerViewKey(_ id: GncGUID) -> String {
+        "registerView.\(id.hexString)"
+    }
+
+    private func persistRegisterViewState(for accountID: GncGUID?) {
+        guard let accountID else { return }
+        let key = Self.registerViewKey(accountID)
+        // The default arrangement is not worth an entry — and removing one
+        // means "forget it", so a reset register stays reset.
+        let isDefault = registerSort == .standard && !registerSortReversed
+            && registerFilter.isShowingEverything && !registerIncludesSubaccounts
+        if isDefault {
+            UserDefaults.standard.removeObject(forKey: key)
+            return
+        }
+        let state = RegisterViewState(
+            sort: registerSort.rawValue,
+            reversed: registerSortReversed,
+            statuses: registerFilter.statuses.map(\.rawValue).sorted(),
+            startDate: registerFilter.startDate,
+            endDate: registerFilter.endDate,
+            subaccounts: registerIncludesSubaccounts)
+        UserDefaults.standard.set(try? JSONEncoder().encode(state), forKey: key)
+    }
+
+    private func restoreRegisterViewState(for accountID: GncGUID?) {
+        guard let accountID,
+              let data = UserDefaults.standard.data(forKey: Self.registerViewKey(accountID)),
+              let state = try? JSONDecoder().decode(RegisterViewState.self, from: data)
+        else {
+            resetRegisterView()
+            return
+        }
+        registerSort = RegisterSort(rawValue: state.sort) ?? .standard
+        registerSortReversed = state.reversed
+        registerFilter = RegisterFilter(
+            statuses: Set(state.statuses.compactMap(ReconcileState.init(rawValue:))),
+            startDate: state.startDate,
+            endDate: state.endDate)
+        registerIncludesSubaccounts = state.subaccounts
     }
 
     /// A register row to select and scroll to the next time a register shows —
@@ -897,6 +965,8 @@ public final class AppModel {
     }
 
     public func close() {
+        // Remember how the last register was arranged before everything resets.
+        persistRegisterViewState(for: selectedAccountID)
         stopQuoteAutoRefresh()
         document?.stopObservingExternalChanges()
         isLocked = false
