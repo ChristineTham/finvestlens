@@ -1747,14 +1747,42 @@ struct SearchResultsView: View {
         // A result is a transaction, so it can be worked on like one. Editing
         // in place is what makes "find, then fix each one" possible without
         // leaving the results — the nearest thing we have to GnuCash, whose
-        // Find opens its results as a register.
+        // Find opens its results as a register. With several rows selected the
+        // menu acts on all of them, as one edit and one Undo: "find last
+        // month's cheques, mark them cleared" is one act, not forty.
         .contextMenu(forSelectionType: GncGUID.self) { ids in
-            if let id = ids.first {
+            let list = Array(ids)
+            if let id = list.first, list.count == 1 {
                 Button("Edit…") { editingTransactionID = id }
                 Button("Show in Register") { model.showInRegister(id) }
+                Divider()
+            }
+            // Reconcile state applies to the *matched* split of each result —
+            // the leg the search was about — so it is only offered where a
+            // structured find remembered one.
+            if model.findQuery != nil, !list.isEmpty {
+                Menu(list.count == 1 ? "Set Reconcile State"
+                     : "Set Reconcile State (\(list.count))") {
+                    ForEach(ReconcileState.settableInRegister, id: \.self) { state in
+                        Button(state.label) {
+                            model.setReconcileStateOfMatches(in: list, to: state)
+                        }
+                    }
+                }
+            }
+            if !list.isEmpty {
+                Button(list.count == 1 ? "Void Transaction"
+                       : "Void \(list.count) Transactions") {
+                    model.voidTransactions(list)
+                }
+                Divider()
+                Button(list.count == 1 ? "Delete Transaction"
+                       : "Delete \(list.count) Transactions", role: .destructive) {
+                    model.deleteTransactions(list)
+                }
             }
         } primaryAction: { ids in
-            if let id = ids.first { editingTransactionID = id }
+            if let id = ids.first, ids.count == 1 { editingTransactionID = id }
         }
         .sheet(item: $editingTransactionID) { id in
             TransactionEditorSheet(model: model, editingID: id)

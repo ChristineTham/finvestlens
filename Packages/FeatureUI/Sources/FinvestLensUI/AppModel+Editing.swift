@@ -743,18 +743,33 @@ extension AppModel {
         case .add: findSplitIDs.formUnion(matches)
         case .delete: findSplitIDs.subtract(matches)
         }
+        rebuildFindResults()
+    }
 
+    /// Rebuilds the result rows from the working set, without re-running the
+    /// query.
+    ///
+    /// This is what an edit refreshes through, and the distinction is the point:
+    /// re-running the last query would collapse a refined result set back to
+    /// that one query's matches, silently undoing the refine/add/delete steps
+    /// that built it. The set is what the user assembled; an edit prunes splits
+    /// that no longer exist and leaves the rest alone.
+    func rebuildFindResults() {
+        guard let book else { return }
         // Roll up in book order so "first matched split" is deterministic.
+        var live: Set<GncGUID> = []
         var matched: [GncGUID: GncGUID] = [:]
         var ordered: [Transaction] = []
         for txn in book.transactions {
             for split in txn.splits where findSplitIDs.contains(split.guid) {
+                live.insert(split.guid)
                 if matched[txn.guid] == nil {
                     matched[txn.guid] = split.guid
                     ordered.append(txn)
                 }
             }
         }
+        findSplitIDs = live
         findMatchedSplitID = matched
         searchResults = ordered
             .sorted { $0.datePosted > $1.datePosted }
@@ -770,6 +785,46 @@ extension AppModel {
         findMatchedSplitID = [:]
         findSplitIDs = []
         searchResults = []
+    }
+
+    // MARK: Bulk operations on results (FR-FIND-03)
+
+    /// Deletes several transactions as one edit — one action to the person who
+    /// selected them, so one Undo.
+    public func deleteTransactions(_ ids: [GncGUID]) {
+        guard let book, !ids.isEmpty else { return }
+        editing(ids, named: ids.count == 1 ? "Delete Transaction" : "Delete \(ids.count) Transactions") {
+            for id in ids {
+                if let txn = book.transaction(with: id) { book.removeTransaction(txn) }
+            }
+        }
+    }
+
+    /// Voids several transactions as one edit.
+    public func voidTransactions(_ ids: [GncGUID]) {
+        guard let book, !ids.isEmpty else { return }
+        editing(ids, named: ids.count == 1 ? "Void Transaction" : "Void \(ids.count) Transactions") {
+            for id in ids {
+                guard let txn = book.transaction(with: id) else { continue }
+                for split in txn.splits { split.reconcileState = .voided }
+            }
+        }
+    }
+
+    /// Sets the reconcile state of the *matched* split of each result — the leg
+    /// the search was about, which is what makes "find last month's cheques,
+    /// mark them cleared" mean the cheque account's legs and not the whole
+    /// transaction. Only meaningful for a structured find, where each result
+    /// remembers which split matched.
+    public func setReconcileStateOfMatches(in ids: [GncGUID], to state: ReconcileState) {
+        guard let book, !ids.isEmpty else { return }
+        let splits = ids.compactMap { findMatchedSplitID[$0] }
+        guard !splits.isEmpty else { return }
+        editing(ids, named: "Change Reconcile State") {
+            for splitID in splits {
+                book.split(with: splitID)?.reconcileState = state
+            }
+        }
     }
 
     // MARK: Saved find queries

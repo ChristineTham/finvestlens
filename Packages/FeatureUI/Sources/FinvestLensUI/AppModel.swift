@@ -1228,8 +1228,11 @@ public final class AppModel {
         rebuildAccountTree()
         refreshRegister()
         // Whichever search is showing has to survive an edit: editing a result
-        // from the results table must leave the other results on screen.
-        if let findQuery { runFind(findQuery) } else { runSearch() }
+        // from the results table must leave the other results on screen. The
+        // find rebuilds from its working set rather than re-running the query —
+        // re-running would collapse a refined result set back to the last
+        // query's matches.
+        if findQuery != nil { rebuildFindResults() } else { runSearch() }
     }
 
     /// Marks the document dirty and rebuilds derived state. Records nothing on
