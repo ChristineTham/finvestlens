@@ -65,9 +65,9 @@ public struct NetWorthPoint: Identifiable, Hashable, Sendable {
 /// equity, income) read as positive.
 public enum FinancialReports {
 
-    private static let assetTypes: Set<AccountType> =
+    static let assetTypes: Set<AccountType> =
         [.asset, .bank, .cash, .stock, .mutualFund, .receivable]
-    private static let liabilityTypes: Set<AccountType> = [.liability, .credit, .payable]
+    static let liabilityTypes: Set<AccountType> = [.liability, .credit, .payable]
     private static let equityTypes: Set<AccountType> = [.equity]
 
     // MARK: Balance Sheet
@@ -280,7 +280,7 @@ public enum FinancialReports {
         return native * unit
     }
 
-    private static func periodTotal(_ book: Book, types: Set<AccountType>,
+    static func periodTotal(_ book: Book, types: Set<AccountType>,
                                     from: Date?, to: Date?, currency: Commodity,
                                     rateDate: Date?) -> Decimal {
         var total = Decimal(0)

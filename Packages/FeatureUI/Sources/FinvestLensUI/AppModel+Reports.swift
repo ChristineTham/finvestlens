@@ -41,6 +41,40 @@ extension AppModel {
         return FinancialReports.reconcileReport(book, accountID: accountID, asOf: asOf)
     }
 
+    /// Every account's balance in debit/credit columns (`FR-RPT-01`).
+    public func trialBalance(asOf: Date) -> TrialBalanceReport? {
+        guard let book else { return nil }
+        return FinancialReports.trialBalance(book, asOf: asOf, currency: reportCurrency)
+    }
+
+    /// The movement of capital over a period (`FR-RPT-01`).
+    public func equityStatement(from: Date, to: Date) -> EquityStatement? {
+        guard let book else { return nil }
+        return FinancialReports.equityStatement(book, from: from, to: to,
+                                                currency: reportCurrency)
+    }
+
+    /// The chart of accounts with balances, cut at a depth (`FR-RPT-01`).
+    public func accountSummary(asOf: Date, depthLimit: Int) -> AccountSummaryReport? {
+        guard let book else { return nil }
+        return FinancialReports.accountSummary(book, asOf: asOf, currency: reportCurrency,
+                                               depthLimit: depthLimit)
+    }
+
+    /// Money into and out of a set of accounts over a period (`FR-RPT-01`).
+    public func cashFlow(accountIDs: Set<GncGUID>, from: Date, to: Date) -> CashFlowReport? {
+        guard let book, !accountIDs.isEmpty else { return nil }
+        return FinancialReports.cashFlow(book, accountIDs: accountIDs, from: from, to: to,
+                                         currency: reportCurrency)
+    }
+
+    /// Income and spending by category and by month (`FR-RPT-03`).
+    public func categoryBreakdown(from: Date, to: Date) -> CategoryBreakdown? {
+        guard let book else { return nil }
+        return FinancialReports.categoryBreakdown(book, from: from, to: to,
+                                                  currency: reportCurrency)
+    }
+
     /// A monthly net-worth series across the last `months` months.
     public func netWorthSeries(months: Int = 12, endingAt end: Date = Date()) -> [NetWorthPoint] {
         guard let book else { return [] }
