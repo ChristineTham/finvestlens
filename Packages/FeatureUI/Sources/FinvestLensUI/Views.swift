@@ -1029,6 +1029,17 @@ struct RegisterView: View {
                     jump = nil
                 }
         }
+        // GnuCash's blank transaction row, at the foot of the register where
+        // GnuCash keeps it. Not in the subtree view: an entry needs to know
+        // which single account it is entering into.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let accountID = model.selectedAccountID, !model.registerIncludesSubaccounts {
+                VStack(spacing: 0) {
+                    Divider()
+                    RegisterEntryBar(model: model, accountID: accountID)
+                }
+            }
+        }
     }
 
     /// Lands on the row a jump asked for, or the newest when nothing did.
@@ -1413,6 +1424,106 @@ public struct TransactionActions: View {
             .pickerStyle(.inline)
         }
         .disabled(splitID == nil || current == .voided)
+    }
+}
+
+/// GnuCash's blank transaction row, as an entry bar at the foot of the register
+/// (`FR-REG-05`).
+///
+/// Date, description, transfer account, amount, Return — and the row appears
+/// above with focus back in the description, because the point of entering at
+/// the register is entering the *next* one too. QuickFill fills the transfer
+/// and amount from the last transaction with the same description, which is
+/// most of most people's entries.
+struct RegisterEntryBar: View {
+    @Bindable var model: AppModel
+    let accountID: GncGUID
+
+    @State private var date = Date()
+    @State private var descriptionText = ""
+    @State private var transferID: GncGUID?
+    @State private var amountText = ""
+    @FocusState private var descriptionFocused: Bool
+    @Environment(\.appFontScale) private var appFontScale
+
+    private var amount: Decimal? { EditableSplit.strictDecimal(
+        amountText.trimmingCharacters(in: .whitespaces)) }
+    private var canCommit: Bool {
+        transferID != nil && (amount ?? 0) != 0
+            && !descriptionText.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            DatePicker("", selection: $date, displayedComponents: .date)
+                .labelsHidden()
+                .fixedSize()
+
+            TextField("Description", text: $descriptionText)
+                .textFieldStyle(.roundedBorder)
+                .focused($descriptionFocused)
+                .frame(minWidth: 140)
+
+            // QuickFill: the last transaction with this description, offered
+            // rather than applied — autofilling on a prefix match would race
+            // the typing it is matching.
+            let suggestions = model.descriptionSuggestions(prefix: descriptionText)
+            Menu {
+                ForEach(suggestions, id: \.self) { suggestion in
+                    Button(suggestion) { applySuggestion(suggestion) }
+                }
+            } label: {
+                Image(systemName: "wand.and.stars")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(suggestions.isEmpty)
+            .help("Fill from a recent transaction with this description")
+
+            Picker("", selection: $transferID) {
+                Text("Transfer from…").tag(GncGUID?.none)
+                ForEach(model.postableAccounts.filter { $0.id != accountID }) { node in
+                    Text(node.fullName).tag(GncGUID?.some(node.id))
+                }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 240)
+
+            TextField("Amount", text: $amountText)
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 100 * appFontScale)
+                .onSubmit(commit)
+
+            Button("Enter", action: commit)
+                .keyboardShortcut(.return, modifiers: .command)
+                .disabled(!canCommit)
+                .help("Add this transaction (⌘↩)")
+        }
+        .scaledFont(.body)
+        .padding(8)
+        .background(.bar)
+    }
+
+    private func applySuggestion(_ suggestion: String) {
+        descriptionText = suggestion
+        if let fill = model.quickFill(forDescription: suggestion, into: accountID) {
+            transferID = fill.transferID
+            amountText = NSDecimalNumber(decimal: fill.amount).stringValue
+        }
+    }
+
+    private func commit() {
+        guard canCommit, let transferID, let amount else { return }
+        guard model.quickEnter(into: accountID, transferFrom: transferID,
+                               amount: amount, date: date,
+                               description: descriptionText) != nil else { return }
+        // Keep the date and the transfer: runs of entries share both. Clear
+        // what identifies the transaction, and put focus back where the next
+        // one starts.
+        descriptionText = ""
+        amountText = ""
+        descriptionFocused = true
     }
 }
 

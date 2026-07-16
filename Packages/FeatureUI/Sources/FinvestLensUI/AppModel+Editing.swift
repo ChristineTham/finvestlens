@@ -799,6 +799,45 @@ extension AppModel {
         searchResults = []
     }
 
+    // MARK: In-register quick entry (FR-REG-05)
+
+    /// GnuCash's blank row at the foot of the register, as an entry bar: date,
+    /// description, transfer account, amount, Return. What the blank row is
+    /// *for* is rapid two-split entry — the grocery run, the fuel stop — and a
+    /// signed amount in the register's own convention (positive into this
+    /// account) covers it. A multi-split entry is ⌘T's job, as it is GnuCash's
+    /// splits button's.
+    ///
+    /// Returns the new transaction, and points the register at its new row —
+    /// entering a transaction should end with it on screen, not somewhere below.
+    @discardableResult
+    public func quickEnter(into accountID: GncGUID, transferFrom transferID: GncGUID,
+                           amount: Decimal, date: Date, description: String) -> GncGUID? {
+        guard amount != 0, accountID != transferID else { return nil }
+        guard let id = addTransfer(from: transferID, to: accountID,
+                                   amount: amount, date: date, description: description)
+        else { return nil }
+        pendingRegisterSplitID = book?.transaction(with: id)?.splits
+            .first { $0.account?.guid == accountID }?.guid
+        return id
+    }
+
+    /// The most recent transaction under `description`, reduced to what the
+    /// entry bar can hold: the other side and the signed amount into
+    /// `accountID`. GnuCash's QuickFill fills the rest of the row the moment
+    /// the description matches; two-split templates are the ones a two-split
+    /// bar can honour, so others fill nothing rather than half of something.
+    public func quickFill(forDescription description: String,
+                          into accountID: GncGUID) -> (transferID: GncGUID, amount: Decimal)? {
+        guard let template = template(forDescription: description),
+              template.count == 2,
+              let own = template.first(where: { $0.accountID == accountID }),
+              let other = template.first(where: { $0.accountID != accountID }),
+              let transferID = other.accountID
+        else { return nil }
+        return (transferID, own.value)
+    }
+
     // MARK: Bulk operations on results (FR-FIND-03)
 
     /// Deletes several transactions as one edit — one action to the person who
