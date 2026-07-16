@@ -117,6 +117,9 @@ struct finvestlensApp: App {
                 Button("Find…") { model.presentedPanel = .find }
                     .keyboardShortcut("f", modifiers: .command)
                     .disabled(!model.isOpen)
+                Button("Find Account…") { model.presentedPanel = .findAccount }
+                    .keyboardShortcut("i", modifiers: .command)
+                    .disabled(!model.isOpen)
                 Button("Clear Find") { model.clearFind() }
                     .disabled(model.findQuery == nil)
             }
@@ -144,8 +147,11 @@ struct finvestlensApp: App {
                 Button("Currency Transfer…") { model.presentedPanel = .currencyTransfer }
                     .disabled(!model.isOpen || model.currencyCommodities.count < 2)
                 Divider()
+                // ⌥⌘I: plain ⌘I is Find Account, which is what GnuCash puts
+                // there — a lookup you do many times a session outranks an
+                // import you do once a statement.
                 Button("Import Bank File…") { model.bankImportRequested = true }
-                    .keyboardShortcut("i", modifiers: .command)
+                    .keyboardShortcut("i", modifiers: [.command, .option])
                     .disabled(!model.isOpen)
                 Button("Reconcile Account…") { model.presentedPanel = .reconcile }
                     .keyboardShortcut("r", modifiers: [.command, .shift])

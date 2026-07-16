@@ -42,6 +42,22 @@ public struct SplitInput: Identifiable, Hashable, Sendable {
     }
 }
 
+/// A named, persisted structured Find query (`FR-FIND-01`).
+///
+/// GnuCash cannot do this — its Find dialog forgets everything on close — and
+/// it is the obvious missing piece once queries take six criteria to build.
+public struct SavedFindQuery: Identifiable, Codable, Hashable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var query: FindQuery
+
+    public init(id: UUID = UUID(), name: String, query: FindQuery) {
+        self.id = id
+        self.name = name
+        self.query = query
+    }
+}
+
 /// A named, persisted search query (`FR-FIND-01`).
 public struct SavedSearch: Identifiable, Codable, Hashable, Sendable {
     public var id: UUID
@@ -678,13 +694,41 @@ extension AppModel {
 
     // MARK: Structured find (GnuCash Edit ▸ Find…, `FR-FIND-01`)
 
-    /// Runs a structured query, replacing whatever search is showing.
+    /// How a query relates to the results already showing — GnuCash's "Type of
+    /// search". A search that took several refinements to get right is built a
+    /// step at a time, not retyped as one giant query.
+    public enum FindMode: String, CaseIterable, Identifiable, Sendable {
+        /// Replace the results.
+        case new
+        /// Keep only current results that also match (narrow).
+        case refine
+        /// Add matches to the current results (widen).
+        case add
+        /// Remove matches from the current results.
+        case delete
+
+        public var id: String { rawValue }
+        public var label: String {
+            switch self {
+            case .new: "New search"
+            case .refine: "Refine current results"
+            case .add: "Add to current results"
+            case .delete: "Delete from current results"
+            }
+        }
+    }
+
+    /// Runs a structured query against the book, or against the current
+    /// results, depending on `mode`.
     ///
     /// GnuCash finds *splits* and opens them as a register. We roll the hits up
     /// to their transactions — one row per transaction, as the results table
     /// already shows — but keep which split matched, so "Show in Register"
     /// opens the account the user actually searched for rather than guessing.
-    public func runFind(_ query: FindQuery) {
+    /// The modes compose over the *split* set for the same reason the criteria
+    /// test splits: refining "account is CDIA" by "is reconciled" must mean one
+    /// split that is both.
+    public func runFind(_ query: FindQuery, mode: FindMode = .new) {
         guard let book else { return }
         // Order matters: emptying the bar fires `runSearch`, so `findQuery` is
         // set after that has run rather than before it.
@@ -692,13 +736,23 @@ extension AppModel {
         searchNotices = []
         findQuery = query
 
+        let matches = Set(book.splitsMatching(query).map(\.guid))
+        switch mode {
+        case .new: findSplitIDs = matches
+        case .refine: findSplitIDs.formIntersection(matches)
+        case .add: findSplitIDs.formUnion(matches)
+        case .delete: findSplitIDs.subtract(matches)
+        }
+
+        // Roll up in book order so "first matched split" is deterministic.
         var matched: [GncGUID: GncGUID] = [:]
         var ordered: [Transaction] = []
-        for split in book.splitsMatching(query) {
-            guard let txn = split.transaction else { continue }
-            if matched[txn.guid] == nil {
-                matched[txn.guid] = split.guid
-                ordered.append(txn)
+        for txn in book.transactions {
+            for split in txn.splits where findSplitIDs.contains(split.guid) {
+                if matched[txn.guid] == nil {
+                    matched[txn.guid] = split.guid
+                    ordered.append(txn)
+                }
             }
         }
         findMatchedSplitID = matched
@@ -707,11 +761,34 @@ extension AppModel {
             .map { summary(for: $0) }
     }
 
+    /// Whether there are results for refine/add/delete to work against.
+    public var hasFindResults: Bool { !findSplitIDs.isEmpty }
+
     /// Ends a structured find, returning the detail pane to the register.
     public func clearFind() {
         findQuery = nil
         findMatchedSplitID = [:]
+        findSplitIDs = []
         searchResults = []
+    }
+
+    // MARK: Saved find queries
+
+    /// Saves a query under a name. Same-name saves replace: "Untagged cash
+    /// spending" twice is an update, not two entries answering differently as
+    /// the book moves on.
+    public func saveFindQuery(_ query: FindQuery, named name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty, !trimmed.isEmpty else { return }
+        savedFindQueries.removeAll { $0.name == trimmed }
+        savedFindQueries.append(SavedFindQuery(name: trimmed, query: query))
+        savedFindQueries.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        commitKvpCollections(named: "Save Find Query")
+    }
+
+    public func deleteSavedFindQuery(_ id: UUID) {
+        savedFindQueries.removeAll { $0.id == id }
+        commitKvpCollections(named: "Delete Find Query")
     }
 
     /// The known `key:` operators, for both matching and telling the user what

@@ -116,6 +116,7 @@ public enum RootPanel: String, Identifiable, Sendable {
     case reconcile
     case autoCategorize
     case find
+    case findAccount
     public var id: String { rawValue }
 }
 
@@ -292,6 +293,12 @@ public final class AppModel {
     /// result belongs in and knowing. The user asked for *that* split.
     @ObservationIgnored var findMatchedSplitID: [GncGUID: GncGUID] = [:]
 
+    /// Every split the current find matched — the working set that GnuCash's
+    /// "Type of search" modes (refine/add/delete) compose over. The rolled-up
+    /// map above keeps one split per transaction for display; this keeps them
+    /// all, or refining would test only the first hit of each transaction.
+    @ObservationIgnored var findSplitIDs: Set<GncGUID> = []
+
     /// True while a query is present — including one that matched nothing, which
     /// is why this is not `!searchResults.isEmpty`: a search that found no rows
     /// still has to say so rather than drop the user back on the dashboard.
@@ -313,6 +320,9 @@ public final class AppModel {
     public internal(set) var scheduledTransactions: [ScheduledTransaction] = []
     public internal(set) var budgets: [Budget] = []
     public internal(set) var savedSearches: [SavedSearch] = []
+    /// Saved structured Find queries (GnuCash has none; a query someone took
+    /// six criteria to build is a query they will want back).
+    public internal(set) var savedFindQueries: [SavedFindQuery] = []
 
     /// Securities tracked but not held (watch list, `FR-PLAN-07`).
     public internal(set) var watchlist: [Commodity] = []
@@ -447,6 +457,7 @@ public final class AppModel {
         static let budgets = "finvestlens/budgets"
         static let quoteSymbols = "finvestlens/quoteSymbols"
         static let savedSearches = "finvestlens/savedSearches"
+        static let savedFindQueries = "finvestlens/savedFindQueries"
         static let watchlist = "finvestlens/watchlist"
         static let priceTargets = "finvestlens/priceTargets"
     }
@@ -462,6 +473,7 @@ public final class AppModel {
         budgets = Self.decodeSlot([Budget].self, book.kvp[KvpKey.budgets]) ?? []
         quoteSymbols = Self.decodeSlot([String: String].self, book.kvp[KvpKey.quoteSymbols]) ?? [:]
         savedSearches = Self.decodeSlot([SavedSearch].self, book.kvp[KvpKey.savedSearches]) ?? []
+        savedFindQueries = Self.decodeSlot([SavedFindQuery].self, book.kvp[KvpKey.savedFindQueries]) ?? []
         watchlist = Self.decodeSlot([Commodity].self, book.kvp[KvpKey.watchlist]) ?? []
         priceTargets = Self.decodeSlot([PriceTarget].self, book.kvp[KvpKey.priceTargets]) ?? []
     }
@@ -474,6 +486,7 @@ public final class AppModel {
         book.kvp[KvpKey.budgets] = Self.encodeSlot(budgets)
         book.kvp[KvpKey.quoteSymbols] = Self.encodeMap(quoteSymbols)
         book.kvp[KvpKey.savedSearches] = Self.encodeSlot(savedSearches)
+        book.kvp[KvpKey.savedFindQueries] = Self.encodeSlot(savedFindQueries)
         book.kvp[KvpKey.watchlist] = Self.encodeSlot(watchlist)
         book.kvp[KvpKey.priceTargets] = Self.encodeSlot(priceTargets)
     }
@@ -907,6 +920,7 @@ public final class AppModel {
         scheduledTransactions = []
         budgets = []
         savedSearches = []
+        savedFindQueries = []
         watchlist = []
         priceTargets = []
         quoteSymbols = [:]

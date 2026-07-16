@@ -340,6 +340,7 @@ public struct FinvestLensRootView: View {
                 }
             case .autoCategorize: AutoCategorizeSheet(model: model)
             case .find: FindSheet(model: model)
+            case .findAccount: FindAccountSheet(model: model)
             }
         }
         #if os(macOS)
@@ -1381,6 +1382,92 @@ public struct TransactionActions: View {
     }
 }
 
+/// GnuCash's Find Account (⌘I): type a few letters, land on the account
+/// (`FR-FIND-02`).
+///
+/// The sidebar filter covers browsing; this is for the keyboard. ⌘I, type,
+/// Return — no mouse, no disclosure triangles, and it works however deep the
+/// account is buried. The filter is the same `matching` Find's picker and the
+/// sidebar use, so all three agree about what a search string means.
+struct FindAccountSheet: View {
+    @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var filter = ""
+    @State private var selection: GncGUID?
+    @FocusState private var filterFocused: Bool
+
+    private var matches: [AccountNode] {
+        AccountMatchPicker.matching(model.accountTree,
+                                    filter: filter.trimmingCharacters(in: .whitespaces),
+                                    includingPlaceholders: true)
+    }
+
+    /// Return acts on what you can see: the chosen row, or the only match —
+    /// "cdia" narrowing to one account should not also demand an arrow key.
+    private var target: GncGUID? { Self.target(selection: selection, matches: matches) }
+
+    static func target(selection: GncGUID?, matches: [AccountNode]) -> GncGUID? {
+        selection ?? (matches.count == 1 ? matches.first?.id : nil)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                TextField("Account name", text: $filter)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($filterFocused)
+                    .onSubmit(show)
+                    .padding(8)
+                Divider()
+                List(selection: $selection) {
+                    ForEach(matches) { node in
+                        HStack {
+                            Text(node.fullName)
+                            Spacer()
+                            Text(AmountFormat.string(node.balance, code: node.currencyCode))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        .tag(node.id)
+                    }
+                }
+                .contextMenu(forSelectionType: GncGUID.self) { _ in } primaryAction: { ids in
+                    selection = ids.first
+                    show()
+                }
+                if matches.isEmpty {
+                    Text("No accounts match “\(filter)”.")
+                        .scaledFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(8)
+                }
+            }
+            .navigationTitle("Find Account")
+            .onEscapeCommand { dismiss() }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Show") { show() }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(target == nil)
+                }
+            }
+            .onAppear { focusSoon { filterFocused = true } }
+            .onChange(of: filter) { selection = nil }
+        }
+        .frame(minWidth: 440, minHeight: 360)
+    }
+
+    private func show() {
+        guard let target else { return }
+        model.selectedAccountID = target
+        dismiss()
+    }
+}
+
 /// GnuCash's Transaction ▸ Schedule…: turn a transaction you have already
 /// entered into a recurring one (`FR-SCH-01`).
 struct ScheduleTransactionSheet: View {
@@ -1873,20 +1960,45 @@ struct EditableSplit: Identifiable {
 
     /// The split's amount in its **own** commodity — a share count for a
     /// security, the foreign amount for an FX leg — when it differs from the
-    /// value. `nil` means "same as the value", which is right for a plain
-    /// cash posting and lets editing the amount carry the quantity with it.
+    /// value. Empty means "same as the value", which is right for a plain cash
+    /// posting and lets editing the amount carry the quantity with it.
     ///
-    /// The sheet has no field for this; it is carried through untouched. It
-    /// must be: the editor rebuilds every split on save, so dropping it reset
-    /// share counts to the dollar value and silently destroyed a holding.
-    var quantity: Decimal?
+    /// Editable text now (GnuCash's Edit Exchange Rate); it was carried blind,
+    /// so the one number you could not fix on an FX or security leg was the
+    /// foreign amount. GnuCash's dialog edits the *rate*, but the book stores
+    /// value and quantity — editing the quantity with the implied rate shown is
+    /// the same act without a derived field that can drift from what is stored.
+    var quantityText: String = ""
+
+    var quantity: Decimal? {
+        let trimmed = quantityText.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? nil : Self.strictDecimal(trimmed)
+    }
+
+    /// Empty is fine (the quantity follows the value); text that does not parse
+    /// is not. The test for this found the hazard was worse than assumed:
+    /// `Decimal(string:)` parses a numeric *prefix*, so "1o" is not rejected —
+    /// it is **1**, and a typo would have quietly set a share count to 1.
+    var quantityIsValid: Bool {
+        quantityText.trimmingCharacters(in: .whitespaces).isEmpty || quantity != nil
+    }
+
+    /// A decimal only if the *whole* string is one.
+    static func strictDecimal(_ text: String) -> Decimal? {
+        let scanner = Scanner(string: text)
+        guard let value = scanner.scanDecimal(), scanner.isAtEnd else { return nil }
+        return value
+    }
 
     /// Per-split memo and GnuCash's per-split Action. Both are editable below;
     /// both were previously carried blind, and `action` was not carried at all.
     var memo: String = ""
     var action: String = ""
 
-    var amount: Decimal { Decimal(string: amountText) ?? 0 }
+    /// Strict for the same reason as the quantity: `Decimal(string:)` parses a
+    /// prefix, so "4o0" would be 4 — here it is 0, and the imbalance readout
+    /// says so instead of the sheet saving a number nobody typed.
+    var amount: Decimal { Self.strictDecimal(amountText.trimmingCharacters(in: .whitespaces)) ?? 0 }
 
     init(accountID: GncGUID? = nil, amountText: String = "") {
         self.accountID = accountID
@@ -1897,7 +2009,7 @@ struct EditableSplit: Identifiable {
         self.splitID = input.splitID
         self.accountID = input.accountID
         self.amountText = NSDecimalNumber(decimal: input.value).stringValue
-        self.quantity = input.quantity
+        self.quantityText = input.quantity.map { NSDecimalNumber(decimal: $0).stringValue } ?? ""
         self.memo = input.memo
         self.action = input.action
     }
@@ -1959,7 +2071,9 @@ struct TransactionEditorSheet: View {
         model.transactionCurrency(for: lines.compactMap(\.accountID))
     }
     private var validLineCount: Int { lines.filter { $0.accountID != nil }.count }
-    private var isBalanced: Bool { imbalance == 0 && validLineCount >= 2 }
+    private var isBalanced: Bool {
+        imbalance == 0 && validLineCount >= 2 && lines.allSatisfy(\.quantityIsValid)
+    }
     private var isEditing: Bool { editingID != nil }
 
     var body: some View {
@@ -2025,6 +2139,22 @@ struct TransactionEditorSheet: View {
                             }
                             .scaledFont(.caption)
                             .foregroundStyle(.secondary)
+                            // GnuCash's Edit Exchange Rate, only where there is
+                            // one: a leg posting to another commodity has two
+                            // amounts, and the second was carried blind.
+                            if let unit = foreignUnit(of: line) {
+                                HStack(spacing: 8) {
+                                    Text(rateDescription(of: line, unit: unit))
+                                        .foregroundStyle(.secondary)
+                                    Spacer(minLength: 0)
+                                    TextField("Quantity", text: $line.quantityText,
+                                              prompt: Text(unit))
+                                        .labelsHidden()
+                                        .multilineTextAlignment(.trailing)
+                                        .frame(width: amountWidth)
+                                }
+                                .scaledFont(.caption)
+                            }
                         }
                     }
                     .onDelete { lines.remove(atOffsets: $0) }
@@ -2138,6 +2268,28 @@ struct TransactionEditorSheet: View {
             return
         }
         lines = [funding] + items
+    }
+
+    /// The commodity a leg's own amount is denominated in, when it is not the
+    /// transaction's currency — "USD" for a foreign account, "BHP" for shares.
+    /// `nil` for an ordinary leg, which has one amount and needs one field.
+    private func foreignUnit(of line: EditableSplit) -> String? {
+        guard let id = line.accountID,
+              let node = model.postableAccounts.first(where: { $0.id == id }),
+              node.currencyCode != displayCurrency.mnemonic
+        else { return nil }
+        return node.currencyCode
+    }
+
+    /// The exchange rate the two amounts imply, stated so it can be checked
+    /// against a statement: "10 BHP @ 40 AUD".
+    private func rateDescription(of line: EditableSplit, unit: String) -> String {
+        guard let quantity = line.quantity, quantity != 0, line.amount != 0 else {
+            return "Amount in \(unit)"
+        }
+        let rate = line.amount / quantity
+        let rounded = NSDecimalNumber(decimal: displayCurrency.round(rate)).stringValue
+        return "\(NSDecimalNumber(decimal: quantity).stringValue) \(unit) @ \(rounded) \(displayCurrency.mnemonic)"
     }
 
     private func loadIfNeeded() {

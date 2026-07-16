@@ -23,7 +23,7 @@ enum FindFieldChoice: String, CaseIterable, Identifiable, Hashable {
     case description, notes, memo, descriptionNotesOrMemo, number, action
     case datePosted, reconciledDate
     case value, shares, sharePrice
-    case reconcile, account, balanced
+    case reconcile, account, allAccounts, balanced, closing
 
     var id: String { rawValue }
 
@@ -42,7 +42,9 @@ enum FindFieldChoice: String, CaseIterable, Identifiable, Hashable {
         case .sharePrice: FindNumberField.sharePrice.label
         case .reconcile: "Reconcile"
         case .account: "Account"
+        case .allAccounts: "All Accounts"
         case .balanced: "Balanced"
+        case .closing: "Closing Entries"
         }
     }
 
@@ -68,7 +70,9 @@ enum FindFieldChoice: String, CaseIterable, Identifiable, Hashable {
             }
         case .reconcile: self = .reconcile
         case .account: self = .account
+        case .allAccounts: self = .allAccounts
         case .balanced: self = .balanced
+        case .closing: self = .closing
         }
     }
 
@@ -90,7 +94,11 @@ enum FindFieldChoice: String, CaseIterable, Identifiable, Hashable {
         case .sharePrice: .number(.sharePrice, .greaterThanOrEqual, 0)
         case .reconcile: .reconcile(.isOneOf, [.notReconciled])
         case .account: .account(.isOneOf, [])
+        case .allAccounts: .allAccounts([])
         case .balanced: .balanced(false)
+        // Negated by default: the common use is keeping year-end bookkeeping
+        // *out* of a search over real activity.
+        case .closing: .closing(false)
         }
     }
 }
@@ -101,7 +109,12 @@ struct FindSheet: View {
 
     @State private var criteria: [FindCriterion] = []
     @State private var matchAll = true
+    @State private var mode: AppModel.FindMode = .new
+    @State private var savingName = ""
+    @State private var savePromptShown = false
     @State private var loaded = false
+
+    private var query: FindQuery { FindQuery(criteria: criteria, matchAll: matchAll) }
 
     var body: some View {
         NavigationStack {
@@ -112,6 +125,15 @@ struct FindSheet: View {
                         Text("any criterion is met").tag(false)
                     }
                     .pickerStyle(.menu)
+                    // GnuCash's "Type of search", shown only once there is a
+                    // result set to be relative to — on a fresh Find the other
+                    // three modes are operations on nothing.
+                    if model.hasFindResults {
+                        Picker("Type of search", selection: $mode) {
+                            ForEach(AppModel.FindMode.allCases) { Text($0.label).tag($0) }
+                        }
+                        .pickerStyle(.menu)
+                    }
                 }
                 Section("Criteria") {
                     ForEach($criteria) { $criterion in
@@ -135,14 +157,53 @@ struct FindSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 }
+                ToolbarItem {
+                    // Saved queries: load one into the editor (to run or adjust,
+                    // which is why loading does not also run it), save the one
+                    // being built, or drop one that has outlived its use.
+                    Menu {
+                        if !model.savedFindQueries.isEmpty {
+                            ForEach(model.savedFindQueries) { saved in
+                                Button(saved.name) {
+                                    criteria = saved.query.criteria
+                                    matchAll = saved.query.matchAll
+                                }
+                            }
+                            Divider()
+                        }
+                        Button("Save Query…") { savePromptShown = true }
+                            .disabled(criteria.isEmpty)
+                        if !model.savedFindQueries.isEmpty {
+                            Menu("Delete Saved Query") {
+                                ForEach(model.savedFindQueries) { saved in
+                                    Button(saved.name, role: .destructive) {
+                                        model.deleteSavedFindQuery(saved.id)
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Saved", systemImage: "bookmark")
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Find") {
-                        model.runFind(FindQuery(criteria: criteria, matchAll: matchAll))
+                        model.runFind(query, mode: mode)
                         dismiss()
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(criteria.isEmpty)
                 }
+            }
+            .alert("Save Find Query", isPresented: $savePromptShown) {
+                TextField("Name", text: $savingName)
+                Button("Cancel", role: .cancel) {}
+                Button("Save") {
+                    model.saveFindQuery(query, named: savingName)
+                    savingName = ""
+                }
+            } message: {
+                Text("Saving with an existing name replaces that query.")
             }
             .onAppear(perform: loadIfNeeded)
         }
@@ -297,6 +358,18 @@ struct FindCriterionRow: View {
                         set: { criterion.test = .account(comparator, $0) }))
                 }
 
+        case .allAccounts(let ids):
+            Text("transaction posts to all of")
+                .foregroundStyle(.secondary)
+
+            Button(accountLabel(ids)) { accountPickerShown = true }
+                .frame(width: 200)
+                .popover(isPresented: $accountPickerShown) {
+                    AccountMatchPicker(tree: accountTree, selection: Binding(
+                        get: { ids },
+                        set: { criterion.test = .allAccounts($0) }))
+                }
+
         case .balanced(let want):
             Picker("", selection: Binding(
                 get: { want },
@@ -307,6 +380,17 @@ struct FindCriterionRow: View {
             }
             .labelsHidden()
             .frame(width: 170)
+
+        case .closing(let want):
+            Picker("", selection: Binding(
+                get: { want },
+                set: { criterion.test = .closing($0) })
+            ) {
+                Text("is a closing entry").tag(true)
+                Text("is not a closing entry").tag(false)
+            }
+            .labelsHidden()
+            .frame(width: 190)
         }
     }
 

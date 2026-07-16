@@ -25,7 +25,7 @@ import Foundation
 
 /// How a text criterion compares (GnuCash: contains / does not contain, and the
 /// exact-match pair), with case sensitivity carried alongside.
-public enum TextComparator: String, CaseIterable, Sendable, Hashable {
+public enum TextComparator: String, CaseIterable, Sendable, Hashable, Codable {
     case contains
     case doesNotContain
     case matchesExactly
@@ -42,7 +42,7 @@ public enum TextComparator: String, CaseIterable, Sendable, Hashable {
 }
 
 /// GnuCash's six date comparators, verified against its Find dialog.
-public enum DateComparator: String, CaseIterable, Sendable, Hashable {
+public enum DateComparator: String, CaseIterable, Sendable, Hashable, Codable {
     case isBefore
     case isBeforeOrOn
     case isOn
@@ -62,7 +62,7 @@ public enum DateComparator: String, CaseIterable, Sendable, Hashable {
     }
 }
 
-public enum NumberComparator: String, CaseIterable, Sendable, Hashable {
+public enum NumberComparator: String, CaseIterable, Sendable, Hashable, Codable {
     case lessThan
     case lessThanOrEqual
     case equalTo
@@ -83,7 +83,7 @@ public enum NumberComparator: String, CaseIterable, Sendable, Hashable {
 }
 
 /// Membership, for the criteria whose value is a set.
-public enum SetComparator: String, CaseIterable, Sendable, Hashable {
+public enum SetComparator: String, CaseIterable, Sendable, Hashable, Codable {
     case isOneOf
     case isNotOneOf
 
@@ -109,7 +109,7 @@ public enum SetComparator: String, CaseIterable, Sendable, Hashable {
 
 /// The text fields a query can test. `descriptionNotesOrMemo` is GnuCash's
 /// combined field, and is the one most people actually want.
-public enum FindTextField: String, CaseIterable, Sendable, Hashable {
+public enum FindTextField: String, CaseIterable, Sendable, Hashable, Codable {
     case description
     case notes
     case memo
@@ -129,7 +129,7 @@ public enum FindTextField: String, CaseIterable, Sendable, Hashable {
     }
 }
 
-public enum FindDateField: String, CaseIterable, Sendable, Hashable {
+public enum FindDateField: String, CaseIterable, Sendable, Hashable, Codable {
     case posted
     case reconciled
 
@@ -143,7 +143,7 @@ public enum FindDateField: String, CaseIterable, Sendable, Hashable {
 
 /// The numeric fields. `shares` is the split quantity and `sharePrice` is
 /// value ÷ quantity — the same decomposition the register uses.
-public enum FindNumberField: String, CaseIterable, Sendable, Hashable {
+public enum FindNumberField: String, CaseIterable, Sendable, Hashable, Codable {
     case value
     case shares
     case sharePrice
@@ -161,16 +161,27 @@ public enum FindNumberField: String, CaseIterable, Sendable, Hashable {
 
 /// One test. The associated values make invalid combinations unrepresentable:
 /// there is no way to build a date criterion holding a text comparator.
-public enum FindTest: Sendable, Hashable {
+///
+/// `Codable`, because a query someone took sixteen criteria to build is a query
+/// they will want back — saved find queries serialise these into the book.
+public enum FindTest: Sendable, Hashable, Codable {
     case text(FindTextField, TextComparator, String, matchCase: Bool)
     case date(FindDateField, DateComparator, Date)
     case number(FindNumberField, NumberComparator, Decimal)
     case reconcile(SetComparator, Set<ReconcileState>)
     case account(SetComparator, Set<GncGUID>)
+    /// The transaction posts to **every** one of these accounts — GnuCash's
+    /// "All Accounts" row, distinct from `account`, which asks about the one
+    /// split. "CDIA and Brokerage" here means a transfer between them.
+    case allAccounts(Set<GncGUID>)
     case balanced(Bool)
+    /// GnuCash's "Closing Entries": the transactions Close Book writes, marked
+    /// with the `book_closing` slot. Mostly used negated, to keep year-end
+    /// bookkeeping out of a search over real activity.
+    case closing(Bool)
 }
 
-public struct FindCriterion: Identifiable, Sendable, Hashable {
+public struct FindCriterion: Identifiable, Sendable, Hashable, Codable {
     public var id: UUID
     public var test: FindTest
 
@@ -182,7 +193,7 @@ public struct FindCriterion: Identifiable, Sendable, Hashable {
 
 /// A whole query: the criteria, and whether a split must satisfy all of them or
 /// any of them (GnuCash's "Search for items where [all|any] criteria are met").
-public struct FindQuery: Sendable, Hashable {
+public struct FindQuery: Sendable, Hashable, Codable {
     public var criteria: [FindCriterion]
     public var matchAll: Bool
 
@@ -227,9 +238,32 @@ public extension FindTest {
             guard let id = split.account?.guid else { return comparator == .isNotOneOf }
             let hit = ids.contains(id)
             return comparator == .isOneOf ? hit : !hit
+        case .allAccounts(let ids):
+            // A transaction-level test read through the split's parent, like
+            // description or date: does the transaction post to every chosen
+            // account? An empty set is vacuously true of anything, which as a
+            // search means nothing — treat it as no match, same as the empty
+            // query.
+            guard !ids.isEmpty, let txn = split.transaction else { return false }
+            let posted = Set(txn.splits.compactMap { $0.account?.guid })
+            return ids.isSubset(of: posted)
         case .balanced(let want):
             guard let txn = split.transaction else { return false }
             return txn.isBalanced == want
+        case .closing(let want):
+            return (split.transaction.map(Self.isClosing) ?? false) == want
+        }
+    }
+
+    /// Whether a transaction is a book-closing entry — GnuCash marks them with
+    /// the `book_closing` slot, which the importer carries through. Any value in
+    /// the slot counts: GnuCash writes an int 1, but the presence is the marker.
+    static func isClosing(_ txn: Transaction) -> Bool {
+        switch txn.kvp["book_closing"] {
+        case nil: false
+        case .int64(let v): v != 0
+        case .string(let s): s != "0" && !s.isEmpty
+        default: true
         }
     }
 
