@@ -1578,6 +1578,60 @@ public final class AppModel {
         return !(book.account(with: id)?.children.isEmpty ?? true)
     }
 
+    /// GnuCash's register status strip. `nil` when nothing is selected, or when
+    /// a subtree register spans more than one commodity (the totals would be a
+    /// sum of unlike units — the same reason the running balance is withheld).
+    public struct RegisterSummary: Sendable {
+        /// Balance as of today — future-dated postings excluded.
+        public var present: Decimal
+        /// Balance including future-dated postings.
+        public var future: Decimal
+        /// Balance of cleared and reconciled splits.
+        public var cleared: Decimal
+        /// Balance of reconciled splits only.
+        public var reconciled: Decimal
+        public var currencyCode: String
+        /// A holding measured in shares, not currency — labels adapt.
+        public var isSecurity: Bool
+        /// Present and future differ, so a future row exists worth showing.
+        public var hasFuture: Bool { present != future }
+    }
+
+    public var registerSummary: RegisterSummary? {
+        guard let book, let id = selectedAccountID, let account = book.account(with: id) else {
+            return nil
+        }
+        let includeSubs = registerIncludesSubaccounts
+        let focus = includeSubs ? [account] + account.descendants : [account]
+        // Same gate as the running balance: a mixed-commodity sum means nothing.
+        guard Set(focus.map(\.commodity)).count == 1 else { return nil }
+
+        let commodity = account.commodity
+        let future = book.balance(of: account, filter: .all, includingDescendants: includeSubs)
+        let cleared = book.balance(of: account, filter: .cleared, includingDescendants: includeSubs)
+        let reconciled = book.balance(of: account, filter: .reconciled, includingDescendants: includeSubs)
+
+        // Present = as of today. `balance` has no date bound, so sum the
+        // dated postings directly, matching its voided-split exclusion.
+        let now = Date()
+        let focusSet = Set(focus.map { ObjectIdentifier($0) })
+        var present = Decimal(0)
+        for transaction in book.transactions where transaction.datePosted <= now {
+            for split in transaction.splits where split.reconcileState != .voided {
+                if let acct = split.account, focusSet.contains(ObjectIdentifier(acct)) {
+                    present += split.quantity
+                }
+            }
+        }
+        return RegisterSummary(
+            present: commodity.round(present),
+            future: future.rounded.amount,
+            cleared: cleared.rounded.amount,
+            reconciled: reconciled.rounded.amount,
+            currencyCode: commodity.mnemonic,
+            isSecurity: commodity.namespace != .currency)
+    }
+
     /// Hides rows the filter excludes. Balances are already fixed, so a hidden
     /// split still counts toward the rows around it — as it must: the money
     /// moved whether or not you are looking at it.

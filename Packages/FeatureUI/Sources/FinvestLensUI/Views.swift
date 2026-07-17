@@ -902,6 +902,10 @@ struct RegisterView: View {
             .padding(6)
             Divider()
             content
+            if style == .basic, let summary = model.registerSummary {
+                Divider()
+                summaryBar(summary)
+            }
         }
         .navigationTitle(style == .generalLedger ? "General Ledger" : selectedName)
         .background { jumpShortcuts }
@@ -1176,6 +1180,32 @@ struct RegisterView: View {
         model.postableAccounts.first { $0.id == model.selectedAccountID }?.name
             ?? model.accountTree.first { $0.id == model.selectedAccountID }?.name
             ?? "Register"
+    }
+
+    /// GnuCash's register status strip: the balance under each reconcile lens.
+    /// Values come from the engine's existing `BalanceFilter`, so they agree
+    /// with the sidebar and the reports to the cent.
+    private func summaryBar(_ s: AppModel.RegisterSummary) -> some View {
+        func cell(_ label: String, _ value: Decimal) -> some View {
+            HStack(spacing: 4) {
+                Text(label).foregroundStyle(.secondary)
+                Text(AmountFormat.string(value, code: s.currencyCode))
+                    .monospacedDigit()
+            }
+            .scaledFont(.caption)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(label) \(AmountFormat.string(value, code: s.currencyCode))")
+        }
+        return HStack(spacing: 16) {
+            cell("Present:", s.present)
+            if s.hasFuture { cell("Future:", s.future) }
+            cell("Cleared:", s.cleared)
+            cell("Reconciled:", s.reconciled)
+            Spacer()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(.quaternary.opacity(0.4))
     }
 
     private var currencyCode: String {
