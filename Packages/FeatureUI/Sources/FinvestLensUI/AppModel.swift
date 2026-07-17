@@ -402,6 +402,10 @@ public final class AppModel {
     /// Saved structured Find queries (GnuCash has none; a query someone took
     /// six criteria to build is a query they will want back).
     public internal(set) var savedFindQueries: [SavedFindQuery] = []
+    /// Saved report configurations — favourites (`FR-RPT-04`).
+    public internal(set) var savedReports: [SavedReport] = []
+    /// Book-scoped report preferences: FY start month, default period.
+    public internal(set) var reportSettings = ReportSettings()
 
     /// Securities tracked but not held (watch list, `FR-PLAN-07`).
     public internal(set) var watchlist: [Commodity] = []
@@ -537,6 +541,8 @@ public final class AppModel {
         static let quoteSymbols = "finvestlens/quoteSymbols"
         static let savedSearches = "finvestlens/savedSearches"
         static let savedFindQueries = "finvestlens/savedFindQueries"
+        static let savedReports = "finvestlens/savedReports"
+        static let reportSettings = "finvestlens/reportSettings"
         static let watchlist = "finvestlens/watchlist"
         static let priceTargets = "finvestlens/priceTargets"
     }
@@ -553,6 +559,8 @@ public final class AppModel {
         quoteSymbols = Self.decodeSlot([String: String].self, book.kvp[KvpKey.quoteSymbols]) ?? [:]
         savedSearches = Self.decodeSlot([SavedSearch].self, book.kvp[KvpKey.savedSearches]) ?? []
         savedFindQueries = Self.decodeSlot([SavedFindQuery].self, book.kvp[KvpKey.savedFindQueries]) ?? []
+        savedReports = Self.decodeSlot([SavedReport].self, book.kvp[KvpKey.savedReports]) ?? []
+        reportSettings = Self.decodeSlot(ReportSettings.self, book.kvp[KvpKey.reportSettings]) ?? ReportSettings()
         watchlist = Self.decodeSlot([Commodity].self, book.kvp[KvpKey.watchlist]) ?? []
         priceTargets = Self.decodeSlot([PriceTarget].self, book.kvp[KvpKey.priceTargets]) ?? []
     }
@@ -566,6 +574,11 @@ public final class AppModel {
         book.kvp[KvpKey.quoteSymbols] = Self.encodeMap(quoteSymbols)
         book.kvp[KvpKey.savedSearches] = Self.encodeSlot(savedSearches)
         book.kvp[KvpKey.savedFindQueries] = Self.encodeSlot(savedFindQueries)
+        book.kvp[KvpKey.savedReports] = Self.encodeSlot(savedReports)
+        // Defaults write nothing: a book that never changed a report setting
+        // carries no slot, so the defaults can improve without stale copies.
+        book.kvp[KvpKey.reportSettings] =
+            reportSettings == ReportSettings() ? nil : Self.encodeSingle(reportSettings)
         book.kvp[KvpKey.watchlist] = Self.encodeSlot(watchlist)
         book.kvp[KvpKey.priceTargets] = Self.encodeSlot(priceTargets)
     }
@@ -582,6 +595,16 @@ public final class AppModel {
     private static func decodeSlot<T: Decodable>(_ type: T.Type, _ value: KvpValue?) -> T? {
         guard case let .string(json)? = value, let data = json.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(type, from: data)
+    }
+
+    /// A single Codable value as a slot — the array variant treats empty as
+    /// "no slot", which is wrong for a settings struct whose empty form still
+    /// differs from another value's.
+    private static func encodeSingle<T: Encodable>(_ value: T) -> KvpValue? {
+        guard let data = try? JSONEncoder().encode(value),
+              let json = String(data: data, encoding: .utf8)
+        else { return nil }
+        return .string(json)
     }
 
     private static func encodeSlot<T: Encodable>(_ array: [T]) -> KvpValue? {
@@ -1002,6 +1025,8 @@ public final class AppModel {
         budgets = []
         savedSearches = []
         savedFindQueries = []
+        savedReports = []
+        reportSettings = ReportSettings()
         watchlist = []
         priceTargets = []
         quoteSymbols = [:]
