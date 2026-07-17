@@ -139,6 +139,17 @@ public final class Account {
         return child
     }
 
+    /// Adds `child` at a specific position among the children (reparenting it if
+    /// necessary). Used to restore an account to its exact former slot when a
+    /// move is undone; the index is clamped to the current bounds.
+    @discardableResult
+    public func addChild(_ child: Account, at index: Int) -> Account {
+        child.parent?.removeChild(child)
+        child.parent = self
+        children.insert(child, at: min(max(0, index), children.count))
+        return child
+    }
+
     /// Removes `child` if it is a direct child of this account.
     public func removeChild(_ child: Account) {
         guard child.parent === self else { return }

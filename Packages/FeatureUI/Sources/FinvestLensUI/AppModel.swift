@@ -1362,9 +1362,81 @@ public final class AppModel {
         undoManager?.setActionName(named)
     }
 
+    /// An account's restorable state before an edit: its value fields plus where
+    /// it sat in the tree. Transactions are untouched, so an account edit never
+    /// needs the whole-book snapshot — the same reason ``editing(_:named:)``
+    /// exists for transactions. The parent slot preserves placement so an undone
+    /// move returns the account to its exact former position.
+    struct AccountSnapshot {
+        let id: GncGUID
+        let name: String
+        let type: AccountType
+        let code: String
+        let accountDescription: String
+        let notes: String
+        let commodity: Commodity
+        let isPlaceholder: Bool
+        let isHidden: Bool
+        let kvp: KvpFrame           // carries colour and the tax slots
+        let parentID: GncGUID?
+        let indexInParent: Int
+    }
+
+    private func accountSnapshot(_ id: GncGUID) -> AccountSnapshot? {
+        guard let account = book?.account(with: id) else { return nil }
+        let siblings = account.parent?.children ?? []
+        return AccountSnapshot(
+            id: id, name: account.name, type: account.type, code: account.code,
+            accountDescription: account.accountDescription, notes: account.notes,
+            commodity: account.commodity, isPlaceholder: account.isPlaceholder,
+            isHidden: account.isHidden, kvp: account.kvp,
+            parentID: account.parent?.guid,
+            indexInParent: siblings.firstIndex { $0 === account } ?? 0)
+    }
+
+    /// Applies `body` as one undoable edit of the accounts named by `ids`.
+    ///
+    /// `ids` must name every account `body` changes (for a cascade, the whole
+    /// affected subtree). Only their value fields and tree placement are
+    /// captured — transactions and other accounts are not — so an account edit
+    /// no longer pays the whole-book serialisation ``editingWholeBook`` costs.
+    func editingAccounts(_ ids: [GncGUID], named: String, _ body: () -> Void) {
+        let before = ids.compactMap { accountSnapshot($0) }
+        body()
+        refreshAfterChange()
+        guard isOpen else { return }
+        undoManager?.registerUndo(withTarget: self) { model in
+            model.editingAccounts(ids, named: named) { model.restoreAccounts(before) }
+        }
+        undoManager?.setActionName(named)
+    }
+
+    /// Puts snapshotted accounts back as they were, including their tree slot.
+    private func restoreAccounts(_ snapshots: [AccountSnapshot]) {
+        guard let book else { return }
+        for snapshot in snapshots {
+            guard let account = book.account(with: snapshot.id) else { continue }
+            account.name = snapshot.name
+            account.type = snapshot.type
+            account.code = snapshot.code
+            account.accountDescription = snapshot.accountDescription
+            account.notes = snapshot.notes
+            account.commodity = snapshot.commodity
+            account.isPlaceholder = snapshot.isPlaceholder
+            account.isHidden = snapshot.isHidden
+            account.kvp = snapshot.kvp
+            // Re-parent only if it actually moved, restoring the former slot.
+            let parent = snapshot.parentID.flatMap { book.account(with: $0) } ?? book.rootAccount
+            if account.parent !== parent
+                || (account.parent?.children.firstIndex { $0 === account }) != snapshot.indexInParent {
+                parent.addChild(account, at: snapshot.indexInParent)
+            }
+        }
+    }
+
     /// Applies `body` as one undoable edit of the whole book, exporting it
-    /// first. Costs a full serialisation — use ``editing(_:named:)`` whenever
-    /// the touched transactions can be named.
+    /// first. Costs a full serialisation — use ``editing(_:named:)`` (or
+    /// ``editingAccounts(_:named:)``) whenever the touched objects can be named.
     func editingWholeBook(named: String, _ body: () -> Void) {
         let before = gnuCashExportData()
         body()

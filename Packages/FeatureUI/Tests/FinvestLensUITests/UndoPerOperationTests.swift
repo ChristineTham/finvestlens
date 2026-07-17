@@ -348,6 +348,72 @@ struct UndoStructuralOperationTests {
         #expect(f.model.book?.prices.count == 1)
     }
 
+    @Test("Tax flag round-trips (account-scoped undo)")
+    func setAccountTax() throws {
+        let f = try Fixture()
+        defer { f.tearDown() }
+
+        f.model.setAccountTax(id: f.food, related: true, code: "N286")
+        #expect(f.model.book?.account(with: f.food)?.taxRelated == true)
+        #expect(f.model.book?.account(with: f.food)?.taxCode == "N286")
+
+        f.undo.undo()
+        #expect(f.model.book?.account(with: f.food)?.taxRelated == false)
+        #expect(f.model.book?.account(with: f.food)?.taxCode == nil)
+
+        f.undo.redo()
+        #expect(f.model.book?.account(with: f.food)?.taxCode == "N286")
+    }
+
+    @Test("Cascade properties round-trip across the subtree in one undo")
+    func cascade() throws {
+        let f = try Fixture()
+        defer { f.tearDown() }
+        // food ▸ dining ▸ takeaway. Hide the parent and cascade it down.
+        let dining = try #require(f.model.addAccount(name: "Dining", type: .expense, parentID: f.food))
+        let takeaway = try #require(f.model.addAccount(name: "Takeaway", type: .expense, parentID: dining))
+        f.model.updateAccount(id: f.food, name: "Food", code: "", description: "", notes: "",
+                              isPlaceholder: false, isHidden: true)
+        f.undo.removeAllActions()
+
+        let changed = f.model.cascadeProperties(from: f.food, .init(isHidden: true))
+        #expect(changed == 2)
+        #expect(f.model.book?.account(with: dining)?.isHidden == true)
+        #expect(f.model.book?.account(with: takeaway)?.isHidden == true)
+
+        f.undo.undo()
+        #expect(f.model.book?.account(with: dining)?.isHidden == false)
+        #expect(f.model.book?.account(with: takeaway)?.isHidden == false)
+
+        f.undo.redo()
+        #expect(f.model.book?.account(with: takeaway)?.isHidden == true)
+    }
+
+    @Test("Undoing a move restores the account's exact sibling position")
+    func moveRestoresPosition() throws {
+        let f = try Fixture()
+        defer { f.tearDown() }
+        // Three siblings at the root: bank, food (from the fixture), then a, b.
+        // Put `food` between two new accounts so its index is not the edge.
+        let a = try #require(f.model.addAccount(name: "A", type: .asset))
+        let b = try #require(f.model.addAccount(name: "B", type: .asset))
+        let parent = try #require(f.model.addAccount(name: "Parent", type: .asset))
+        f.undo.removeAllActions()
+
+        func siblingIndex(_ id: GncGUID) -> Int? {
+            f.model.book?.rootAccount.children.firstIndex { $0.guid == id }
+        }
+        let originalIndex = try #require(siblingIndex(f.food))
+
+        #expect(f.model.moveAccount(f.food, under: parent))
+        #expect(siblingIndex(f.food) == nil)                 // no longer a root child
+
+        f.undo.undo()
+        #expect(f.model.parentID(ofAccount: f.food) == nil)  // back at the root
+        #expect(siblingIndex(f.food) == originalIndex)        // …in its former slot
+        _ = (a, b)
+    }
+
     @Test("A transaction undo still works after a whole-book undo")
     func mixedUndoStack() throws {
         let f = try Fixture()

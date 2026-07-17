@@ -366,7 +366,7 @@ extension AppModel {
     /// Sets an account's tax-related flag and category code. Undoable.
     public func setAccountTax(id: GncGUID, related: Bool, code: String?) {
         guard let book, let account = book.account(with: id) else { return }
-        editingWholeBook(named: "Tax Options") {
+        editingAccounts([id], named: "Tax Options") {
             account.taxRelated = related
             account.taxCode = related ? code : nil
         }
@@ -432,7 +432,7 @@ extension AppModel {
     public func updateAccount(id: GncGUID, name: String, code: String, description: String,
                               notes: String, isPlaceholder: Bool, isHidden: Bool) {
         guard let book, let account = book.account(with: id) else { return }
-        editingWholeBook(named: "Edit Account") {
+        editingAccounts([id], named: "Edit Account") {
             account.name = name
             account.code = code
             account.accountDescription = description
@@ -478,7 +478,7 @@ extension AppModel {
         let targets = account.descendants
         guard !targets.isEmpty else { return 0 }
 
-        editingWholeBook(named: "Cascade Account Properties") {
+        editingAccounts(targets.map(\.guid), named: "Cascade Account Properties") {
             for target in targets {
                 if options.color { target.color = account.color }
                 if options.isPlaceholder { target.isPlaceholder = account.isPlaceholder }
@@ -772,7 +772,7 @@ extension AppModel {
         if newParent === account || account.descendants.contains(where: { $0 === newParent }) {
             return false
         }
-        editingWholeBook(named: "Move Account") {
+        editingAccounts([id], named: "Move Account") {
             newParent.addChild(account)   // addChild reparents from the old parent
         }
         return true
