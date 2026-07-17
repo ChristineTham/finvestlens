@@ -2155,11 +2155,12 @@ struct EditableSplit: Identifiable {
         quantityText.trimmingCharacters(in: .whitespaces).isEmpty || quantity != nil
     }
 
-    /// A decimal only if the *whole* string is one.
+    /// A decimal only if the *whole* string is one — or a whole arithmetic
+    /// expression that evaluates to one (GnuCash lets you type `5*3` or
+    /// `10.50+2` into an amount cell; ``AmountExpression`` validates the whole
+    /// string and returns the number for a plain figure).
     static func strictDecimal(_ text: String) -> Decimal? {
-        let scanner = Scanner(string: text)
-        guard let value = scanner.scanDecimal(), scanner.isAtEnd else { return nil }
-        return value
+        AmountExpression.evaluate(text)
     }
 
     /// Per-split memo and GnuCash's per-split Action. Both are editable below;
