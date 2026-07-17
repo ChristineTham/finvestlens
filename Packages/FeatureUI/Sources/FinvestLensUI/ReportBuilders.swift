@@ -61,6 +61,10 @@ extension AppModel {
 
         switch kind {
         case .balanceSheet:
+            if let columns = comparisonColumns(configuration.period,
+                                               extra: configuration.comparePeriods ?? 0) {
+                return comparativeBalanceSheet(columns)
+            }
             guard let sheet = balanceSheet(asOf: to) else { return nil }
             return ReportDocument(
                 title: "Balance Sheet",
@@ -95,6 +99,10 @@ extension AppModel {
                     lines: ranked(sheet.assets + sheet.liabilities)))
 
         case .incomeStatement:
+            if let columns = comparisonColumns(configuration.period,
+                                               extra: configuration.comparePeriods ?? 0) {
+                return comparativeIncomeStatement(columns)
+            }
             guard let statement = incomeStatement(from: from, to: to) else { return nil }
             return ReportDocument(
                 title: "Income Statement",
@@ -335,6 +343,159 @@ extension AppModel {
     /// intervals abut (each ends the day before the next begins).
     private func intervalLabel(_ interval: AverageBalanceInterval) -> String {
         interval.start.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    // MARK: Comparative statements
+
+    /// The period columns for a comparative statement: the selected period plus
+    /// `extra` earlier periods of the same length, most recent first. `nil` when
+    /// no comparison is asked for, or the period does not tile the calendar.
+    func comparisonColumns(_ period: ReportPeriod, extra: Int)
+        -> [(label: String, from: Date, to: Date)]? {
+        guard extra > 0, let stride = period.comparisonStride else { return nil }
+        let calendar = Calendar.current
+        var back = DateComponents()
+        back.year = stride.year.map { -$0 }
+        back.month = stride.month.map { -$0 }
+        back.day = stride.day.map { -$0 }
+
+        var columns: [(label: String, from: Date, to: Date)] = []
+        var (from, to) = resolve(period)
+        for _ in 0...extra {
+            columns.append((comparisonLabel(from: from, to: to, stride: stride), from, to))
+            from = calendar.date(byAdding: back, to: from)!
+            to = calendar.date(byAdding: back, to: to)!
+        }
+        return columns
+    }
+
+    /// A compact column header for one comparative period, from its window and
+    /// the stride: "FY 2024–25", "2025", "Q3 2025", or "Aug 2025".
+    private func comparisonLabel(from: Date, to: Date, stride: DateComponents) -> String {
+        let calendar = Calendar.current
+        let fromMonth = calendar.component(.month, from: from)
+        let fromYear = calendar.component(.year, from: from)
+        let toYear = calendar.component(.year, from: to)
+        if stride.year == 1 {
+            return fromMonth == 1 ? "\(fromYear)"
+                : "FY \(fromYear)–\(String(format: "%02d", toYear % 100))"
+        }
+        if stride.month == 3 {
+            return "Q\((fromMonth - 1) / 3 + 1) \(fromYear)"
+        }
+        if stride.month == 1 {
+            return from.formatted(.dateTime.month(.abbreviated).year())
+        }
+        return to.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    /// Aligns report lines from several periods into comparative rows, keyed by
+    /// full account name and ordered by first appearance across the columns. A
+    /// `nil` amount means the account had no line in that period.
+    private func alignedRows(_ columns: [[ReportLine]],
+                             extra: [(label: String, amounts: [Decimal?])] = [])
+        -> [ReportDocumentRow] {
+        var order: [String] = []
+        var seen = Set<String>()
+        for column in columns {
+            for line in column where seen.insert(line.fullName).inserted {
+                order.append(line.fullName)
+            }
+        }
+        let maps = columns.map { column in
+            Dictionary(column.map { ($0.fullName, $0.amount) },
+                       uniquingKeysWith: { first, _ in first })
+        }
+        var rows = order.map { key in
+            ReportDocumentRow(label: key, amounts: maps.map { $0[key] })
+        }
+        rows += extra.map { ReportDocumentRow(label: $0.label, amounts: $0.amounts) }
+        return rows
+    }
+
+    private func comparativeBalanceSheet(
+        _ columns: [(label: String, from: Date, to: Date)]
+    ) -> ReportDocument? {
+        let sheets = columns.compactMap { balanceSheet(asOf: $0.to) }
+        guard sheets.count == columns.count, let current = sheets.first else { return nil }
+        let headers = columns.map(\.label)
+        let equityExtra = [(label: "Retained earnings",
+                            amounts: sheets.map { Optional($0.retainedEarnings) })]
+
+        return ReportDocument(
+            title: "Balance Sheet",
+            periodLabel: "Comparative · " + headers.joined(separator: " vs "),
+            currencyCode: current.currencyCode,
+            kpis: [
+                ReportKPI(label: "Assets", amount: current.totalAssets),
+                ReportKPI(label: "Liabilities", amount: current.totalLiabilities),
+                ReportKPI(label: "Net worth",
+                          amount: current.totalAssets - current.totalLiabilities, signed: true),
+            ],
+            chart: nil,
+            sections: [
+                ReportDocumentSection(
+                    title: "Assets", rows: alignedRows(sheets.map { $0.assets }),
+                    columns: headers,
+                    columnTotals: ("Total Assets", sheets.map { Optional($0.totalAssets) })),
+                ReportDocumentSection(
+                    title: "Liabilities", rows: alignedRows(sheets.map { $0.liabilities }),
+                    columns: headers,
+                    columnTotals: ("Total Liabilities", sheets.map { Optional($0.totalLiabilities) })),
+                ReportDocumentSection(
+                    title: "Equity",
+                    rows: alignedRows(sheets.map { $0.equity }, extra: equityExtra),
+                    columns: headers,
+                    columnTotals: ("Total Equity", sheets.map { Optional($0.totalEquity) })),
+            ],
+            notes: [valuationNote(columns[0].to),
+                    "Columns compare the selected period with earlier periods of the same "
+                    + "length; the leftmost is the most recent."],
+            facts: ReportFactsSource(
+                headline: [("Assets", current.totalAssets),
+                           ("Liabilities", current.totalLiabilities),
+                           ("Equity", current.totalEquity)],
+                lines: ranked(current.assets + current.liabilities)))
+    }
+
+    private func comparativeIncomeStatement(
+        _ columns: [(label: String, from: Date, to: Date)]
+    ) -> ReportDocument? {
+        let statements = columns.compactMap { incomeStatement(from: $0.from, to: $0.to) }
+        guard statements.count == columns.count, let current = statements.first else { return nil }
+        let headers = columns.map(\.label)
+
+        return ReportDocument(
+            title: "Income Statement",
+            periodLabel: "Comparative · " + headers.joined(separator: " vs "),
+            currencyCode: current.currencyCode,
+            kpis: [
+                ReportKPI(label: "Income", amount: current.totalIncome),
+                ReportKPI(label: "Expenses", amount: current.totalExpenses),
+                ReportKPI(label: "Net income", amount: current.netIncome, signed: true),
+            ],
+            chart: nil,
+            sections: [
+                ReportDocumentSection(
+                    title: "Income", rows: alignedRows(statements.map { $0.income }),
+                    columns: headers,
+                    columnTotals: ("Total Income", statements.map { Optional($0.totalIncome) })),
+                ReportDocumentSection(
+                    title: "Expenses", rows: alignedRows(statements.map { $0.expenses }),
+                    columns: headers,
+                    columnTotals: ("Total Expenses", statements.map { Optional($0.totalExpenses) })),
+                ReportDocumentSection(
+                    title: "Result", rows: [], columns: headers,
+                    columnTotals: ("Net income", statements.map { Optional($0.netIncome) })),
+            ],
+            notes: [valuationNote(columns[0].to),
+                    "Columns compare the selected period with earlier periods of the same "
+                    + "length; the leftmost is the most recent."],
+            facts: ReportFactsSource(
+                headline: [("Income", current.totalIncome),
+                           ("Expenses", current.totalExpenses),
+                           ("Net income", current.netIncome)],
+                lines: ranked(current.income + current.expenses)))
     }
 
     // MARK: Helpers

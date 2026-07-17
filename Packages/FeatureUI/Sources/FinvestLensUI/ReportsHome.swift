@@ -78,6 +78,8 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
     var usesAccounts: Bool { self == .cashFlow || self == .averageBalance }
     /// Whether the report takes an interval size (the average-balance report).
     var usesStep: Bool { self == .averageBalance }
+    /// Whether the report can show prior periods as comparison columns.
+    var usesCompare: Bool { self == .balanceSheet || self == .incomeStatement }
 
     var icon: String {
         switch self {
@@ -413,6 +415,12 @@ struct ReportScreen: View {
                 }
                 .pickerStyle(.menu)
                 .fixedSize()
+            }
+            if kind?.usesCompare == true, configuration.period.comparisonStride != nil {
+                Stepper("Compare: \(configuration.comparePeriods ?? 0)", value: Binding(
+                    get: { configuration.comparePeriods ?? 0 },
+                    set: { configuration.comparePeriods = $0 }), in: 0...4)
+                    .fixedSize()
             }
             Spacer()
         }

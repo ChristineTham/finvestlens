@@ -108,6 +108,24 @@ public enum ReportPeriod: Codable, Hashable, Sendable {
         }
     }
 
+    /// The natural stride between this period and the one before it, for
+    /// comparative (period-over-period) columns. `nil` for periods that don't
+    /// tile the calendar cleanly — all time, last 12 months, custom — where a
+    /// "previous period of the same length" is ill-defined.
+    public var comparisonStride: DateComponents? {
+        switch self {
+        case .currentFinancialYear, .previousFinancialYear,
+             .calendarYearToDate, .previousCalendarYear:
+            DateComponents(year: 1)
+        case .currentQuarter:
+            DateComponents(month: 3)
+        case .currentMonth, .previousMonth:
+            DateComponents(month: 1)
+        case .last12Months, .allTime, .custom:
+            nil
+        }
+    }
+
     /// What the selector shows — specific enough to check ("FY 2026–27"), not
     /// just the name of the rule.
     public func label(financialYearStartMonth: Int, today: Date,

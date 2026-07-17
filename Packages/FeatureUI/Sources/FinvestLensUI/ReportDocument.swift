@@ -45,6 +45,9 @@ struct ReportDocumentRow: Identifiable {
     /// — a debit/credit pair, for the trial balance's two columns.
     var debit: Decimal?
     var credit: Decimal?
+    /// — several amounts, one per period, for a comparative statement. A `nil`
+    /// entry renders blank (the account had no line in that period).
+    var amounts: [Decimal?]?
 }
 
 /// A titled table with an optional ruled total.
@@ -52,9 +55,13 @@ struct ReportDocumentSection: Identifiable {
     var id: String { title }
     var title: String
     var rows: [ReportDocumentRow]
-    var total: (label: String, amount: Decimal)?
+    var total: (label: String, amount: Decimal)? = nil
     /// Two amount columns instead of one (trial balance).
     var isDebitCredit = false
+    /// Column headers, when the rows carry `amounts` (a comparative statement).
+    var columns: [String]? = nil
+    /// A ruled total across the comparative columns.
+    var columnTotals: (label: String, amounts: [Decimal?])? = nil
 }
 
 /// The chart a report carries, when it carries one.
@@ -252,50 +259,98 @@ struct ReportTableView: View {
                 .scaledFont(.headline)
                 .padding(.bottom, 6)
             Divider()
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 0) {
-                if section.isDebitCredit {
-                    GridRow {
-                        Text("")
-                        Text("Debit").gridColumnAlignment(.trailing)
-                        Text("Credit").gridColumnAlignment(.trailing)
-                    }
-                    .scaledFont(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 4)
+            if let columns = section.columns {
+                comparativeGrid(columns)
+            } else {
+                singleGrid
+            }
+        }
+    }
+
+    private var singleGrid: some View {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 0) {
+            if section.isDebitCredit {
+                GridRow {
+                    Text("")
+                    Text("Debit").gridColumnAlignment(.trailing)
+                    Text("Credit").gridColumnAlignment(.trailing)
                 }
-                ForEach(Array(section.rows.enumerated()), id: \.element.id) { index, row in
-                    GridRow {
-                        Text(row.label)
-                            .padding(.leading, CGFloat(row.depth) * 16)
-                            .foregroundStyle(row.depth > 0 ? .secondary : .primary)
-                        if section.isDebitCredit {
-                            amountText(row.debit).gridColumnAlignment(.trailing)
-                            amountText(row.credit).gridColumnAlignment(.trailing)
-                        } else {
-                            amountText(row.amount).gridColumnAlignment(.trailing)
-                        }
+                .scaledFont(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 4)
+            }
+            ForEach(Array(section.rows.enumerated()), id: \.element.id) { index, row in
+                GridRow {
+                    Text(row.label)
+                        .padding(.leading, CGFloat(row.depth) * 16)
+                        .foregroundStyle(row.depth > 0 ? .secondary : .primary)
+                    if section.isDebitCredit {
+                        amountText(row.debit).gridColumnAlignment(.trailing)
+                        amountText(row.credit).gridColumnAlignment(.trailing)
+                    } else {
+                        amountText(row.amount).gridColumnAlignment(.trailing)
                     }
-                    .scaledFont(.body)
-                    .padding(.vertical, 5)
-                    .background(index.isMultiple(of: 2) ? Color.clear
-                                : Color.primary.opacity(0.03))
                 }
-                if let total = section.total {
-                    GridRow {
-                        Text(total.label).fontWeight(.bold)
-                        if section.isDebitCredit {
-                            Text("").gridColumnAlignment(.trailing)
-                            amountText(total.amount).fontWeight(.bold)
-                                .gridColumnAlignment(.trailing)
-                        } else {
-                            amountText(total.amount).fontWeight(.bold)
-                                .gridColumnAlignment(.trailing)
-                        }
+                .scaledFont(.body)
+                .padding(.vertical, 5)
+                .background(index.isMultiple(of: 2) ? Color.clear
+                            : Color.primary.opacity(0.03))
+            }
+            if let total = section.total {
+                GridRow {
+                    Text(total.label).fontWeight(.bold)
+                    if section.isDebitCredit {
+                        Text("").gridColumnAlignment(.trailing)
+                        amountText(total.amount).fontWeight(.bold)
+                            .gridColumnAlignment(.trailing)
+                    } else {
+                        amountText(total.amount).fontWeight(.bold)
+                            .gridColumnAlignment(.trailing)
                     }
-                    .scaledFont(.body)
-                    .padding(.vertical, 6)
-                    .overlay(alignment: .top) { Divider() }
                 }
+                .scaledFont(.body)
+                .padding(.vertical, 6)
+                .overlay(alignment: .top) { Divider() }
+            }
+        }
+    }
+
+    /// One period per column, amounts right-aligned under each header.
+    private func comparativeGrid(_ columns: [String]) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 0) {
+            GridRow {
+                Text("")
+                ForEach(Array(columns.enumerated()), id: \.offset) { _, header in
+                    Text(header).gridColumnAlignment(.trailing)
+                }
+            }
+            .scaledFont(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 4)
+            ForEach(Array(section.rows.enumerated()), id: \.element.id) { index, row in
+                GridRow {
+                    Text(row.label)
+                        .padding(.leading, CGFloat(row.depth) * 16)
+                        .foregroundStyle(row.depth > 0 ? .secondary : .primary)
+                    ForEach(Array((row.amounts ?? []).enumerated()), id: \.offset) { _, amount in
+                        amountText(amount).gridColumnAlignment(.trailing)
+                    }
+                }
+                .scaledFont(.body)
+                .padding(.vertical, 5)
+                .background(index.isMultiple(of: 2) ? Color.clear
+                            : Color.primary.opacity(0.03))
+            }
+            if let totals = section.columnTotals {
+                GridRow {
+                    Text(totals.label).fontWeight(.bold)
+                    ForEach(Array(totals.amounts.enumerated()), id: \.offset) { _, amount in
+                        amountText(amount).fontWeight(.bold).gridColumnAlignment(.trailing)
+                    }
+                }
+                .scaledFont(.body)
+                .padding(.vertical, 6)
+                .overlay(alignment: .top) { Divider() }
             }
         }
     }
@@ -324,6 +379,19 @@ extension ReportDocument {
                 kpis.map { PrintableRow(label: $0.label, amount: $0.amount, bold: true) }))
         }
         for section in self.sections {
+            if let columns = section.columns {
+                var rows = section.rows.map {
+                    PrintableRow(label: String(repeating: "    ", count: $0.depth) + $0.label,
+                                 amount: 0, amounts: $0.amounts)
+                }
+                if let totals = section.columnTotals {
+                    rows.append(PrintableRow(label: totals.label, amount: 0, bold: true,
+                                             amounts: totals.amounts))
+                }
+                sections.append(PrintableSection(heading: section.title, rows: rows,
+                                                 columns: columns))
+                continue
+            }
             var rows = section.rows.map {
                 PrintableRow(label: String(repeating: "    ", count: $0.depth) + $0.label,
                              amount: $0.amount ?? $0.debit ?? ($0.credit.map { -$0 }) ?? 0)

@@ -30,15 +30,19 @@ public struct ReportConfiguration: Codable, Hashable, Sendable {
     public var depth: Int?
     /// The interval size, for the average-balance report.
     public var step: AverageBalanceStep?
+    /// How many prior periods to show alongside the selected one as columns,
+    /// for the comparative statements (0 or nil = a single period).
+    public var comparePeriods: Int?
 
     public init(kind: String, period: ReportPeriod,
                 accountIDs: Set<GncGUID>? = nil, depth: Int? = nil,
-                step: AverageBalanceStep? = nil) {
+                step: AverageBalanceStep? = nil, comparePeriods: Int? = nil) {
         self.kind = kind
         self.period = period
         self.accountIDs = accountIDs
         self.depth = depth
         self.step = step
+        self.comparePeriods = comparePeriods
     }
 }
 
