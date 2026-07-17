@@ -17,6 +17,8 @@ struct PricesView: View {
     @State private var showingQuotes = false
     @State private var showingAddRate = false
     @State private var showingSecurities = false
+    @State private var importingCSV = false
+    @State private var importMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -80,6 +82,9 @@ struct PricesView: View {
                         .disabled(model.currencyCommodities.count < 2)
                 }
                 ToolbarItem {
+                    Button("Import CSV", systemImage: "square.and.arrow.down") { importingCSV = true }
+                }
+                ToolbarItem {
                     Button("Add Price", systemImage: "plus") { showingAdd = true }
                         .disabled(model.pricableSecurities.isEmpty)
                 }
@@ -88,6 +93,27 @@ struct PricesView: View {
             .sheet(isPresented: $showingQuotes) { QuotesView(model: model) }
             .sheet(isPresented: $showingAddRate) { AddRateSheet(model: model) }
             .sheet(isPresented: $showingSecurities) { SecuritiesView(model: model) }
+            .fileImporter(isPresented: $importingCSV, allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
+                guard case let .success(url) = result else { return }
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+                    importMessage = "Couldn't read the file."; return
+                }
+                let outcome = model.importPrices(csv: text)
+                if outcome.unrecognisedFormat {
+                    importMessage = "Couldn't find Date / Commodity / Price columns in the CSV header."
+                } else {
+                    var msg = "Imported \(outcome.imported) price\(outcome.imported == 1 ? "" : "s")."
+                    if !outcome.unmatchedSymbols.isEmpty {
+                        msg += "\nSkipped unknown symbols: \(outcome.unmatchedSymbols.joined(separator: ", "))."
+                    }
+                    importMessage = msg
+                }
+            }
+            .alert("Price Import", isPresented: Binding(
+                get: { importMessage != nil }, set: { if !$0 { importMessage = nil } }
+            )) { Button("OK", role: .cancel) {} } message: { Text(importMessage ?? "") }
         }
         .frame(minWidth: 460, minHeight: 380)
     }

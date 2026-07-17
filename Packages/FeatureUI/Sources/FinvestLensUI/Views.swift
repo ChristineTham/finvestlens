@@ -68,6 +68,20 @@ struct GnuCashFileDocument: FileDocument {
     }
 }
 
+/// A UTF-8 CSV file for `.fileExporter` (`FR-XIO-06`, export only).
+struct CSVFileDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.commaSeparatedText] }
+
+    var text: String
+    init(text: String) { self.text = text }
+    init(configuration: ReadConfiguration) throws {
+        text = String(decoding: configuration.file.regularFileContents ?? Data(), as: UTF8.self)
+    }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
+}
+
 // MARK: - Formatting
 
 enum AmountFormat {
@@ -203,6 +217,9 @@ public struct FinvestLensRootView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var showingExport = false
     @State private var exportDocument: GnuCashFileDocument?
+    @State private var showingCSVExport = false
+    @State private var csvDocument: CSVFileDocument?
+    @State private var csvFilename = "Export"
     @State private var importPayload: ImportPayload?
     @State private var offeredOnboarding = false
     @State private var smartPayload: SmartImportPayload?
@@ -436,6 +453,18 @@ public struct FinvestLensRootView: View {
         .fileExporter(isPresented: $showingExport, document: exportDocument,
                       contentType: GnuCashFileDocument.contentType, defaultFilename: "Book") { _ in
             exportDocument = nil
+        }
+        .onChange(of: model.csvExportRequest) {
+            guard let kind = model.csvExportRequest else { return }
+            model.csvExportRequest = nil
+            let bookName = model.documentURL?.deletingPathExtension().lastPathComponent ?? "FinvestLens"
+            csvFilename = kind.filename(book: bookName)
+            csvDocument = CSVFileDocument(text: model.csvExport(kind))
+            showingCSVExport = true
+        }
+        .fileExporter(isPresented: $showingCSVExport, document: csvDocument,
+                      contentType: .commaSeparatedText, defaultFilename: csvFilename) { _ in
+            csvDocument = nil
         }
     }
 

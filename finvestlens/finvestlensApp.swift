@@ -109,6 +109,14 @@ struct finvestlensApp: App {
                 Button("Export GnuCash…") { model.exportRequested = true }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
                     .disabled(!model.isOpen)
+                #if os(macOS)
+                Menu("Export CSV") {
+                    ForEach(CSVExportKind.allCases) { kind in
+                        Button(kind.menuTitle) { model.csvExportRequest = kind }
+                    }
+                }
+                .disabled(!model.isOpen)
+                #endif
                 Divider()
                 Button("Close Book") { model.saveAndCloseIfOpen() }
                     .keyboardShortcut("w", modifiers: [.command, .shift])

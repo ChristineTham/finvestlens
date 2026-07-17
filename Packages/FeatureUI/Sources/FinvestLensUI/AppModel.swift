@@ -498,6 +498,9 @@ public final class AppModel {
     public var bankImportRequested = false
     /// Set by menu commands to trigger the GnuCash XML exporter in the root view.
     public var exportRequested = false
+    /// Set by menu commands to trigger a CSV export (`FR-XIO-06`); the root view
+    /// renders it and presents the save panel.
+    public var csvExportRequest: CSVExportKind?
     /// Set by menu commands to trigger the Smart Import multi-PDF picker.
     public var smartImportRequested = false
 
