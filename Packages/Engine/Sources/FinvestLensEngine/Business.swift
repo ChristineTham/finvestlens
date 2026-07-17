@@ -57,34 +57,48 @@ public final class BillTerm: Identifiable, @unchecked Sendable {
     public var name: String
     public var termDescription: String
     public var kind: Kind
-    /// Days-to-due (`.days`) or day-of-month cutoff (`.proximo`).
+    /// Days-to-due (`.days`) or the due day-of-month (`.proximo`).
     public var dueDays: Int
     /// Days within which the discount applies.
     public var discountDays: Int
+    /// Proximo cutoff day: a post on or before it is due next month, after it
+    /// the month thereafter. `<= 0` counts back from the end of the post month
+    /// (GnuCash `cutoff`). Unused for `.days`.
+    public var cutoff: Int
     /// Early-payment discount, as a percentage.
     public var discountPercent: Decimal
     public var active: Bool
 
     public init(guid: GncGUID = .random(), name: String, termDescription: String = "",
                 kind: Kind = .days, dueDays: Int = 0, discountDays: Int = 0,
-                discountPercent: Decimal = 0, active: Bool = true) {
+                cutoff: Int = 0, discountPercent: Decimal = 0, active: Bool = true) {
         self.guid = guid; self.name = name; self.termDescription = termDescription
         self.kind = kind; self.dueDays = dueDays; self.discountDays = discountDays
-        self.discountPercent = discountPercent; self.active = active
+        self.cutoff = cutoff; self.discountPercent = discountPercent; self.active = active
     }
 
-    /// The date an invoice posted on `postDate` falls due under this term.
+    /// The date an invoice posted on `postDate` falls due under this term
+    /// (GnuCash `gncBillTermComputeDueDate`).
     public func dueDate(postedOn postDate: Date, calendar: Calendar = .current) -> Date {
         switch kind {
         case .days:
             return calendar.date(byAdding: .day, value: dueDays, to: postDate) ?? postDate
         case .proximo:
-            // Due on day `dueDays` of the next month.
-            let day = min(max(dueDays, 1), 28)
-            let startNextMonth = calendar.date(byAdding: .month, value: 1, to: postDate) ?? postDate
-            var comps = calendar.dateComponents([.year, .month], from: startNextMonth)
-            comps.day = day
-            return calendar.date(from: comps) ?? postDate
+            let comps = calendar.dateComponents([.year, .month, .day], from: postDate)
+            var month = comps.month!, year = comps.year!
+            let postDay = comps.day!
+            func daysIn(_ y: Int, _ m: Int) -> Int {
+                let d = calendar.date(from: DateComponents(year: y, month: m, day: 1)) ?? postDate
+                return calendar.range(of: .day, in: .month, for: d)?.count ?? 30
+            }
+            // A non-positive cutoff counts back from the end of the post month.
+            var effectiveCutoff = cutoff
+            if effectiveCutoff <= 0 { effectiveCutoff += daysIn(year, month) }
+            month += (postDay <= effectiveCutoff) ? 1 : 2   // next month, or the one after
+            if month > 12 { year += 1; month -= 12 }
+            let dim = daysIn(year, month)
+            let day = min(max(dueDays, 1), dim)             // clamp to the real month length
+            return calendar.date(from: DateComponents(year: year, month: month, day: day)) ?? postDate
         }
     }
 }
@@ -367,19 +381,42 @@ public final class InvoiceEntry: Identifiable, @unchecked Sendable {
         self.taxable = taxable; self.taxIncluded = taxIncluded; self.taxTable = taxTable
     }
 
-    /// Line amount before discount and tax (quantity × price).
+    /// Line amount before discount and tax (quantity × price). When the price is
+    /// tax-inclusive this figure includes tax; ``pretax`` backs it out.
     public var gross: Decimal { quantity * price }
 
-    /// The discount amount deducted from `gross`.
+    /// The combined percentage tax rate as a fraction (0.10 for 10%).
+    private var taxPercentFraction: Decimal {
+        guard taxable, let table = taxTable else { return 0 }
+        return table.entries.filter { $0.kind == .percentage }.reduce(Decimal(0)) { $0 + $1.amount } / 100
+    }
+
+    /// The total flat (value) tax on the line.
+    private var taxFlatValue: Decimal {
+        guard taxable, let table = taxTable else { return 0 }
+        return table.entries.filter { $0.kind == .value }.reduce(Decimal(0)) { $0 + $1.amount }
+    }
+
+    /// The pre-tax aggregate. For tax-exclusive pricing this is ``gross``; when
+    /// the price is tax-inclusive GnuCash backs the tax out first —
+    /// `pretax = (aggregate − flatTax) / (1 + taxRate)` (`gncEntry.c:1186-1205`).
+    private var pretax: Decimal {
+        guard taxable, taxIncluded, taxTable != nil else { return gross }
+        let denom = 1 + taxPercentFraction
+        return denom != 0 ? (gross - taxFlatValue) / denom : gross
+    }
+
+    /// The discount amount, taken off the pre-tax base (GnuCash's default
+    /// `GNC_DISC_PRETAX`).
     public var discountAmount: Decimal {
         switch discountType {
-        case .percentage: gross * discount / 100
+        case .percentage: pretax * discount / 100
         case .value: discount
         }
     }
 
-    /// The line subtotal: gross less discount (the pre-tax, taxable base).
-    public var subtotal: Decimal { gross - discountAmount }
+    /// The line subtotal: pre-tax base less discount (the taxable base).
+    public var subtotal: Decimal { pretax - discountAmount }
 
     /// Tax on this line, per `taxTable`, when `taxable`. Percentage entries take
     /// a share of the subtotal; value entries add a flat amount.
@@ -433,22 +470,35 @@ public final class Invoice: Identifiable, @unchecked Sendable {
 
     public var isPosted: Bool { datePosted != nil }
 
-    /// Sum of line subtotals, rounded to the invoice currency.
+    /// Each entry's subtotal rounded to the invoice currency. GnuCash rounds
+    /// every entry's value *before* summing so the invoice total and its posting
+    /// legs are built from the same rounded parts and always balance (bug
+    /// 628903, `gncEntryGetDocValue(entry, round: TRUE)`). Rounding the grand sum
+    /// instead can leave the A/R leg a cent off from the income+tax legs.
+    private func roundedSubtotal(_ entry: InvoiceEntry) -> Decimal {
+        currency.round(entry.subtotal)
+    }
+
+    /// Sum of the per-entry-rounded line subtotals.
     public var subtotal: Decimal {
-        currency.round(entries.reduce(Decimal(0)) { $0 + $1.subtotal })
+        entries.reduce(Decimal(0)) { $0 + roundedSubtotal($1) }
     }
 
-    /// Total tax, rounded to the invoice currency.
+    /// Total tax: the sum of the per-account-rounded tax legs (GnuCash rounds
+    /// tax per collecting account, then sums those). This equals the tax
+    /// component of the A/R leg exactly, so the posting balances.
     public var taxTotal: Decimal {
-        currency.round(entries.reduce(Decimal(0)) { $0 + $1.tax })
+        taxByAccount().reduce(Decimal(0)) { $0 + $1.amount }
     }
 
-    /// The amount owed: subtotal plus tax.
-    public var total: Decimal { currency.round(subtotal + taxTotal) }
+    /// The amount owed: subtotal plus tax, both built from the same rounded
+    /// components as the posting legs.
+    public var total: Decimal { subtotal + taxTotal }
 
-    /// Line subtotals grouped by income/expense account, for posting.
+    /// Line subtotals grouped by income/expense account, for posting — each
+    /// entry's rounded subtotal summed per account (already currency multiples).
     public func subtotalsByAccount() -> [(account: Account, amount: Decimal)] {
-        group(entries.compactMap { entry in entry.account.map { ($0, entry.subtotal) } })
+        group(entries.compactMap { entry in entry.account.map { ($0, roundedSubtotal(entry)) } })
     }
 
     /// Tax amounts grouped by the tax-collecting account, for posting.

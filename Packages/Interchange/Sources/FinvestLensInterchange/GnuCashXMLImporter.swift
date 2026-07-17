@@ -272,6 +272,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "bt-days:discount": billTerm?.discount = GnuCashNumeric.parse(value) ?? 0
         case "bt-prox:due-day": billTerm?.kind = "prox"; billTerm?.dueDays = Int(value) ?? 0
         case "bt-prox:disc-day": billTerm?.discDays = Int(value) ?? 0
+        case "bt-prox:cutoff-day": billTerm?.cutoff = Int(value) ?? 0
         case "bt-prox:discount": billTerm?.discount = GnuCashNumeric.parse(value) ?? 0
         case "gnc:GncBillTerm": if let b = billTerm { billTermBuilders.append(b) }; billTerm = nil
 
@@ -671,7 +672,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
             guard let guid = b.guid else { continue }
             let term = BillTerm(guid: guid, name: b.name, termDescription: b.desc,
                                 kind: b.kind == "prox" ? .proximo : .days, dueDays: b.dueDays,
-                                discountDays: b.discDays, discountPercent: b.discount,
+                                discountDays: b.discDays, cutoff: b.cutoff, discountPercent: b.discount,
                                 active: !b.invisible)
             terms[guid] = term; book.addBillTerm(term)
         }
@@ -866,7 +867,7 @@ struct OwnerRef { var type: String?; var guid: GncGUID? }
 
 struct BillTermBuilder {
     var guid: GncGUID?; var name = ""; var desc = ""; var kind = "days"
-    var dueDays = 0; var discDays = 0; var discount: Decimal = 0; var invisible = false
+    var dueDays = 0; var discDays = 0; var cutoff = 0; var discount: Decimal = 0; var invisible = false
 }
 struct TaxEntryBuilder { var accountGUID: GncGUID?; var type = "PERCENT"; var amount: Decimal = 0 }
 struct TaxTableBuilder {

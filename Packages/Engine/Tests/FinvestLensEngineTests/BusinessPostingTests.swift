@@ -60,6 +60,31 @@ struct BusinessPostingTests {
         #expect(invoice.postedLot?.balance == dec("110"))
     }
 
+    @Test("A fractional multi-account invoice posts a balanced transaction")
+    func fractionalInvoiceBalances() throws {
+        // Two lines of 0.125 each to two different income accounts, no tax, USD.
+        // Rounding the grand sum (0.25) for the A/R leg while rounding each
+        // income leg (0.13 + 0.13 = 0.26) would post a −0.01 imbalance; GnuCash
+        // rounds per entry so both sides are 0.26.
+        let book = Book(baseCurrency: .usd)
+        let ar = book.addAccount(Account(name: "A/R", type: .receivable, commodity: .usd))
+        let sales1 = book.addAccount(Account(name: "Sales 1", type: .income, commodity: .usd))
+        let sales2 = book.addAccount(Account(name: "Sales 2", type: .income, commodity: .usd))
+        let customer = book.addCustomer(Customer(id: "C1", name: "Acme", currency: .usd))
+        let invoice = Invoice(id: "INV-1", kind: .invoice, owner: .customer(customer),
+                              currency: .usd, entries: [
+            InvoiceEntry(account: sales1, quantity: dec("1"), price: dec("0.125")),
+            InvoiceEntry(account: sales2, quantity: dec("1"), price: dec("0.125")),
+        ])
+        book.addInvoice(invoice)
+
+        #expect(invoice.subtotal == dec("0.26"))       // 0.13 + 0.13, not round(0.25)
+        #expect(invoice.total == dec("0.26"))
+        let txn = try book.postInvoice(invoice, to: ar, postDate: day(0))
+        #expect(txn.splits.reduce(Decimal(0)) { $0 + $1.value } == 0)   // balanced
+        #expect(txn.splits.first { $0.account === ar }?.value == dec("0.26"))
+    }
+
     @Test("The posting transaction carries the slots GnuCash's reports need")
     func postingCarriesBusinessSlots() throws {
         // GnuCash attributes a posting to its owner via the `gncInvoice` slot on

@@ -231,6 +231,11 @@ public final class SQLiteDocumentStore {
                 t.column("position", .integer).notNull().defaults(to: 0)
             }
         }
+        migrator.registerMigration("v3_billterm_cutoff") { db in
+            try db.alter(table: "billterm") { t in
+                t.add(column: "cutoff", .integer).notNull().defaults(to: 0)
+            }
+        }
         return migrator
     }
 

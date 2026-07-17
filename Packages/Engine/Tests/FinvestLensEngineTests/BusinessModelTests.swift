@@ -56,6 +56,17 @@ struct BusinessModelTests {
         #expect(entry.total == dec("90"))
     }
 
+    @Test("Tax-inclusive pricing backs the tax out of the price (GnuCash)")
+    func entryTaxIncluded() {
+        let (_, income, gst, _) = book()
+        // Price 110 quoted tax-inclusive with a 10% tax → pre-tax 100, tax 10.
+        let entry = InvoiceEntry(account: income, quantity: dec("1"), price: dec("110"),
+                                 taxable: true, taxIncluded: true, taxTable: gstTable(gst))
+        #expect(entry.subtotal == dec("100"))
+        #expect(entry.tax == dec("10"))
+        #expect(entry.total == dec("110"))
+    }
+
     @Test("A non-taxable entry has no tax even with a table set")
     func nonTaxable() {
         let (_, income, gst, _) = book()
@@ -114,6 +125,16 @@ struct BusinessModelTests {
         let proximo = BillTerm(name: "15th prox", kind: .proximo, dueDays: 15)
         #expect(proximo.dueDate(postedOn: post, calendar: cal)
                 == cal.date(from: DateComponents(year: 2026, month: 4, day: 15)))
+
+        // Cutoff: a post after the cutoff day rolls to the month after next.
+        let cutoff5 = BillTerm(name: "15th prox, cut 5", kind: .proximo, dueDays: 15, cutoff: 5)
+        #expect(cutoff5.dueDate(postedOn: post, calendar: cal)     // day 10 > cutoff 5
+                == cal.date(from: DateComponents(year: 2026, month: 5, day: 15)))
+
+        // Due day clamps to the real last day of the target month (April has 30).
+        let endProx = BillTerm(name: "31st prox", kind: .proximo, dueDays: 31)
+        #expect(endProx.dueDate(postedOn: post, calendar: cal)
+                == cal.date(from: DateComponents(year: 2026, month: 4, day: 30)))
     }
 
     @Test("Owner resolves nature: customers receive, vendors pay")

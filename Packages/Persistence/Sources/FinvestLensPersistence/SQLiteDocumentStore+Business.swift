@@ -21,9 +21,9 @@ extension SQLiteDocumentStore {
         for term in book.billTerms {
             try db.execute(sql: """
                 INSERT INTO billterm (guid, name, termDescription, kind, dueDays,
-                    discountDays, discountPercent, active) VALUES (?,?,?,?,?,?,?,?)
+                    discountDays, cutoff, discountPercent, active) VALUES (?,?,?,?,?,?,?,?,?)
                 """, arguments: [term.guid.hexString, term.name, term.termDescription,
-                    term.kind.rawValue, term.dueDays, term.discountDays,
+                    term.kind.rawValue, term.dueDays, term.discountDays, term.cutoff,
                     Serialize.decimal(term.discountPercent), term.active])
         }
         for table in book.taxTables {
@@ -132,7 +132,7 @@ extension SQLiteDocumentStore {
             guard let guid = GncGUID(hex: row["guid"]) else { continue }
             let term = BillTerm(guid: guid, name: row["name"], termDescription: row["termDescription"],
                 kind: BillTerm.Kind(rawValue: row["kind"]) ?? .days, dueDays: row["dueDays"],
-                discountDays: row["discountDays"],
+                discountDays: row["discountDays"], cutoff: row["cutoff"],
                 discountPercent: Serialize.parseDecimal(row["discountPercent"]), active: row["active"])
             termsByGUID[guid] = term
             book.addBillTerm(term)

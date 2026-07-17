@@ -67,6 +67,7 @@ extension GnuCashXMLExporter {
             b += "  <billterm:prox>\n"
             b += "    <bt-prox:due-day>\(term.dueDays)</bt-prox:due-day>\n"
             b += "    <bt-prox:disc-day>\(term.discountDays)</bt-prox:disc-day>\n"
+            b += "    <bt-prox:cutoff-day>\(term.cutoff)</bt-prox:cutoff-day>\n"
             b += "    <bt-prox:discount>\(rational(term.discountPercent, fallbackFraction: 100))</bt-prox:discount>\n"
             b += "  </billterm:prox>\n"
         }
