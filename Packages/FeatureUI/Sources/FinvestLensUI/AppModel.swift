@@ -118,6 +118,7 @@ public enum RootPanel: String, Identifiable, Sendable {
     case linkedDocuments
     case loanCalculator
     case closeBook
+    case taxOptions
     case find
     case findAccount
     case business

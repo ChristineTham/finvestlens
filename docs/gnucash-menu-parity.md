@@ -38,7 +38,7 @@ Legend: **=** parity · **+** exceeds GnuCash · **−** gap (see notes).
 | Find… | Find… (⌘F), Find Account… (⌘I), Clear Find | **+** (saved searches, tag search) |
 | Edit / Delete Account | Book ▸ New Account…; account context menu edit/delete | = |
 | Preferences | Settings (Appearance, document folder, …) | = |
-| Tax Report Options | — | − (no tax-report scheduling; capital-gains report exists) |
+| Tax Report Options | Edit ▸ Tax Report Options… — flag accounts, tax code, schedule | = (flags round-trip via `tax-related`/`tax-US` slots) |
 
 ## View
 
@@ -107,10 +107,10 @@ Legend: **=** parity · **+** exceeds GnuCash · **−** gap (see notes).
 | Price Database | Prices & Quotes… | = |
 | Security Editor | Securities / watch list (via Prices & Quotes and Securities) | = |
 | General Journal | Register style: General Ledger | = |
-| Transaction Linked Documents | Per-transaction linked docs | ≈ (no book-wide linked-doc list) |
+| Transaction Linked Documents | Book ▸ Linked Documents… (book-wide roll-up) | = |
 | Import Map Editor | Rules… (categorisation rules) | ≈ |
-| Close Book… (period-end closing) | — | − (no accounting-period close) |
-| Loan Repayment Calculator | — | − (no financial calculator) |
+| Close Book… (period-end closing) | Book ▸ Period-End Close… | = |
+| Loan Repayment Calculator | Book ▸ Loan Calculator… | = |
 | Online Banking Setup | — | n/a (bank-file/PDF import instead, by design) |
 
 ## Windows / Help
@@ -124,19 +124,29 @@ Legend: **=** parity · **+** exceeds GnuCash · **−** gap (see notes).
 
 ## Summary of gaps
 
-**Surfaced by this audit** (implemented capability that had no GUI entry point):
+**Closed by this audit** (every gap it found has since been built):
 
-- **Register summary bar** — the engine already computes cleared/reconciled
-  balances via `BalanceFilter`; the register now shows Present / Cleared /
-  Reconciled / (for a leaf) shares, matching GnuCash's status strip.
+- **Register summary bar** — Present / Cleared / Reconciled from the engine's
+  existing `BalanceFilter`, matching GnuCash's status strip to the cent.
+- **Book-wide Linked Documents list** (Book ▸ Linked Documents…) — the roll-up
+  of every `assoc_uri` link, with missing files flagged.
+- **Loan Repayment Calculator** (Book ▸ Loan Calculator…) — payment, totals and
+  amortisation schedule; pure engine arithmetic.
+- **Period-End Close** (Book ▸ Period-End Close…) — moves P&L into equity as of
+  a date, one balanced closing transaction per currency, undoable, with a
+  per-currency preview.
+- **Tax Report Options** (Edit ▸ Tax Report Options…) — flag income/expense
+  accounts, assign a tax code, and see the resulting schedule; flags round-trip
+  with GnuCash via the `tax-related` / `tax-US` account slots.
 
-**Genuine functional gaps** (not yet implemented; candidates, not commitments):
+**Remaining GnuCash items intentionally not built** (rarely relevant to a
+personal AUD book, and none had hidden implemented functionality):
 
-- **Close Book** — period-end closing entries (distinct from closing the file).
-- **Loan Repayment Calculator** — amortisation schedule.
-- **Book-wide Linked Documents list** (Tools ▸ Transaction Linked Documents);
-  per-transaction links exist, the roll-up view does not.
-- **Tax Report Options** — TXF-style tax scheduling of accounts.
+- **Import Map Editor** — GnuCash's Bayesian import-match store; FinvestLens uses
+  its own rules engine instead (`≈`).
+- **Online Banking Setup** — direct bank download; superseded by bank-file / PDF
+  import, by design (`n/a`).
+- A bundled help manual (`≈`).
 
 **Where FinvestLens exceeds GnuCash:** AI/PDF Smart Import, saved searches and
 tag search, envelope/zero-based budgets, a previewing Check & Repair with single

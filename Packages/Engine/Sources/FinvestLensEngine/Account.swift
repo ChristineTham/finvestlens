@@ -50,6 +50,40 @@ public final class Account {
     }
     private static let colorKey = "color"
 
+    /// Whether this account is flagged for tax reporting (GnuCash's `tax-related`
+    /// slot, stored as an integer 1/0 so it round-trips untouched). Setting it
+    /// `false` clears the slot rather than writing a 0, matching GnuCash.
+    public var taxRelated: Bool {
+        get {
+            if case let .int64(n)? = kvp[Self.taxRelatedKey] { return n != 0 }
+            return false
+        }
+        set { kvp[Self.taxRelatedKey] = newValue ? .int64(1) : nil }
+    }
+    private static let taxRelatedKey = "tax-related"
+
+    /// The account's tax category code (GnuCash's `tax-US/code`, e.g. an ATO or
+    /// TXF line code). Held in the `tax-US` frame so it survives a round-trip.
+    public var taxCode: String? {
+        get {
+            if case let .frame(frame)? = kvp[Self.taxFrameKey],
+               case let .string(code)? = frame[Self.taxCodeKey], !code.isEmpty {
+                return code
+            }
+            return nil
+        }
+        set {
+            var frame: KvpFrame
+            if case let .frame(existing)? = kvp[Self.taxFrameKey] { frame = existing }
+            else { frame = KvpFrame() }
+            let cleaned = newValue?.trimmingCharacters(in: .whitespaces)
+            frame[Self.taxCodeKey] = (cleaned?.isEmpty ?? true) ? nil : .string(cleaned!)
+            kvp[Self.taxFrameKey] = frame.isEmpty ? nil : .frame(frame)
+        }
+    }
+    private static let taxFrameKey = "tax-US"
+    private static let taxCodeKey = "code"
+
     /// Whether this is one of GnuCash's holding accounts for postings that have
     /// nowhere else to go — `Imbalance-<CUR>` or `Orphan-<CUR>`, as created by
     /// ``Scrub``.

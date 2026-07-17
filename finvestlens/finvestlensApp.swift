@@ -122,6 +122,9 @@ struct finvestlensApp: App {
                     .disabled(!model.isOpen)
                 Button("Clear Find") { model.clearFind() }
                     .disabled(model.findQuery == nil)
+                Divider()
+                Button("Tax Report Options…") { model.presentedPanel = .taxOptions }
+                    .disabled(!model.isOpen)
             }
             // Transaction: what you can do to the selected register row.
             //

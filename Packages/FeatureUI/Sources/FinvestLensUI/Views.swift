@@ -345,6 +345,7 @@ public struct FinvestLensRootView: View {
             case .linkedDocuments: LinkedDocumentsView(model: model)
             case .loanCalculator: LoanCalculatorView(model: model)
             case .closeBook: CloseBookView(model: model)
+            case .taxOptions: TaxOptionsView(model: model)
             case .find: FindSheet(model: model)
             case .findAccount: FindAccountSheet(model: model)
             case .business: BusinessHub(model: model)

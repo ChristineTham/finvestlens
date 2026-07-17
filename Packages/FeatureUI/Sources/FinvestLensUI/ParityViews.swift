@@ -76,6 +76,99 @@ struct LinkedDocumentsView: View {
     }
 }
 
+// MARK: - Tax Report Options
+
+/// Flag income/expense accounts as tax-related, give them a tax category code,
+/// and see the resulting tax schedule for a period (GnuCash's Edit ▸ Tax Report
+/// Options plus its tax schedule). Flags round-trip with GnuCash via the
+/// `tax-related` / `tax-US` account slots.
+struct TaxOptionsView: View {
+    @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var year = TaxOptionsView.defaultYear
+
+    private static var defaultYear: Int {
+        // A fixed default; the picker covers the useful range either side.
+        2026
+    }
+
+    private var range: (from: Date, to: Date) {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC") ?? .current
+        let from = cal.date(from: DateComponents(year: year, month: 1, day: 1))!
+        let to = cal.date(from: DateComponents(year: year, month: 12, day: 31))!
+        return (from, to)
+    }
+
+    private var accounts: [AppModel.TaxAccount] {
+        model.taxAccounts(from: range.from, to: range.to)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                Picker("Tax year", selection: $year) {
+                    ForEach((2015...2030).reversed(), id: \.self) { Text(String($0)).tag($0) }
+                }
+                .pickerStyle(.menu).fixedSize().padding(8)
+                Divider()
+                List {
+                    let flagged = accounts.filter(\.taxRelated)
+                    if !flagged.isEmpty {
+                        Section("Tax schedule \(String(year))") {
+                            ForEach(flagged) { row in scheduleRow(row) }
+                        }
+                    }
+                    Section("Accounts") {
+                        ForEach(accounts) { row in accountRow(row) }
+                    }
+                }
+            }
+            .navigationTitle("Tax Report Options")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .frame(minWidth: 520, minHeight: 480)
+    }
+
+    private func scheduleRow(_ row: AppModel.TaxAccount) -> some View {
+        HStack {
+            Text(row.name).scaledFont(.body)
+            if let code = row.taxCode {
+                Text(code).scaledFont(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(.quaternary, in: Capsule())
+            }
+            Spacer()
+            Text(AmountFormat.string(row.periodBalance, code: row.currencyCode))
+                .monospacedDigit().scaledFont(.body)
+        }
+    }
+
+    private func accountRow(_ row: AppModel.TaxAccount) -> some View {
+        HStack(spacing: 10) {
+            Toggle(isOn: Binding(
+                get: { row.taxRelated },
+                set: { model.setAccountTax(id: row.id, related: $0, code: row.taxCode) })) {
+                    Text(row.name).scaledFont(.body)
+                }
+                .toggleStyle(.checkbox)
+            Spacer()
+            if row.taxRelated {
+                TextField("Code", text: Binding(
+                    get: { row.taxCode ?? "" },
+                    set: { model.setAccountTax(id: row.id, related: true,
+                                               code: $0.isEmpty ? nil : $0) }))
+                    .frame(width: 110).scaledFont(.caption)
+            }
+        }
+    }
+}
+
 // MARK: - Period-end Close Book
 
 /// Moves income and expense balances into an equity account as of a date, so

@@ -327,6 +327,51 @@ extension AppModel {
         )
     }
 
+    // MARK: Tax report options (GnuCash Edit ▸ Tax Report Options)
+
+    /// One account's tax-reporting settings and its balance over the tax period.
+    public struct TaxAccount: Identifiable, Sendable {
+        public let id: GncGUID
+        public var name: String
+        public var typeName: String
+        public var taxRelated: Bool
+        public var taxCode: String?
+        /// Sign-adjusted balance over the tax period, in the account's currency.
+        public var periodBalance: Decimal
+        public var currencyCode: String
+    }
+
+    /// Income and expense accounts (the ones a tax schedule draws on), with
+    /// their tax flags and their balance over `[from, to]`. Tax-flagged first,
+    /// then by name, so the schedule reads top-down.
+    public func taxAccounts(from: Date, to: Date) -> [TaxAccount] {
+        guard let book else { return [] }
+        let balances = book.balancesByAccount(from: from, to: to)
+        return book.accounts
+            .filter { ($0.type == .income || $0.type == .expense) && !$0.isPlaceholder }
+            .map { account in
+                let raw = balances[ObjectIdentifier(account)] ?? 0
+                // Sign-adjust so income and expense both read positive.
+                let signed = account.type.normalBalanceIsDebit ? raw : -raw
+                return TaxAccount(
+                    id: account.guid, name: account.fullName,
+                    typeName: account.type.rawValue.capitalized,
+                    taxRelated: account.taxRelated, taxCode: account.taxCode,
+                    periodBalance: account.commodity.round(signed),
+                    currencyCode: account.commodity.mnemonic)
+            }
+            .sorted { ($0.taxRelated ? 0 : 1, $0.name) < ($1.taxRelated ? 0 : 1, $1.name) }
+    }
+
+    /// Sets an account's tax-related flag and category code. Undoable.
+    public func setAccountTax(id: GncGUID, related: Bool, code: String?) {
+        guard let book, let account = book.account(with: id) else { return }
+        editingWholeBook(named: "Tax Options") {
+            account.taxRelated = related
+            account.taxCode = related ? code : nil
+        }
+    }
+
     // MARK: Period-end close (GnuCash Tools ▸ Close Book)
 
     /// Equity accounts a period close can post its result into, as (id, name).
