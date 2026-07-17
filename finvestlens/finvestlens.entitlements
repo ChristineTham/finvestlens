@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  FinvestLens app entitlements.
+
+	  App Sandbox is intentionally OFF (see docs/deferred.md §6): the sibling
+	  `.lock` file at user-selected locations is denied under the sandbox. These
+	  entitlements are the non-sandbox capabilities the platform-enablement
+	  gaps in docs/deferred.md §3 require. Both need a one-time provisioning
+	  step in Xcode / the developer portal (the IDs are declared here so the
+	  capability is codified, not the profile).
+	-->
+
+	<!-- App Group: the shared container the app writes widget/Quick Look
+	     snapshots into, and the WidgetKit + Quick Look extensions read from.
+	     A separate extension process cannot open the book itself, so the app
+	     publishes a small JSON snapshot here (see WidgetSnapshot). -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.hellotham.finvestlens</string>
+	</array>
+
+	<!-- iCloud Documents (FR-PLT-02): places the app's Documents in iCloud
+	     Drive so a `.finvestlens` book syncs file-level across devices,
+	     consistent with the NSFilePresenter / NSFileVersion machinery already
+	     built. -->
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.com.hellotham.finvestlens</string>
+	</array>
+	<key>com.apple.developer.ubiquity-container-identifiers</key>
+	<array>
+		<string>iCloud.com.hellotham.finvestlens</string>
+	</array>
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudDocuments</string>
+	</array>
+</dict>
+</plist>

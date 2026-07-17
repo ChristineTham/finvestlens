@@ -10,6 +10,10 @@ import Foundation
 import FinvestLensEngine
 import FinvestLensPersistence
 import FinvestLensReports
+import FinvestLensShared
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 
 /// Read-only summaries for App Intents / Shortcuts / widgets, driven by the
 /// last-opened book (`FR-PLT-03`). Loading uses the store directly (no lock /
@@ -68,5 +72,58 @@ public enum IntentSupport {
         guard !alerts.isEmpty else { return "Nothing needs your attention." }
         let top = alerts.prefix(3).map(\.title).joined(separator: "; ")
         return alerts.count <= 3 ? top : "\(top); and \(alerts.count - 3) more."
+    }
+
+    // MARK: - Widget / Quick Look snapshot (FR-PLT-03)
+
+    /// Builds the small snapshot the app publishes to the App Group container
+    /// for its WidgetKit and Quick Look extensions. Returns a neutral
+    /// placeholder when no book has been opened.
+    public static func snapshot() -> WidgetSnapshot {
+        guard let book = lastBook() else { return .placeholder }
+        let currency = baseCurrency(book)
+        let scheduled = decodeScheduled(book)
+        let now = Date()
+
+        let netWorth = FinancialReports.netWorthSeries(book, dates: [now], currency: currency)
+            .last?.netWorth ?? 0
+
+        let bills = FinancialReports.billReminders(
+            book, scheduled: scheduled,
+            from: now.addingTimeInterval(-30 * 86_400),
+            to: now.addingTimeInterval(60 * 86_400), asOf: now
+        ).filter { $0.status != .paid }
+        let billsLine: String
+        if bills.isEmpty {
+            billsLine = "No upcoming bills"
+        } else {
+            let total = bills.reduce(Decimal(0)) { $0 + $1.amount }
+            billsLine = "\(bills.count) bill\(bills.count == 1 ? "" : "s") due · \(money(total, currency))"
+        }
+
+        let alerts = FinancialReports.alerts(book, scheduled: scheduled, currency: currency)
+            .prefix(5)
+            .map { WidgetSnapshot.Alert(title: $0.title, message: $0.message, severity: $0.severity.rawValue) }
+
+        let name = UserDefaults.standard.string(forKey: "finvestlens.lastBookPath")
+            .map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? "FinvestLens"
+
+        return WidgetSnapshot(
+            bookName: name,
+            netWorth: money(netWorth, currency),
+            upcomingBills: billsLine,
+            alerts: Array(alerts),
+            updatedAt: now
+        )
+    }
+
+    /// Recomputes and writes the snapshot, then asks WidgetKit to reload. Safe to
+    /// call after every refresh/save; a no-op for the file write when the App
+    /// Group is not yet provisioned.
+    public static func publishWidgetSnapshot() {
+        snapshot().write()
+        #if canImport(WidgetKit)
+        WidgetCenter.shared.reloadAllTimelines()
+        #endif
     }
 }

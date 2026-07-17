@@ -938,6 +938,7 @@ public final class AppModel {
         defer { openingURL = nil; loadProgress = nil }
         do {
             try await open(at: url, breakStaleLock: breakStaleLock)
+            publishWidgetData()
         } catch {
             // A recent whose file has gone is dead weight: drop it now rather
             // than leave the user to hit the same error on every launch.
@@ -1028,6 +1029,7 @@ public final class AppModel {
     public func save() throws {
         try document?.save()
         refreshAll()
+        publishWidgetData()
     }
 
     public func revert() throws {
@@ -1050,6 +1052,7 @@ public final class AppModel {
         document?.discard()
         document = nil
         endBookAccess()
+        publishWidgetData()   // book is now nil → clears the widget snapshot
         journalTransactionCache = [:]
         journalRowCache = [:]
         priceRowCache = nil
