@@ -183,9 +183,20 @@ remaining phases.** Every GnuCash Business-menu item, mapped:
 
 Engine coverage so far: object model + entry/invoice arithmetic (pre-tax
 discount, percentage & flat tax, grouped by account), A/R–A/P posting via lots,
-payments, aging — all identity-verified. Next: a GnuCash business book for a
-numeric cross-check, the GnuCash-XML round-trip, then the Business menu, editors
-and reports.
+payments, aging — all identity-verified. The `AppModel` bridge
+(`AppModel+Business.swift`) exposes create/post/pay/aging as undoable edits and
+is flow-tested end to end; business objects persist through save/reload (SQLite).
+
+**Known limitation found while wiring the app model:** whole-book undo snapshots
+via GnuCash-XML export (`editingWholeBook` → `gnuCashExportData`), which does not
+serialise business objects yet — so a business edit is *not* undoable and the
+undo can leave the graph inconsistent. Fixing this rides on the same
+GnuCash-XML business round-trip; until then, business mutations should either be
+excluded from that undo path or snapshot through the SQLite store. Save is
+unaffected (it goes through the SQLite store, which does cover business).
+
+Next: a GnuCash business book for a numeric cross-check, the GnuCash-XML
+round-trip (which also fixes undo), then the Business menu, editors and reports.
 
 ## Usability review (July 2026)
 
