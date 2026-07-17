@@ -100,6 +100,21 @@ Data-integrity bug found while auditing this list (15 Jul 2026):
 |---|---|---|
 | Editing a transaction silently un-reconciled it | `updateTransaction` rebuilt every split from `SplitInput`, which carried only account, value, quantity and memo. Everything else came back as a constructor default: `reconcileState` reset to `n`, `reconcileDate` and the preserved KVP slots dropped, `action` lost, the split's guid regenerated. Retyping a description was enough. 34,939 of 46,553 transactions have a reconciled or cleared split, so the status-bar Reconciled balance — $57,909.82, matching GnuCash to the cent — would have walked down as transactions were edited. As with the share-count bug, the values still balanced, so nothing downstream could see it. | The save re-attaches to the split each row came from, keyed by a `splitID` the row carries; what the editor never showed survives because it is never copied. Separately, the save assigned `dateEntered = datePosted` on every edit — every transaction in this book has an entry date later than its posting date, and the register sorts by it. |
 
+## Reports redesign (17 Jul 2026)
+
+The GnuCash reports audit grew into a redesign of the whole surface — see
+docs/reports.md for the findings and decisions. Landed across five commits:
+
+| Item | Notes | Status |
+|---|---|---|
+| Five new reports | Trial Balance (columns must agree; unrealised adjustment printed), Equity Statement (the bridge between two balance sheets), Account Summary (every depth sums to the same totals), Cash Flow with GnuCash semantics (in − out = the set's net change; the old projection renamed Forecast), Income & Expense charts (slices sum to the income statement). 31 identity tests. | done |
+| One-pass arithmetic | Every statement report walked the book once *per account* (26M split visits). Now one walk per report: accountSummary 15.63s → 0.061s, balanceSheet 7.89s → 0.058s, trialBalance 7.62s → 0.061s, equityStatement 6.77s → 0.129s (debug, reference book). Equivalence proven old-vs-new on the real book, byte-identical. | done |
+| Period vocabulary + favourites + defaults | `ReportPeriod` named rules resolved against the book's FY start (AUD books default to July); favourites saved in book KVP, replace-by-name (FR-RPT-04's "save report configurations", finally); FY start + default period as book-scoped settings that write nothing until changed. | done |
+| Inline surface, no pregeneration | Reports live in the detail pane (⌘R); the detached window is an explicit menu item. Entering shows a gallery; nothing computes until a report is chosen, and computation runs in a task with a spinner — never in `body`, which used to recompute a 7s report per UI tick. | done |
+| Document polish + AI notes | Statement reports render through `ReportDocument`: header, KPI callouts, charts, Grid tables with ruled totals, methodology notes, optional on-device commentary (`ReportNarrator` — figures arrive computed; the model observes, never calculates). PDF prints the same value the screen renders. Verified on the reference book: Income Statement FY 2025–26 matches SQL to the cent (233,856.12 / 79,013.41). | done |
+| Legacy report internals | Transactions, Reconciliation, Forecast, Portfolio, Investment Lots, Price Scatter, Capital Gains keep their interactive views inside the new navigation; migrating their internals to the document scaffold (and giving them PDF export) is follow-up. | P8 |
+| Commentary live-model check | ReportNarrator follows the tested ForecastNarrator pattern; a GUI pass on a device with Apple Intelligence enabled is still owed. | monitor |
+
 ## Usability review (July 2026)
 
 Resolved in the usability pass: File/Book menu bar (New/Open/Open Recent/
