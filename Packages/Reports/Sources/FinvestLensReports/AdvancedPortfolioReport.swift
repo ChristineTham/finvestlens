@@ -80,7 +80,8 @@ public extension FinancialReports {
         var totalValue = Decimal(0)
 
         for account in book.accounts where account.type.isSecurityType && !account.isPlaceholder {
-            let basis = book.costBasis(for: account, method: method, feeTreatment: feeTreatment)
+            let basis = book.costBasis(for: account, method: method, feeTreatment: feeTreatment,
+                                       currencyFraction: currency.smallestFraction)
             let shares = basis.remainingQuantity
             guard shares != 0 || basis.totalRealizedGain != 0 else { continue }
 

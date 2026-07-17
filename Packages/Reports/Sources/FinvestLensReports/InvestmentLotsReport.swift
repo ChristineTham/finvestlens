@@ -39,7 +39,8 @@ public extension FinancialReports {
         var details: [LotDetail] = []
 
         for account in book.accounts where account.type.isSecurityType && !account.isPlaceholder {
-            let result = book.costBasis(for: account, method: method, feeTreatment: feeTreatment)
+            let result = book.costBasis(for: account, method: method, feeTreatment: feeTreatment,
+                                        currencyFraction: currency.smallestFraction)
             let symbol = account.commodity.mnemonic
             let price = book.securityUnitValue(account.commodity, in: currency, on: asOf)
 

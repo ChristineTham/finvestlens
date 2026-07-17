@@ -160,6 +160,39 @@ struct CostBasisTests {
         #expect(avg.remainingCostBasis == dec("63"))
     }
 
+    @Test("Basis rounds to the currency fraction per disposal (GnuCash parity)")
+    func basisRoundsToCents() {
+        // Buy 7 @ $100, sell 3 @ $60. Per-share cost 100/7 = 14.2857…, so the
+        // basis for 3 shares is 42.857… — GnuCash rounds it to $42.86.
+        let ev = [
+            LotEvent(date: day(0), quantity: dec("7"), value: dec("100")),
+            LotEvent(date: day(10), quantity: dec("-3"), value: dec("-60")),
+        ]
+        let rounded = CostBasis.compute(events: ev, method: .fifo, currencyFraction: 100)
+        #expect(rounded.totalCostBasis == dec("42.86"))
+        #expect(rounded.totalProceeds == dec("60"))
+        #expect(rounded.totalRealizedGain == dec("17.14"))
+        // Without a fraction, full precision is kept (the old behaviour).
+        let exact = CostBasis.compute(events: ev, method: .fifo)
+        #expect(exact.totalCostBasis == dec("300") / dec("7"))
+    }
+
+    @Test("A multi-lot sale allocates proceeds to the cent, remainder in the last")
+    func proceedsRemainderAbsorbed() {
+        // Three 1-share lots, sell all 3 for $1.00. Cents can't divide evenly;
+        // each parcel is cent-exact and the parcels sum back to exactly $1.00.
+        let ev = [
+            LotEvent(date: day(0), quantity: dec("1"), value: dec("5")),
+            LotEvent(date: day(1), quantity: dec("1"), value: dec("5")),
+            LotEvent(date: day(2), quantity: dec("1"), value: dec("5")),
+            LotEvent(date: day(3), quantity: dec("-3"), value: dec("-1")),
+        ]
+        let r = CostBasis.compute(events: ev, method: .fifo, currencyFraction: 100)
+        #expect(r.realizedGains.count == 3)
+        #expect(r.totalProceeds == dec("1"))                      // exact, no drift
+        for g in r.realizedGains { #expect(CostBasis.rounded(g.proceeds, 100) == g.proceeds) }
+    }
+
     @Test("No disposals leaves every lot open")
     func noDisposals() {
         let result = CostBasis.compute(events: [

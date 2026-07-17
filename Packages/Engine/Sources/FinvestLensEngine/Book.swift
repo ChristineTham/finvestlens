@@ -280,11 +280,12 @@ public final class Book {
         for account: Account,
         method: CostBasisMethod = .fifo,
         longTermThresholdDays: Int = CostBasis.defaultLongTermThresholdDays,
-        feeTreatment: FeeTreatment = .ignore
+        feeTreatment: FeeTreatment = .ignore,
+        currencyFraction: Int? = nil
     ) -> CostBasisResult {
         CostBasis.compute(events: lotEvents(for: account), method: method,
                           longTermThresholdDays: longTermThresholdDays,
-                          feeTreatment: feeTreatment)
+                          feeTreatment: feeTreatment, currencyFraction: currencyFraction)
     }
 
     // MARK: Transactions

@@ -166,11 +166,19 @@ public enum CostBasis {
     /// Proceeds are allocated to matched parcels pro rata by share count, so a
     /// sale spanning several lots splits into one ``RealizedGain`` per lot with
     /// its own holding period.
+    /// - Parameter currencyFraction: the value currency's smallest fraction
+    ///   (e.g. 100 for cents). When given, each disposal's basis and proceeds
+    ///   are rounded to it (half away from zero) *before* summing — matching
+    ///   GnuCash's cap-gains, which reduces the basis to the currency SCU with
+    ///   `RND_ROUND_HALF_UP`. A multi-lot sale allocates its proceeds pro rata
+    ///   with the last parcel absorbing the rounding remainder, as GnuCash does
+    ///   when it splits the sell across lots. `nil` keeps full precision.
     public static func compute(
         events: [LotEvent],
         method: CostBasisMethod,
         longTermThresholdDays: Int = defaultLongTermThresholdDays,
-        feeTreatment: FeeTreatment = .ignore
+        feeTreatment: FeeTreatment = .ignore,
+        currencyFraction: Int? = nil
     ) -> CostBasisResult {
         // Stable chronological order; acquisitions before disposals on a tie by
         // preserving original index.
@@ -183,10 +191,20 @@ public enum CostBasis {
         case .fifo, .lifo:
             return matchedLots(ordered, lifo: method == .lifo,
                                method: method, threshold: longTermThresholdDays,
-                               feeTreatment: feeTreatment)
+                               feeTreatment: feeTreatment, fraction: currencyFraction)
         case .average:
-            return averageCost(ordered, feeTreatment: feeTreatment)
+            return averageCost(ordered, feeTreatment: feeTreatment, fraction: currencyFraction)
         }
+    }
+
+    /// Rounds `value` to `1/fraction` (half away from zero, GnuCash's
+    /// `RND_ROUND_HALF_UP`); identity when `fraction` is `nil`.
+    static func rounded(_ value: Decimal, _ fraction: Int?) -> Decimal {
+        guard let fraction, fraction > 0 else { return value }
+        var input = value * Decimal(fraction)
+        var out = Decimal()
+        NSDecimalRound(&out, &input, 0, .plain)
+        return out / Decimal(fraction)
     }
 
     // MARK: FIFO / LIFO
@@ -199,7 +217,7 @@ public enum CostBasis {
 
     private static func matchedLots(
         _ events: [LotEvent], lifo: Bool, method: CostBasisMethod, threshold: Int,
-        feeTreatment: FeeTreatment
+        feeTreatment: FeeTreatment, fraction: Int?
     ) -> CostBasisResult {
         var open: [MutableLot] = []
         var gains: [RealizedGain] = []
@@ -248,7 +266,7 @@ public enum CostBasis {
                     gains.append(RealizedGain(
                         disposalDate: event.date, acquisitionDate: nil,
                         quantity: cover, proceeds: 0,
-                        costBasis: cover * perShare, longTerm: nil))
+                        costBasis: rounded(cover * perShare, fraction), longTerm: nil))
                     shortfall -= cover
                     quantity -= cover
                 }
@@ -257,21 +275,26 @@ public enum CostBasis {
                 }
             } else if event.quantity < 0 {
                 var sharesToSell = -event.quantity
-                let proceedsPerShare = sharesToSell != 0 ? (-event.value) / sharesToSell : 0
-                // A sale's fee raises the realised cost basis, spread across the
-                // shares sold (include-in-basis mode).
-                let feePerShare = (includeFees && sharesToSell != 0) ? event.fee / sharesToSell : 0
+                // The sale's total proceeds and fee are cent-exact amounts from
+                // the transaction; they are allocated pro rata across matched
+                // lots, and the final parcel (share ratio 1) absorbs the
+                // rounding remainder — mirroring GnuCash's per-lot sell split.
+                var proceedsRemaining = -event.value
+                var feeRemaining = includeFees ? event.fee : 0
 
                 while sharesToSell > 0, !open.isEmpty {
                     let index = lifo ? open.count - 1 : 0
                     let take = min(open[index].remaining, sharesToSell)
-                    let costBasis = take * open[index].costPerShare + take * feePerShare
-                    let proceeds = take * proceedsPerShare
+                    let proceeds = rounded(proceedsRemaining * take / sharesToSell, fraction)
+                    let feeThis = rounded(feeRemaining * take / sharesToSell, fraction)
+                    let costBasis = rounded(take * open[index].costPerShare, fraction) + feeThis
                     let heldDays = Int(event.date.timeIntervalSince(open[index].date) / 86_400)
                     gains.append(RealizedGain(
                         disposalDate: event.date, acquisitionDate: open[index].date,
                         quantity: take, proceeds: proceeds, costBasis: costBasis,
                         longTerm: heldDays >= threshold))
+                    proceedsRemaining -= proceeds
+                    feeRemaining -= feeThis
                     open[index].remaining -= take
                     sharesToSell -= take
                     if open[index].remaining == 0 { open.remove(at: index) }
@@ -283,8 +306,8 @@ public enum CostBasis {
                 if sharesToSell > 0 {
                     gains.append(RealizedGain(
                         disposalDate: event.date, acquisitionDate: nil,
-                        quantity: sharesToSell, proceeds: sharesToSell * proceedsPerShare,
-                        costBasis: sharesToSell * feePerShare, longTerm: nil))
+                        quantity: sharesToSell, proceeds: proceedsRemaining,
+                        costBasis: feeRemaining, longTerm: nil))
                     shortfall += sharesToSell
                 }
             }
@@ -301,7 +324,8 @@ public enum CostBasis {
     // MARK: Average cost
 
     private static func averageCost(_ events: [LotEvent],
-                                    feeTreatment: FeeTreatment) -> CostBasisResult {
+                                    feeTreatment: FeeTreatment,
+                                    fraction: Int?) -> CostBasisResult {
         var pooledShares = Decimal(0)
         var pooledCost = Decimal(0)
         var gains: [RealizedGain] = []
@@ -331,7 +355,7 @@ public enum CostBasis {
                     gains.append(RealizedGain(
                         disposalDate: event.date, acquisitionDate: nil,
                         quantity: cover, proceeds: 0,
-                        costBasis: cover * perShare, longTerm: nil))
+                        costBasis: rounded(cover * perShare, fraction), longTerm: nil))
                     shortfall -= cover
                     quantity -= cover
                     value -= cover * perShare
@@ -352,8 +376,8 @@ public enum CostBasis {
                     let lotCost = avg * covered
                     gains.append(RealizedGain(
                         disposalDate: event.date, acquisitionDate: nil,
-                        quantity: covered, proceeds: proceedsPerShare * covered,
-                        costBasis: lotCost + covered * feePerShare, longTerm: nil))
+                        quantity: covered, proceeds: rounded(proceedsPerShare * covered, fraction),
+                        costBasis: rounded(lotCost + covered * feePerShare, fraction), longTerm: nil))
                     pooledShares -= covered
                     pooledCost -= lotCost
                 }
@@ -362,8 +386,8 @@ public enum CostBasis {
                 if uncovered > 0 {
                     gains.append(RealizedGain(
                         disposalDate: event.date, acquisitionDate: nil,
-                        quantity: uncovered, proceeds: proceedsPerShare * uncovered,
-                        costBasis: uncovered * feePerShare, longTerm: nil))
+                        quantity: uncovered, proceeds: rounded(proceedsPerShare * uncovered, fraction),
+                        costBasis: rounded(uncovered * feePerShare, fraction), longTerm: nil))
                     shortfall += uncovered
                 }
                 if pooledShares <= 0 { pooledShares = 0; pooledCost = 0 }

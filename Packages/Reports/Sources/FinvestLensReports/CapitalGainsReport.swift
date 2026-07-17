@@ -79,7 +79,8 @@ public extension FinancialReports {
         for account in book.accounts where account.type.isSecurityType && !account.isPlaceholder {
             let result = book.costBasis(for: account, method: method,
                                         longTermThresholdDays: longTermThresholdDays,
-                                        feeTreatment: feeTreatment)
+                                        feeTreatment: feeTreatment,
+                                        currencyFraction: currency.smallestFraction)
             let symbol = account.commodity.mnemonic
 
             for gain in result.realizedGains where gain.disposalDate >= from && gain.disposalDate <= to {
