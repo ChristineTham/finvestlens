@@ -133,6 +133,28 @@ unrealised, under both FIFO and average — and the FIFO grand totals for basis
 | Per-lot oracle | GnuCash's Investment Lots report needs explicit lot records; the reference book has none, so lots were verified through the basis/realised columns instead. Nothing further owed. | done |
 | Average-method rounding | GnuCash rounds each sale's basis to cents progressively; we keep full precision until the report edge — 2¢ drift on one account over 40 years. Not worth chasing. | wontfix |
 
+## GnuCash report catalogue — build-vs-skip (17 Jul 2026)
+
+Walked GnuCash 5.16's full report menu (65 entries) against our fifteen
+`ReportKind`s and decided each. Most of the catalogue is either already
+covered, a chart/register variant of something we have, or a business
+feature already deferred to P7. Two entries are genuine net-new analytics:
+**Average Balance** (built this session) and **multicolumn period-comparison
+statements** (flagged for a future build). The rest is recorded so the
+"is there parity?" question has a written answer per report.
+
+| Report(s) | Decision | Reason |
+|---|---|---|
+| **Average Balance** | **build — engine done** | Daily-weighted average balance per interval (min/max/gain/loss/profit), account-scoped. `FinancialReports.averageBalance` matches GnuCash's chart to zero difference across 15 monthly intervals on the Torrens account (4 identity tests). GUI wiring onto the scaffold (a `step` parameter + a bar chart of averages + interval table) is the remaining piece. |
+| Balance Sheet / Income Statement **(Multicolumn)** | build (later) | Period-over-period columns — the one comparison shape we don't yet offer. Cheap: run the existing statement over each sub-period. Not started; ranked next after Average Balance's GUI. |
+| Profit & Loss; Investment Portfolio; Net Worth Bar/Linechart; Income/Expense Chart & Linechart; Cash Flow; Transaction Report; Reconciliation Report; Balance Forecast; Future Scheduled Transactions Summary; Income/Expense/Assets/Liabilities Accounts (single-period pies) | skip — covered | Each is one of our existing kinds or an alias/chart of one (P&L = Income Statement; the account pies = Balance Sheet / Income & Expense; Balance Forecast + Scheduled Summary = Forecast). |
+| General Journal; General Ledger | skip — registers cover | These are register *forms*; our Journal / General Ledger registers already provide all transaction ops. Same call as the register-styles row above. |
+| Cash Flow Barchart; Transaction Breakdown; Assets/Liabilities/Income/Expense **Over Time**; Securities; Price | skip — marginal variant | Chart or breakdown variants of Cash Flow / Transactions / Net Worth series / the price UI; no new information for the effort. Revisit only on request. |
+| Budget Report **variants** (Chart, Flow, Balance Sheet, Income Statement, Profit & Loss) | skip — with budget work | We have `BudgetReport`; the chart/statement variants belong with the deferred advanced-budget work (P4 rows above), not the report audit. |
+| Income and GST Statement; Tax Schedule Report / TXF Export; IFRS weighted-average cost basis | defer — tax/business | GST statement is business/GST-flavoured (P7); TXF export belongs with the P9 tax tools; IFRS weighted-average is a niche cost-basis variant (our average method already feeds Advanced Portfolio / Capital Gains). |
+| All invoices/receipts (Easy, Fancy, Printable, Tax, Australian Tax, Receipt); Customer/Vendor/Employee/Job Report; Customer Summary; Payable/Receivable Aging | skip — business (P7) | Business objects are a whole deferred phase (see the business rows above and porting.md). |
+| Expenses/Income vs. Day of Week; Sample Report; Sample Graphs; Multicolumn View | skip — novelty/infra | Novelty charts and GnuCash's own demo/infrastructure reports; no parity obligation. |
+
 ## Usability review (July 2026)
 
 Resolved in the usability pass: File/Book menu bar (New/Open/Open Recent/
