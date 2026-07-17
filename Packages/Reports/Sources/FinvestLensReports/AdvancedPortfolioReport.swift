@@ -64,7 +64,8 @@ public extension FinancialReports {
         _ book: Book,
         currency: Commodity,
         asOf: Date = Date(),
-        method: CostBasisMethod = .fifo
+        method: CostBasisMethod = .fifo,
+        feeTreatment: FeeTreatment = .ignore
     ) -> AdvancedPortfolio {
         struct Raw {
             let account: Account
@@ -79,7 +80,7 @@ public extension FinancialReports {
         var totalValue = Decimal(0)
 
         for account in book.accounts where account.type.isSecurityType && !account.isPlaceholder {
-            let basis = book.costBasis(for: account, method: method)
+            let basis = book.costBasis(for: account, method: method, feeTreatment: feeTreatment)
             let shares = basis.remainingQuantity
             guard shares != 0 || basis.totalRealizedGain != 0 else { continue }
 

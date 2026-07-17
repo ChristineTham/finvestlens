@@ -33,12 +33,13 @@ public extension FinancialReports {
         _ book: Book,
         currency: Commodity,
         asOf: Date = Date(),
-        method: CostBasisMethod = .fifo
+        method: CostBasisMethod = .fifo,
+        feeTreatment: FeeTreatment = .ignore
     ) -> [LotDetail] {
         var details: [LotDetail] = []
 
         for account in book.accounts where account.type.isSecurityType && !account.isPlaceholder {
-            let result = book.costBasis(for: account, method: method)
+            let result = book.costBasis(for: account, method: method, feeTreatment: feeTreatment)
             let symbol = account.commodity.mnemonic
             let price = book.securityUnitValue(account.commodity, in: currency, on: asOf)
 

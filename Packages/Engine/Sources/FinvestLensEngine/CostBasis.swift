@@ -29,6 +29,26 @@ public enum CostBasisMethod: String, Codable, Sendable, CaseIterable, Identifiab
     }
 }
 
+/// How brokerage/commission fees on a security transaction affect cost basis
+/// and realised gains — mirrors GnuCash's Advanced Portfolio option.
+public enum FeeTreatment: String, Codable, Sendable, CaseIterable, Identifiable {
+    /// Fees are folded into cost basis: a buy's fee raises the lot's cost, a
+    /// sale's fee raises the realised cost basis of that disposal. This is
+    /// GnuCash's default.
+    case includeInBasis
+    /// Fees are excluded from cost basis and realised gains entirely.
+    case ignore
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .includeInBasis: return "Include in basis"
+        case .ignore: return "Ignore fees"
+        }
+    }
+}
+
 /// One acquisition-or-disposal event feeding the cost-basis calculator.
 ///
 /// `quantity` is a number of shares — positive for an acquisition, negative for
@@ -48,14 +68,19 @@ public struct LotEvent: Hashable, Sendable {
     /// A return-of-capital distribution: `value` (negative) reduces the cost
     /// basis of the open lots pro rata without moving shares.
     public var isReturnOfCapital: Bool
+    /// Brokerage/commission on the event's transaction (a positive amount),
+    /// applied only under ``FeeTreatment/includeInBasis``.
+    public var fee: Decimal
 
     public init(date: Date, quantity: Decimal, value: Decimal,
-                isSplit: Bool = false, isReturnOfCapital: Bool = false) {
+                isSplit: Bool = false, isReturnOfCapital: Bool = false,
+                fee: Decimal = 0) {
         self.date = date
         self.quantity = quantity
         self.value = value
         self.isSplit = isSplit
         self.isReturnOfCapital = isReturnOfCapital
+        self.fee = fee
     }
 }
 
@@ -144,7 +169,8 @@ public enum CostBasis {
     public static func compute(
         events: [LotEvent],
         method: CostBasisMethod,
-        longTermThresholdDays: Int = defaultLongTermThresholdDays
+        longTermThresholdDays: Int = defaultLongTermThresholdDays,
+        feeTreatment: FeeTreatment = .ignore
     ) -> CostBasisResult {
         // Stable chronological order; acquisitions before disposals on a tie by
         // preserving original index.
@@ -156,9 +182,10 @@ public enum CostBasis {
         switch method {
         case .fifo, .lifo:
             return matchedLots(ordered, lifo: method == .lifo,
-                               method: method, threshold: longTermThresholdDays)
+                               method: method, threshold: longTermThresholdDays,
+                               feeTreatment: feeTreatment)
         case .average:
-            return averageCost(ordered)
+            return averageCost(ordered, feeTreatment: feeTreatment)
         }
     }
 
@@ -171,11 +198,13 @@ public enum CostBasis {
     }
 
     private static func matchedLots(
-        _ events: [LotEvent], lifo: Bool, method: CostBasisMethod, threshold: Int
+        _ events: [LotEvent], lifo: Bool, method: CostBasisMethod, threshold: Int,
+        feeTreatment: FeeTreatment
     ) -> CostBasisResult {
         var open: [MutableLot] = []
         var gains: [RealizedGain] = []
         var shortfall = Decimal(0)   // shares sold uncovered, awaiting a buy-back
+        let includeFees = feeTreatment == .includeInBasis
 
         for event in events {
             if event.isSplit {
@@ -207,7 +236,9 @@ public enum CostBasis {
                 continue
             }
             if event.quantity > 0 {
-                let perShare = event.value / event.quantity
+                // A buy's fee raises its cost basis (include-in-basis mode).
+                let cost = event.value + (includeFees ? event.fee : 0)
+                let perShare = cost / event.quantity
                 var quantity = event.quantity
                 // A buy after an uncovered sale first closes the short: the
                 // covering shares never open a lot, and the buy-back cost is
@@ -227,11 +258,14 @@ public enum CostBasis {
             } else if event.quantity < 0 {
                 var sharesToSell = -event.quantity
                 let proceedsPerShare = sharesToSell != 0 ? (-event.value) / sharesToSell : 0
+                // A sale's fee raises the realised cost basis, spread across the
+                // shares sold (include-in-basis mode).
+                let feePerShare = (includeFees && sharesToSell != 0) ? event.fee / sharesToSell : 0
 
                 while sharesToSell > 0, !open.isEmpty {
                     let index = lifo ? open.count - 1 : 0
                     let take = min(open[index].remaining, sharesToSell)
-                    let costBasis = take * open[index].costPerShare
+                    let costBasis = take * open[index].costPerShare + take * feePerShare
                     let proceeds = take * proceedsPerShare
                     let heldDays = Int(event.date.timeIntervalSince(open[index].date) / 86_400)
                     gains.append(RealizedGain(
@@ -243,14 +277,14 @@ public enum CostBasis {
                     if open[index].remaining == 0 { open.remove(at: index) }
                 }
 
-                // Uncovered sale (sold more than held): zero cost basis, unknown
-                // holding period. The deficit is carried as a short position so
-                // later buys cover it before opening new lots.
+                // Uncovered sale (sold more than held): only the fee is basis
+                // (there is no lot to draw from). The deficit is carried as a
+                // short position so later buys cover it before opening new lots.
                 if sharesToSell > 0 {
                     gains.append(RealizedGain(
                         disposalDate: event.date, acquisitionDate: nil,
                         quantity: sharesToSell, proceeds: sharesToSell * proceedsPerShare,
-                        costBasis: 0, longTerm: nil))
+                        costBasis: sharesToSell * feePerShare, longTerm: nil))
                     shortfall += sharesToSell
                 }
             }
@@ -266,11 +300,13 @@ public enum CostBasis {
 
     // MARK: Average cost
 
-    private static func averageCost(_ events: [LotEvent]) -> CostBasisResult {
+    private static func averageCost(_ events: [LotEvent],
+                                    feeTreatment: FeeTreatment) -> CostBasisResult {
         var pooledShares = Decimal(0)
         var pooledCost = Decimal(0)
         var gains: [RealizedGain] = []
         var shortfall = Decimal(0)   // shares sold uncovered, awaiting a buy-back
+        let includeFees = feeTreatment == .includeInBasis
 
         for event in events {
             if event.isSplit {
@@ -284,12 +320,13 @@ public enum CostBasis {
             }
             if event.quantity > 0 {
                 var quantity = event.quantity
-                var value = event.value
+                // A buy's fee raises its cost basis (include-in-basis mode).
+                var value = event.value + (includeFees ? event.fee : 0)
+                let perShare = value / event.quantity
                 // A buy after an uncovered sale first closes the short: the
                 // covering shares never join the pool, and the buy-back cost is
                 // realised as a (negative) gain dated at the cover.
                 if shortfall > 0 {
-                    let perShare = event.value / event.quantity
                     let cover = min(quantity, shortfall)
                     gains.append(RealizedGain(
                         disposalDate: event.date, acquisitionDate: nil,
@@ -305,25 +342,28 @@ public enum CostBasis {
                 let sharesSold = -event.quantity
                 let proceeds = -event.value
                 let proceedsPerShare = sharesSold != 0 ? proceeds / sharesSold : 0
+                // A sale's fee raises the realised cost basis, spread across the
+                // shares sold (include-in-basis mode).
+                let feePerShare = (includeFees && sharesSold != 0) ? event.fee / sharesSold : 0
                 let covered = min(sharesSold, max(pooledShares, 0))
                 let uncovered = sharesSold - covered
                 if covered > 0 {
                     let avg = pooledShares != 0 ? pooledCost / pooledShares : 0
-                    let costBasis = avg * covered
+                    let lotCost = avg * covered
                     gains.append(RealizedGain(
                         disposalDate: event.date, acquisitionDate: nil,
                         quantity: covered, proceeds: proceedsPerShare * covered,
-                        costBasis: costBasis, longTerm: nil))
+                        costBasis: lotCost + covered * feePerShare, longTerm: nil))
                     pooledShares -= covered
-                    pooledCost -= costBasis
+                    pooledCost -= lotCost
                 }
-                // Sold more than the pool holds: zero cost basis, and the
+                // Sold more than the pool holds: only the fee is basis, and the
                 // deficit is carried as a short position.
                 if uncovered > 0 {
                     gains.append(RealizedGain(
                         disposalDate: event.date, acquisitionDate: nil,
                         quantity: uncovered, proceeds: proceedsPerShare * uncovered,
-                        costBasis: 0, longTerm: nil))
+                        costBasis: uncovered * feePerShare, longTerm: nil))
                     shortfall += uncovered
                 }
                 if pooledShares <= 0 { pooledShares = 0; pooledCost = 0 }

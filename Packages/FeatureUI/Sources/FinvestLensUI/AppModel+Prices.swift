@@ -60,7 +60,8 @@ extension AppModel {
     public func capitalGains(from: Date = .distantPast, to: Date = .distantFuture) -> CapitalGainsReport? {
         guard let book, !securityCommodities.isEmpty else { return nil }
         return FinancialReports.capitalGains(book, currency: reportCurrency,
-                                             from: from, to: to, method: costBasisMethod)
+                                             from: from, to: to, method: costBasisMethod,
+                                             feeTreatment: feeTreatment)
     }
 
     /// The advanced portfolio (cost basis, avg cost, unrealized/realized gain,
@@ -68,7 +69,8 @@ extension AppModel {
     public func advancedPortfolio(asOf: Date = Date()) -> AdvancedPortfolio? {
         guard let book, !securityCommodities.isEmpty else { return nil }
         return FinancialReports.advancedPortfolio(book, currency: reportCurrency,
-                                                  asOf: asOf, method: costBasisMethod)
+                                                  asOf: asOf, method: costBasisMethod,
+                                                  feeTreatment: feeTreatment)
     }
 
     /// Every open tax lot valued at the latest price, under the selected
@@ -76,7 +78,8 @@ extension AppModel {
     public func investmentLots(asOf: Date = Date()) -> [LotDetail] {
         guard let book, !securityCommodities.isEmpty else { return [] }
         return FinancialReports.investmentLots(book, currency: reportCurrency,
-                                               asOf: asOf, method: costBasisMethod)
+                                               asOf: asOf, method: costBasisMethod,
+                                               feeTreatment: feeTreatment)
     }
 
     /// Securities that have at least one recorded price (candidates for the

@@ -70,14 +70,16 @@ public extension FinancialReports {
         from: Date = .distantPast,
         to: Date = .distantFuture,
         method: CostBasisMethod = .fifo,
-        longTermThresholdDays: Int = CostBasis.defaultLongTermThresholdDays
+        longTermThresholdDays: Int = CostBasis.defaultLongTermThresholdDays,
+        feeTreatment: FeeTreatment = .ignore
     ) -> CapitalGainsReport {
         var lines: [CapitalGainLine] = []
         var openLots: [OpenLotLine] = []
 
         for account in book.accounts where account.type.isSecurityType && !account.isPlaceholder {
             let result = book.costBasis(for: account, method: method,
-                                        longTermThresholdDays: longTermThresholdDays)
+                                        longTermThresholdDays: longTermThresholdDays,
+                                        feeTreatment: feeTreatment)
             let symbol = account.commodity.mnemonic
 
             for gain in result.realizedGains where gain.disposalDate >= from && gain.disposalDate <= to {

@@ -133,6 +133,33 @@ struct CostBasisTests {
         #expect(result.openLots.count == 1)
     }
 
+    @Test("Include-in-basis folds a buy's fee into cost and a sale's fee into realised")
+    func feeIncludeInBasis() {
+        // Buy 10 @ $10 with a $5 fee (day 0); sell 4 @ $15 with a $2 fee (day 400).
+        let events = [
+            LotEvent(date: day(0), quantity: dec("10"), value: dec("100"), fee: dec("5")),
+            LotEvent(date: day(400), quantity: dec("-4"), value: dec("-60"), fee: dec("2")),
+        ]
+        // Ignore: basis is the raw $10/share; 4 sold cost 40, 6 remain cost 60.
+        let ignore = CostBasis.compute(events: events, method: .fifo, feeTreatment: .ignore)
+        #expect(ignore.remainingCostBasis == dec("60"))
+        #expect(ignore.totalRealizedGain == dec("20"))   // 60 − 40
+
+        // Include: the $5 buy fee makes cost $10.50/share; 4 sold cost 42, plus
+        // the $2 sale fee → realised cost 44; 6 remain cost 63.
+        let include = CostBasis.compute(events: events, method: .fifo,
+                                        feeTreatment: .includeInBasis)
+        #expect(include.remainingCostBasis == dec("63"))
+        #expect(include.totalCostBasis == dec("44"))      // 4 × 10.50 + 2
+        #expect(include.totalRealizedGain == dec("16"))   // 60 − 44
+
+        // Average cost folds fees the same way.
+        let avg = CostBasis.compute(events: events, method: .average,
+                                    feeTreatment: .includeInBasis)
+        #expect(avg.totalRealizedGain == dec("16"))
+        #expect(avg.remainingCostBasis == dec("63"))
+    }
+
     @Test("No disposals leaves every lot open")
     func noDisposals() {
         let result = CostBasis.compute(events: [

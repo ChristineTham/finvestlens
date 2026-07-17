@@ -70,6 +70,14 @@ struct PortfolioView: View {
     var body: some View {
         if let portfolio = model.advancedPortfolio() {
             List {
+                Section {
+                    Picker("Method", selection: $model.costBasisMethod) {
+                        ForEach(CostBasisMethod.allCases) { Text($0.displayName).tag($0) }
+                    }
+                    Picker("Fees", selection: $model.feeTreatment) {
+                        ForEach(FeeTreatment.allCases) { Text($0.displayName).tag($0) }
+                    }
+                }
                 if portfolio.totalValue != 0 {
                     Section("Allocation") {
                         AllocationChart(portfolio: portfolio)
@@ -411,6 +419,9 @@ struct InvestmentLotsView: View {
                     Picker("Method", selection: $model.costBasisMethod) {
                         ForEach(CostBasisMethod.allCases) { Text($0.displayName).tag($0) }
                     }
+                    Picker("Fees", selection: $model.feeTreatment) {
+                        ForEach(FeeTreatment.allCases) { Text($0.displayName).tag($0) }
+                    }
                 }
                 Section("Open Lots") {
                     ForEach(lots) { lot in
@@ -492,6 +503,9 @@ struct CapitalGainsView: View {
                 Section {
                     Picker("Method", selection: $model.costBasisMethod) {
                         ForEach(CostBasisMethod.allCases) { Text($0.displayName).tag($0) }
+                    }
+                    Picker("Fees", selection: $model.feeTreatment) {
+                        ForEach(FeeTreatment.allCases) { Text($0.displayName).tag($0) }
                     }
                 }
                 if report.lines.isEmpty {

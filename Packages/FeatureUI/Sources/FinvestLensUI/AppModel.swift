@@ -424,6 +424,10 @@ public final class AppModel {
 
     /// Cost-basis method used by the capital-gains / lots reports.
     public var costBasisMethod: CostBasisMethod = .fifo
+    /// How brokerage fees affect cost basis in the investment reports. Defaults
+    /// to ignoring them (matching GnuCash's "ignore" mode to the cent on the
+    /// reference book); switch to include-in-basis to match GnuCash's default.
+    public var feeTreatment: FeeTreatment = .ignore
 
     /// Hypothetical events layered onto the cash-flow forecast (session-only).
     public internal(set) var whatIfEvents: [WhatIfEvent] = []

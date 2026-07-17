@@ -227,13 +227,28 @@ public final class Book {
     public func lotEvents(for account: Account) -> [LotEvent] {
         var events: [LotEvent] = []
         for transaction in transactions {
+            // Brokerage/commission on the transaction: its expense-account
+            // splits, shared equally across the transaction's security splits
+            // (so a two-security swap doesn't double-count the fee).
+            var brokerage = Decimal(0)
+            var securitySplits = 0
+            for split in transaction.splits where split.reconcileState != .voided {
+                if let type = split.account?.type {
+                    if type == .expense { brokerage += split.value }
+                    else if type.isSecurityType && split.quantity != 0 { securitySplits += 1 }
+                }
+            }
+            let feePerSecurity = securitySplits > 0 ? brokerage / Decimal(securitySplits) : 0
+
             for split in transaction.splits
             where split.account === account && split.reconcileState != .voided
                 && (split.quantity != 0 || split.action == "ReturnOfCapital") {
+                let isTrade = split.quantity != 0 && split.action != "Split"
                 events.append(LotEvent(date: transaction.datePosted,
                                        quantity: split.quantity, value: split.value,
                                        isSplit: split.action == "Split",
-                                       isReturnOfCapital: split.action == "ReturnOfCapital"))
+                                       isReturnOfCapital: split.action == "ReturnOfCapital",
+                                       fee: isTrade ? feePerSecurity : 0))
             }
         }
         return events
@@ -244,10 +259,12 @@ public final class Book {
     public func costBasis(
         for account: Account,
         method: CostBasisMethod = .fifo,
-        longTermThresholdDays: Int = CostBasis.defaultLongTermThresholdDays
+        longTermThresholdDays: Int = CostBasis.defaultLongTermThresholdDays,
+        feeTreatment: FeeTreatment = .ignore
     ) -> CostBasisResult {
         CostBasis.compute(events: lotEvents(for: account), method: method,
-                          longTermThresholdDays: longTermThresholdDays)
+                          longTermThresholdDays: longTermThresholdDays,
+                          feeTreatment: feeTreatment)
     }
 
     // MARK: Transactions
