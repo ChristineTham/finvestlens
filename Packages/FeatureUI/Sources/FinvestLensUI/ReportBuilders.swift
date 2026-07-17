@@ -376,6 +376,52 @@ extension AppModel {
                                ("Over 90 days", totals.over90)],
                     lines: rows.map { ($0.name, $0.buckets.total) }))
 
+        case .customerSummary:
+            guard let book else { return nil }
+            let code = reportCurrency.mnemonic
+            struct Row { var name: String; var invoiced: Decimal = 0; var outstanding: Decimal = 0 }
+            var rows: [Row] = []
+            for customer in book.customers {
+                let posted = book.invoices(forOwner: customer.guid).filter { $0.isPosted }
+                guard !posted.isEmpty else { continue }
+                var row = Row(name: customer.name)
+                for invoice in posted {
+                    row.invoiced += invoice.total
+                    row.outstanding += book.outstanding(invoice)
+                }
+                rows.append(row)
+            }
+            rows.sort { $0.invoiced > $1.invoiced }
+            let columns = ["Invoiced", "Paid", "Outstanding"]
+            func amounts(_ r: Row) -> [Decimal?] {
+                [r.invoiced, r.invoiced - r.outstanding, r.outstanding]
+            }
+            let totalInvoiced = rows.reduce(Decimal(0)) { $0 + $1.invoiced }
+            let totalOutstanding = rows.reduce(Decimal(0)) { $0 + $1.outstanding }
+            return ReportDocument(
+                title: "Customer Summary",
+                periodLabel: asOfLabel,
+                currencyCode: code,
+                kpis: [
+                    ReportKPI(label: "Total invoiced", amount: totalInvoiced),
+                    ReportKPI(label: "Received", amount: totalInvoiced - totalOutstanding),
+                    ReportKPI(label: "Outstanding", amount: totalOutstanding),
+                ],
+                chart: nil,
+                sections: [ReportDocumentSection(
+                    title: "Customers",
+                    rows: rows.map { ReportDocumentRow(label: $0.name, amounts: amounts($0)) },
+                    columns: columns,
+                    columnTotals: ("Total",
+                                   [totalInvoiced, totalInvoiced - totalOutstanding, totalOutstanding]))],
+                notes: ["Totals cover posted invoices only, as of "
+                        + to.formatted(date: .abbreviated, time: .omitted)
+                        + ". \"Paid\" is invoiced less what is still outstanding."],
+                facts: ReportFactsSource(
+                    headline: [("Invoiced", totalInvoiced), ("Received", totalInvoiced - totalOutstanding),
+                               ("Outstanding", totalOutstanding)],
+                    lines: rows.map { ($0.name, $0.invoiced) }))
+
         default:
             return nil
         }

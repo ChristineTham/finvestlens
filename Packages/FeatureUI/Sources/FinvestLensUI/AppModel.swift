@@ -410,6 +410,10 @@ public final class AppModel {
     /// Book-scoped report preferences: FY start month, default period.
     public internal(set) var reportSettings = ReportSettings()
 
+    /// Book-scoped company details for business documents (`FR-BUS`): the name,
+    /// contact, and address that head printed invoices and statements.
+    public internal(set) var companyInfo = CompanyInfo()
+
     /// Securities tracked but not held (watch list, `FR-PLAN-07`).
     public internal(set) var watchlist: [Commodity] = []
 
@@ -571,6 +575,7 @@ public final class AppModel {
         static let reportSettings = "finvestlens/reportSettings"
         static let watchlist = "finvestlens/watchlist"
         static let priceTargets = "finvestlens/priceTargets"
+        static let companyInfo = "finvestlens/companyInfo"
     }
 
     /// Loads the KVP-backed collections from the current book.
@@ -589,6 +594,7 @@ public final class AppModel {
         reportSettings = Self.decodeSlot(ReportSettings.self, book.kvp[KvpKey.reportSettings]) ?? ReportSettings()
         watchlist = Self.decodeSlot([Commodity].self, book.kvp[KvpKey.watchlist]) ?? []
         priceTargets = Self.decodeSlot([PriceTarget].self, book.kvp[KvpKey.priceTargets]) ?? []
+        companyInfo = Self.decodeSlot(CompanyInfo.self, book.kvp[KvpKey.companyInfo]) ?? CompanyInfo()
     }
 
     /// Writes the KVP-backed collections into the current book's slots.
@@ -607,6 +613,8 @@ public final class AppModel {
             reportSettings == ReportSettings() ? nil : Self.encodeSingle(reportSettings)
         book.kvp[KvpKey.watchlist] = Self.encodeSlot(watchlist)
         book.kvp[KvpKey.priceTargets] = Self.encodeSlot(priceTargets)
+        book.kvp[KvpKey.companyInfo] =
+            companyInfo == CompanyInfo() ? nil : Self.encodeSingle(companyInfo)
     }
 
     /// Persists the collections and refreshes derived UI state, as one undoable

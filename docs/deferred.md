@@ -168,17 +168,17 @@ remaining phases.** Every GnuCash Business-menu item, mapped:
 |---|---|---|
 | Customer / Vendor / Employee — data model (contact, terms, tax table, currency, discount, credit) | **engine + persist done** | `Customer`/`Vendor`/`Employee` in `Business.swift`; round-trips in the SQLite store |
 | Job (under customer or vendor) | **engine + persist done** | `Job`, `BusinessOwner.job` |
-| New/Find Customer·Vendor·Employee·Job (create + browse) | UI todo | needs the Business menu, list + editor views |
-| New Invoice / New Bill / New Expense Voucher (document with line entries) | **model done**, UI todo | `Invoice`/`InvoiceEntry`, `InvoiceKind` (invoice/bill/voucher); editor UI owed |
-| Post invoice/bill to A/R–A/P (via lots and entries) | **engine done** | `postInvoice`/`unpostInvoice`; balanced txn + settlement lot; 6 tests |
-| Process Payment (customer/vendor, apply to invoices) | **engine done**, UI todo | `processPayment` (oldest-first, partial, over-payment → pre-payment lot); 3 tests |
-| Sales Tax Table editor | **model + persist done**, UI todo | `TaxTable`/`TaxTableEntry` (percentage + flat value) |
-| Billing Terms editor | **model + persist done**, UI todo | `BillTerm` (net-days + proximo due-date maths) |
-| Company / business information (File ▸ Properties ▸ Business) | todo | book-KVP struct + Document Settings tab |
+| New/Find Customer·Vendor·Employee·Job (create + browse) | **built** | Business hub (⇧⌘B): New Customer/Vendor/Employee/Job editors + lists in `BusinessView.swift` |
+| New Invoice / New Bill / New Expense Voucher (document with line entries) | **built** | `InvoiceEditorSheet` (line entries, tax tables, post-immediately); `InvoiceDetailSheet` |
+| Post invoice/bill to A/R–A/P (via lots and entries) | **built** | `postInvoice`/`unpostInvoice`; balanced txn + settlement lot; Post/Unpost in invoice detail; 6 tests |
+| Process Payment (customer/vendor, apply to invoices) | **built** | `processPayment` (oldest-first, partial, over-payment → pre-payment lot); `ProcessPaymentSheet`; 3 tests |
+| Sales Tax Table editor | **built** | `TaxTablesSheet` (list + add, percentage into a tax account); `TaxTable`/`TaxTableEntry` |
+| Billing Terms editor | **built** | `BillingTermsSheet` (list + add, net-days or proximo); `BillTerm` |
+| Company / business information (File ▸ Properties ▸ Business) | **built** | `CompanyInfo` book-KVP struct + `CompanyInfoSheet` in the Business hub Setup section |
 | Bills Due Reminder | partial (engine) | `aging`/`agingByOwner` give the data; the reminder surface is todo |
-| **Reports ▸ Business ▸ Receivable/Payable Aging** | **engine done**, report UI todo | `aging(forOwner:)`, `agingByOwner(receivable:)` — 0-30/31-60/61-90/91+ buckets; 2 tests |
-| Reports ▸ Business ▸ Customer/Vendor/Employee Report, Customer Summary | engine data ready, report UI todo | built from invoices + payments + aging |
-| Printable / Tax / Australian Tax Invoice | todo | render an `Invoice` through the report scaffold + PDF |
+| **Reports ▸ Business ▸ Receivable/Payable Aging** | **built** | `aging(forOwner:)`, `agingByOwner(receivable:)` — 0-30/31-60/61-90/91+ buckets on the scaffold; 2 tests |
+| Reports ▸ Business ▸ Customer Summary | **built** | `ReportKind.customerSummary` — invoiced / paid / outstanding per customer on the scaffold; 1 test. Vendor/Employee/Job detail reports still todo |
+| Printable / Tax Invoice | **built** | `PrintableInvoice` rendered to PDF via `ReportExport.pdf` + file exporter ("Save PDF…" in invoice detail); company header + bill-to + lines + totals. Australian-Tax-specific layout todo |
 | **GnuCash-XML round-trip** of business objects (`FR-IMP-05`/`FR-EXP`) | **built + tested** | `GncCustomer/Vendor/Employee/Job/Invoice/Entry/BillTerm/TaxTable`, owners, addresses, `<act:lots>` and `<split:lot>`, and the business KVP slots (`gncInvoice`/`gncOwner`/`trans-txn-type`). Export→import preserves the whole graph incl. the posted lot and outstanding balance (2 round-trip tests). **GnuCash 5.16 opens our exported file cleanly and processes the invoice postings' financials** — Customer Summary shows the exact $3,500 of sales. Remaining: GnuCash's *own* aging/summary reports attribute those postings to "No Customer" — the KVP keys are confirmed correct against the engine binary, so the last mile is a structural lot↔owner reconstruction detail that needs the GnuCash C source to finish. |
 
 Engine coverage so far: object model + entry/invoice arithmetic (pre-tax

@@ -269,6 +269,16 @@ public enum BusinessOwner: @unchecked Sendable {
         }
     }
 
+    /// The party's mailing address (a job's is its owner's).
+    public var address: BusinessAddress {
+        switch self {
+        case .customer(let c): c.address
+        case .vendor(let v): v.address
+        case .employee(let e): e.address
+        case .job(let j): j.owner.address
+        }
+    }
+
     public var terms: BillTerm? {
         switch self {
         case .customer(let c): c.terms

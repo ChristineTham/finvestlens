@@ -42,6 +42,7 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
     case capitalGains = "Capital Gains"
     case receivableAging = "Receivable Aging"
     case payableAging = "Payable Aging"
+    case customerSummary = "Customer Summary"
 
     var id: String { rawValue }
 
@@ -61,7 +62,7 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
             .activity
         case .portfolio, .investmentLots, .priceScatter, .capitalGains:
             .investments
-        case .receivableAging, .payableAging:
+        case .receivableAging, .payableAging, .customerSummary:
             .business
         }
     }
@@ -76,7 +77,8 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
     /// one period selector serves both shapes.
     var isAsOf: Bool {
         switch self {
-        case .balanceSheet, .trialBalance, .accountSummary, .receivableAging, .payableAging: true
+        case .balanceSheet, .trialBalance, .accountSummary, .receivableAging,
+             .payableAging, .customerSummary: true
         default: false
         }
     }
@@ -108,6 +110,7 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
         case .capitalGains: "percent"
         case .receivableAging: "person.crop.circle.badge.clock"
         case .payableAging: "building.2.crop.circle.badge.clock"
+        case .customerSummary: "person.2.badge.gearshape"
         }
     }
 
@@ -131,6 +134,7 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
         case .capitalGains: "Realised gains by disposal"
         case .receivableAging: "What customers owe, by how overdue"
         case .payableAging: "What you owe vendors, by how overdue"
+        case .customerSummary: "Sales and receivables by customer"
         }
     }
 

@@ -13,8 +13,35 @@
 import Foundation
 import FinvestLensEngine
 
+/// The book's own company details, used to head printed invoices and statements
+/// (GnuCash's *File ▸ Properties ▸ Business*). Stored in the book KVP so it
+/// round-trips with the document.
+public struct CompanyInfo: Codable, Equatable, Sendable {
+    public var name: String = ""
+    public var contact: String = ""
+    public var addressLine1: String = ""
+    public var addressLine2: String = ""
+    public var phone: String = ""
+    public var email: String = ""
+    public var website: String = ""
+    public var taxID: String = ""
+
+    public init() {}
+
+    /// Whether any field is filled — an empty company writes no slot.
+    public var isEmpty: Bool { self == CompanyInfo() }
+}
+
 @MainActor
 extension AppModel {
+
+    // MARK: Company information
+
+    /// Replaces the book's company details as one undoable edit.
+    public func updateCompanyInfo(_ info: CompanyInfo) {
+        companyInfo = info
+        commitKvpCollections(named: "Company Information")
+    }
 
     // MARK: Directory
 
@@ -66,6 +93,19 @@ extension AppModel {
         let employee = Employee(id: id, username: username, address: address, currency: reportCurrency)
         editingWholeBook(named: "Add Employee") { book.addEmployee(employee) }
         return employee.guid
+    }
+
+    public var businessJobs: [Job] { book?.jobs ?? [] }
+
+    /// Creates a job under a customer or vendor.
+    @discardableResult
+    public func addJob(id: String, name: String, reference: String = "",
+                       ownerType: OwnerType, ownerID: GncGUID) -> GncGUID? {
+        guard let book, let owner = businessOwner(type: ownerType, id: ownerID),
+              owner.type == .customer || owner.type == .vendor else { return nil }
+        let job = Job(id: id, name: name, reference: reference, owner: owner)
+        editingWholeBook(named: "Add Job") { book.addJob(job) }
+        return job.guid
     }
 
     // MARK: Terms & tax tables

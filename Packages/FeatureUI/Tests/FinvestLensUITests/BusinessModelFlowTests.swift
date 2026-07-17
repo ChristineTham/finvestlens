@@ -114,6 +114,58 @@ struct BusinessModelFlowTests {
         #expect(section.columnTotals?.amounts.last == dec("500"))
     }
 
+    @Test("A job is created under a customer and reloads from disk")
+    func jobsAndCompanyInfoPersist() async throws {
+        let url = tempURL()
+        let model = AppModel()
+        try model.newDocument(at: url)
+        let customer = try #require(model.addCustomer(id: "C1", name: "Acme"))
+        _ = try #require(model.addJob(id: "J1", name: "Website", ownerType: .customer, ownerID: customer))
+        #expect(model.businessJobs.first?.name == "Website")
+        #expect(model.businessJobs.first?.owner.displayName == "Acme")
+
+        var info = CompanyInfo()
+        info.name = "My Studio"; info.email = "hi@studio.example"; info.taxID = "ABN 123"
+        model.updateCompanyInfo(info)
+        #expect(model.companyInfo.name == "My Studio")
+        try model.save()
+        model.close()
+
+        let reopened = AppModel()
+        try await reopened.open(at: url)
+        defer { reopened.close(); try? FileManager.default.removeItem(at: url) }
+        #expect(reopened.businessJobs.first?.name == "Website")
+        #expect(reopened.companyInfo.name == "My Studio")
+        #expect(reopened.companyInfo.taxID == "ABN 123")
+    }
+
+    @Test("The customer-summary report totals invoiced, paid, and outstanding")
+    func customerSummaryReport() throws {
+        let url = tempURL()
+        let model = AppModel()
+        try model.newDocument(at: url)
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        let ar = try #require(model.addAccount(name: "A/R", type: .receivable))
+        let bank = try #require(model.addAccount(name: "Bank", type: .bank))
+        let sales = try #require(model.addAccount(name: "Sales", type: .income))
+        let customer = try #require(model.addCustomer(id: "C1", name: "Acme"))
+        let invoice = try #require(model.createInvoice(
+            id: "INV-1", kind: .invoice, ownerType: .customer, ownerID: customer,
+            lines: [.init(accountID: sales, price: dec("400"))]))
+        #expect(model.postInvoice(invoice, to: ar))
+        #expect(model.processPayment(ownerType: .customer, ownerID: customer,
+                                     amount: dec("150"), fromAccountID: bank))
+
+        let config = ReportConfiguration(kind: ReportKind.customerSummary.rawValue, period: .allTime)
+        let document = try #require(model.reportDocument(for: config))
+        #expect(document.title == "Customer Summary")
+        let row = try #require(document.sections.first?.rows.first)
+        #expect(row.label == "Acme")
+        // Invoiced 400, paid 150, outstanding 250.
+        #expect(row.amounts == [dec("400"), dec("150"), dec("250")])
+    }
+
     @Test("A created invoice persists on save and reloads")
     func savesAndReloads() async throws {
         let url = tempURL()
