@@ -55,11 +55,16 @@ public extension FinancialReports {
                                depthLimit: Int) -> AccountSummaryReport {
         let limit = max(1, depthLimit)
 
+        // One walk for every balance in the tree. This report is the worst
+        // offender per account asked — the rollup asks for whole subtrees —
+        // and measured 15.6s on the reference book done account-by-account.
+        let map = balanceMap(book, from: nil, to: asOf)
+
         /// The account's own converted balance — zero for a placeholder, which
         /// holds structure, not money.
         func own(_ account: Account) -> Decimal {
             guard !account.isPlaceholder else { return 0 }
-            let native = displayBalance(of: account, in: book, from: nil, to: asOf)
+            let native = displayBalance(in: map, of: account)
             guard let amount = convert(native, of: account, in: book,
                                        to: currency, on: asOf) else { return 0 }
             return amount

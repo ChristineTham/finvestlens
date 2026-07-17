@@ -49,11 +49,16 @@ public extension FinancialReports {
     static func categoryBreakdown(_ book: Book, from: Date, to: Date,
                                   currency: Commodity,
                                   calendar: Calendar = .current) -> CategoryBreakdown {
+        // One walk for every category's period total.
+        let map = balanceMap(book, from: from, to: to)
+
         /// A subtree's converted, presentation-signed total over the period.
         func rolled(_ account: Account) -> Decimal {
-            var total = convertedDisplayBalance(of: account, in: book, from: from, to: to,
-                                                currency: currency, rateDate: to) ?? 0
-            if account.isPlaceholder { total = 0 }
+            var total = Decimal(0)
+            if !account.isPlaceholder {
+                let native = displayBalance(in: map, of: account)
+                total = convert(native, of: account, in: book, to: currency, on: to) ?? 0
+            }
             return account.children.reduce(total) { $0 + rolled($1) }
         }
 

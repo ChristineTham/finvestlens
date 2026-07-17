@@ -98,12 +98,14 @@ public extension FinancialReports {
     /// valued at `date` — the same convention as the balance sheet, so the
     /// bridge lands on figures the other statements agree with.
     private static func netWorth(_ book: Book, upTo date: Date, currency: Commodity) -> Decimal {
+        // One walk, not one per account.
+        let map = balanceMap(book, from: nil, to: date)
         var total = Decimal(0)
         for account in book.accounts where !account.isPlaceholder {
             let isAsset = assetTypes.contains(account.type)
             let isLiability = liabilityTypes.contains(account.type)
             guard isAsset || isLiability else { continue }
-            let native = displayBalance(of: account, in: book, from: nil, to: date)
+            let native = displayBalance(in: map, of: account)
             guard let amount = convert(native, of: account, in: book,
                                        to: currency, on: date) else { continue }
             total += isAsset ? amount : -amount

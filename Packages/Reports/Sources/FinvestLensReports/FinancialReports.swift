@@ -70,17 +70,45 @@ public enum FinancialReports {
     static let liabilityTypes: Set<AccountType> = [.liability, .credit, .payable]
     private static let equityTypes: Set<AccountType> = [.equity]
 
+    // MARK: One-pass balances
+
+    /// Every account's balance over a window, in one walk of the book.
+    ///
+    /// The statement reports each want all ~559 balances at once, and asking
+    /// per account walks the whole book per account — 26 million split visits
+    /// on the reference book, measured at 7.9s for a balance sheet and 15.6s
+    /// for an account summary. Reading the one-walk map instead is 46k visits;
+    /// the same rewrite took `netWorthSeries` from 32s to 0.066s.
+    ///
+    /// Raw double-entry sign (debit positive); use ``displayBalance(in:of:)``
+    /// for the presentation sign.
+    static func balanceMap(_ book: Book, from: Date?, to: Date?) -> [ObjectIdentifier: Decimal] {
+        book.balancesByAccount(from: from, to: to)
+    }
+
+    /// The presentation-signed balance an account has in `map` — the same
+    /// number ``displayBalance(of:in:from:to:)`` computes by walking, without
+    /// the walk.
+    static func displayBalance(in map: [ObjectIdentifier: Decimal], of account: Account) -> Decimal {
+        let raw = map[ObjectIdentifier(account)] ?? 0
+        return account.type.normalBalanceIsDebit ? raw : -raw
+    }
+
     // MARK: Balance Sheet
 
     public static func balanceSheet(_ book: Book, asOf: Date, currency: Commodity) -> BalanceSheet {
+        // Everything below — the three sections, retained earnings, the FX
+        // fold — reads this one map: one walk, one conversion per account.
+        let map = balanceMap(book, from: nil, to: asOf)
         let accounts = book.accounts.filter { !$0.isPlaceholder }
 
         func lines(_ types: Set<AccountType>) -> ([ReportLine], Decimal) {
             var result: [ReportLine] = []
             var total = Decimal(0)
             for account in accounts where types.contains(account.type) {
-                guard let amount = convertedDisplayBalance(of: account, in: book, from: nil, to: asOf,
-                                                           currency: currency, rateDate: asOf),
+                let native = displayBalance(in: map, of: account)
+                guard let amount = convert(native, of: account, in: book,
+                                           to: currency, on: asOf),
                       amount != 0 else { continue }
                 result.append(ReportLine(id: account.guid, name: account.name,
                                          fullName: account.fullName, amount: currency.round(amount)))
@@ -89,22 +117,30 @@ public enum FinancialReports {
             return (result.sorted { $0.fullName < $1.fullName }, total)
         }
 
+        func typeTotal(_ types: Set<AccountType>) -> Decimal {
+            var total = Decimal(0)
+            for account in accounts where types.contains(account.type) {
+                let native = displayBalance(in: map, of: account)
+                guard let amount = convert(native, of: account, in: book,
+                                           to: currency, on: asOf) else { continue }
+                total += amount
+            }
+            return total
+        }
+
         let (assets, totalAssets) = lines(assetTypes)
         let (liabilities, totalLiabilities) = lines(liabilityTypes)
         let (equityAccounts, equityFromAccounts) = lines(equityTypes)
 
         // Retained earnings = income − expenses to date, folded into equity so
         // the sheet balances.
-        let income = periodTotal(book, types: [.income], from: nil, to: asOf, currency: currency, rateDate: asOf)
-        let expenses = periodTotal(book, types: [.expense], from: nil, to: asOf, currency: currency, rateDate: asOf)
-        let retained = income - expenses
+        let retained = typeTotal([.income]) - typeTotal([.expense])
 
         // Trading accounts (multi-currency FX): their net value at current rates
         // is the unrealised FX gain. They are debit-normal, so subtract to fold
         // that gain into equity and keep the sheet balanced (`FR-REG-07`).
         var equityLines = equityAccounts
-        let trading = periodTotal(book, types: [.trading], from: nil, to: asOf, currency: currency, rateDate: asOf)
-        let tradingEquity = -trading
+        let tradingEquity = -typeTotal([.trading])
         if tradingEquity != 0 {
             equityLines.append(ReportLine(id: .random(), name: "Unrealised FX", fullName: "Trading",
                                           amount: currency.round(tradingEquity)))
@@ -127,14 +163,16 @@ public enum FinancialReports {
 
     public static func incomeStatement(_ book: Book, from: Date, to: Date,
                                        currency: Commodity) -> IncomeStatement {
+        let map = balanceMap(book, from: from, to: to)
         let accounts = book.accounts.filter { !$0.isPlaceholder }
 
         func lines(_ type: AccountType) -> ([ReportLine], Decimal) {
             var result: [ReportLine] = []
             var total = Decimal(0)
             for account in accounts where account.type == type {
-                guard let amount = convertedDisplayBalance(of: account, in: book, from: from, to: to,
-                                                           currency: currency, rateDate: to),
+                let native = displayBalance(in: map, of: account)
+                guard let amount = convert(native, of: account, in: book,
+                                           to: currency, on: to),
                       amount != 0 else { continue }
                 result.append(ReportLine(id: account.guid, name: account.name,
                                          fullName: account.fullName, amount: currency.round(amount)))
@@ -283,11 +321,14 @@ public enum FinancialReports {
     static func periodTotal(_ book: Book, types: Set<AccountType>,
                                     from: Date?, to: Date?, currency: Commodity,
                                     rateDate: Date?) -> Decimal {
+        // One walk for the whole type, not one per account of the type.
+        let map = balanceMap(book, from: from, to: to)
         var total = Decimal(0)
         for account in book.accounts
         where types.contains(account.type) && !account.isPlaceholder {
-            if let amount = convertedDisplayBalance(of: account, in: book, from: from, to: to,
-                                                    currency: currency, rateDate: rateDate) {
+            let native = displayBalance(in: map, of: account)
+            if let amount = convert(native, of: account, in: book,
+                                    to: currency, on: rateDate) {
                 total += amount
             }
         }
