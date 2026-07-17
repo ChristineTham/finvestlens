@@ -51,7 +51,7 @@ Common workflows partly built; each is a bounded piece of work.
 The extension targets, entitlements, and feeding code are now in the project;
 what remains for each is the one-time **capability provisioning** in Xcode's
 Signing & Capabilities (a developer-portal round-trip that can't be scripted)
-plus on-device verification.
+plus on-device verification — step-by-step in [provisioning.md](provisioning.md).
 
 | Item | FR / Phase | Notes |
 |---|---|---|
