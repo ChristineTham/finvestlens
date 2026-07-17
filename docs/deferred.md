@@ -198,6 +198,46 @@ Next: the Business menu, editors and reports (the report surfaces can reuse the
 cross-check — the last-mile GnuCash lot↔owner reconstruction so GnuCash's own
 aging report attributes our postings.
 
+## Full GnuCash-source line-by-line audit (17 Jul 2026)
+
+Audited the whole implementation against the real GnuCash C/C++ source (cloned
+at `~/Repositories/gnucash-reference`) with a multi-agent sweep over the engine,
+XML backend, and import; every confirmed divergence was fixed and every absent
+feature the audit surfaced was implemented. All on `main`; all suites green
+(Engine 159 / Reports 100 / Interchange 46 / Persistence 31 / FeatureUI 354 +
+Rules / Intelligence / Quotes; app builds).
+
+**Correctness bugs fixed** (each with a test, verified against source):
+- **Frozen (`f`) splits** now count in cleared *and* reconciled balances
+  (`Account.cpp:2324`) and fold into the reconcile report's reconciled funds.
+- **Price lookup**: nearest-in-time (GnuCash's default `pricedb-nearest`), not
+  newest-on-or-before; indirect common-currency chaining; `securityUnitValue`
+  tries every quote currency; converted balances round-then-sum.
+- **Business invoice arithmetic**: per-entry rounding so postings always balance
+  (bug 628903); tax-inclusive back-compute; proximo cutoff + real-month clamp.
+- **Auto-clear**: skip zero-amount splits; statement-date cutoff.
+- **XML round-trip**: `split:reconcile-date`; list-typed KVP bare-value format.
+- **Register order**: `xaccTransOrder_num_action` canonical order (numeric
+  num/action, then entered/description/guid).
+
+**Absent features implemented** (model + XML round-trip + native store + UI):
+- **Amount expression parser** (`gnc-exp-parser`) — `5*3`, `10.50+2`, `(1+2)/3`.
+- **SX advance-create / advance-remind days** — create/remind ahead of due.
+- **Invoice discount-how** modes — `PRETAX` / `SAMETIME` / `POSTTAX`.
+- **Per-period budgets** — `Budget.numPeriods` + `BudgetLine.periodAmounts`,
+  unset-period reads as zero (`gnc_budget_get_account_period_value`), period
+  picker in the editor. New sqlite migrations `v3_billterm_cutoff`,
+  `v3_entry_disc_how`.
+
+**Accepted as non-gaps (documented, not fixed):**
+- Currency-commodity export emits `cmdty:fraction`/`name` that GnuCash omits for
+  ISO currencies. GnuCash reads it without error and the round-trip is
+  byte-verified on the real 8.5 MB book; changing verified interop for a
+  cosmetic match is negative-EV. Within FR-EXP-02 tolerance.
+- `isBalanced` treats a sub-minor-unit residual as balanced (ADR-1 tolerance).
+- Price same-date tie-break: GnuCash's is GUID-nondeterministic; ours is the
+  deterministic first-inserted — strictly better.
+
 ## Usability review (July 2026)
 
 Resolved in the usability pass: File/Book menu bar (New/Open/Open Recent/
