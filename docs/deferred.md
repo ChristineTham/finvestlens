@@ -155,6 +155,38 @@ statements** (flagged for a future build). The rest is recorded so the
 | All invoices/receipts (Easy, Fancy, Printable, Tax, Australian Tax, Receipt); Customer/Vendor/Employee/Job Report; Customer Summary; Payable/Receivable Aging | skip — business (P7) | Business objects are a whole deferred phase (see the business rows above and porting.md). |
 | Expenses/Income vs. Day of Week; Sample Report; Sample Graphs; Multicolumn View | skip — novelty/infra | Novelty charts and GnuCash's own demo/infrastructure reports; no parity obligation. |
 
+## P7 Business features — GnuCash Business menu audit (17 Jul 2026)
+
+Started P7 (`FR-BUS-01..06`). The reference book has no business objects, so
+there is no live oracle yet — the engine is verified by accounting identities
+and GnuCash's documented arithmetic, and a GnuCash-authored business book is
+owed for a numeric cross-check. **The engine and native persistence are built
+and tested (26 tests); the interop XML round-trip and the whole UI are the
+remaining phases.** Every GnuCash Business-menu item, mapped:
+
+| GnuCash menu item | Status | Where |
+|---|---|---|
+| Customer / Vendor / Employee — data model (contact, terms, tax table, currency, discount, credit) | **engine + persist done** | `Customer`/`Vendor`/`Employee` in `Business.swift`; round-trips in the SQLite store |
+| Job (under customer or vendor) | **engine + persist done** | `Job`, `BusinessOwner.job` |
+| New/Find Customer·Vendor·Employee·Job (create + browse) | UI todo | needs the Business menu, list + editor views |
+| New Invoice / New Bill / New Expense Voucher (document with line entries) | **model done**, UI todo | `Invoice`/`InvoiceEntry`, `InvoiceKind` (invoice/bill/voucher); editor UI owed |
+| Post invoice/bill to A/R–A/P (via lots and entries) | **engine done** | `postInvoice`/`unpostInvoice`; balanced txn + settlement lot; 6 tests |
+| Process Payment (customer/vendor, apply to invoices) | **engine done**, UI todo | `processPayment` (oldest-first, partial, over-payment → pre-payment lot); 3 tests |
+| Sales Tax Table editor | **model + persist done**, UI todo | `TaxTable`/`TaxTableEntry` (percentage + flat value) |
+| Billing Terms editor | **model + persist done**, UI todo | `BillTerm` (net-days + proximo due-date maths) |
+| Company / business information (File ▸ Properties ▸ Business) | todo | book-KVP struct + Document Settings tab |
+| Bills Due Reminder | partial (engine) | `aging`/`agingByOwner` give the data; the reminder surface is todo |
+| **Reports ▸ Business ▸ Receivable/Payable Aging** | **engine done**, report UI todo | `aging(forOwner:)`, `agingByOwner(receivable:)` — 0-30/31-60/61-90/91+ buckets; 2 tests |
+| Reports ▸ Business ▸ Customer/Vendor/Employee Report, Customer Summary | engine data ready, report UI todo | built from invoices + payments + aging |
+| Printable / Tax / Australian Tax Invoice | todo | render an `Invoice` through the report scaffold + PDF |
+| **Import** business objects from GnuCash (`FR-IMP-05`) + XML export round-trip | todo (interop) | the `GncCustomer/Vendor/Employee/Job/Invoice/Entry/BillTerm/TaxTable` + owner + lot elements — porting.md's round-trip priority |
+
+Engine coverage so far: object model + entry/invoice arithmetic (pre-tax
+discount, percentage & flat tax, grouped by account), A/R–A/P posting via lots,
+payments, aging — all identity-verified. Next: a GnuCash business book for a
+numeric cross-check, the GnuCash-XML round-trip, then the Business menu, editors
+and reports.
+
 ## Usability review (July 2026)
 
 Resolved in the usability pass: File/Book menu bar (New/Open/Open Recent/
