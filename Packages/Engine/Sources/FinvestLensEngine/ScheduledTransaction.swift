@@ -36,10 +36,17 @@ public struct ScheduledTransaction: Identifiable, Codable, Hashable, Sendable {
     /// The date of the most recently generated occurrence, if any.
     public var lastPosted: Date?
     public var isEnabled: Bool
+    /// Create instances this many days before they fall due (GnuCash's
+    /// advance-create horizon). 0 creates them only once due.
+    public var advanceCreateDays: Int
+    /// Remind this many days before an instance falls due (no transaction is
+    /// created yet). GnuCash's advance-remind horizon.
+    public var advanceRemindDays: Int
 
     public init(id: GncGUID = .random(), name: String, currency: Commodity,
                 description: String = "", recurrence: Recurrence,
-                splits: [ScheduledSplit] = [], lastPosted: Date? = nil, isEnabled: Bool = true) {
+                splits: [ScheduledSplit] = [], lastPosted: Date? = nil, isEnabled: Bool = true,
+                advanceCreateDays: Int = 0, advanceRemindDays: Int = 0) {
         self.id = id
         self.name = name
         self.currency = currency
@@ -48,6 +55,28 @@ public struct ScheduledTransaction: Identifiable, Codable, Hashable, Sendable {
         self.splits = splits
         self.lastPosted = lastPosted
         self.isEnabled = isEnabled
+        self.advanceCreateDays = advanceCreateDays
+        self.advanceRemindDays = advanceRemindDays
+    }
+
+    // Backward-compatible decoding: books saved before the advance horizons
+    // existed carry no such keys.
+    private enum CodingKeys: String, CodingKey {
+        case id, name, currency, transactionDescription, recurrence, splits
+        case lastPosted, isEnabled, advanceCreateDays, advanceRemindDays
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(GncGUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        currency = try c.decode(Commodity.self, forKey: .currency)
+        transactionDescription = try c.decodeIfPresent(String.self, forKey: .transactionDescription) ?? ""
+        recurrence = try c.decode(Recurrence.self, forKey: .recurrence)
+        splits = try c.decodeIfPresent([ScheduledSplit].self, forKey: .splits) ?? []
+        lastPosted = try c.decodeIfPresent(Date.self, forKey: .lastPosted)
+        isEnabled = try c.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true
+        advanceCreateDays = try c.decodeIfPresent(Int.self, forKey: .advanceCreateDays) ?? 0
+        advanceRemindDays = try c.decodeIfPresent(Int.self, forKey: .advanceRemindDays) ?? 0
     }
 
     /// The template splits balance (sum of values is zero at the currency's fraction).
@@ -57,10 +86,28 @@ public struct ScheduledTransaction: Identifiable, Codable, Hashable, Sendable {
     }
 
     /// Dates that are due to be generated up to `through` (occurrences after
-    /// ``lastPosted``). Empty when disabled.
-    public func dueDates(through: Date) -> [Date] {
+    /// ``lastPosted``). The horizon extends by ``advanceCreateDays`` so
+    /// instances can be created ahead of time, matching GnuCash's
+    /// `creation_end = range_end + advance-create`. Empty when disabled.
+    public func dueDates(through: Date, calendar: Calendar = .current) -> [Date] {
         guard isEnabled else { return [] }
-        return recurrence.occurrences(since: lastPosted, through: through)
+        let horizon = advanceCreateDays > 0
+            ? (calendar.date(byAdding: .day, value: advanceCreateDays, to: through) ?? through)
+            : through
+        return recurrence.occurrences(since: lastPosted, through: horizon)
+    }
+
+    /// Upcoming occurrences to *remind* about but not yet create: those falling
+    /// between `through` (exclusive) and the advance-remind horizon. Empty when
+    /// disabled or no remind window is set.
+    public func remindDates(through: Date, calendar: Calendar = .current) -> [Date] {
+        guard isEnabled, advanceRemindDays > 0 else { return [] }
+        let createHorizon = advanceCreateDays > 0
+            ? (calendar.date(byAdding: .day, value: advanceCreateDays, to: through) ?? through)
+            : through
+        let remindHorizon = calendar.date(byAdding: .day, value: advanceRemindDays, to: through) ?? through
+        guard remindHorizon > createHorizon else { return [] }
+        return recurrence.occurrences(since: createHorizon, through: remindHorizon)
     }
 }
 

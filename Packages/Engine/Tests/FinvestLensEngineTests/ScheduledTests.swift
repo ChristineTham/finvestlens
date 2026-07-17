@@ -138,6 +138,35 @@ struct ScheduledTransactionTests {
         #expect(sx.dueDates(through: date(2026, 3, 1)).count == 3)   // Jan, Feb, Mar
     }
 
+    @Test("Advance-create days create instances ahead of their due date")
+    func advanceCreate() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        let sx = ScheduledTransaction(
+            name: "Rent", currency: .aud,
+            recurrence: Recurrence(period: .monthly, startDate: date(2026, 1, 15)),
+            splits: [ScheduledSplit(accountGUID: .random(), value: 0)],
+            advanceCreateDays: 5)
+        // Asking through Feb 12 — three days before the Feb 15 occurrence. The
+        // 5-day advance window pulls Feb 15 in; without it only Jan 15 shows.
+        let due = sx.dueDates(through: date(2026, 2, 12), calendar: cal)
+        #expect(due == [date(2026, 1, 15), date(2026, 2, 15)])
+
+        var noAdvance = sx; noAdvance.advanceCreateDays = 0
+        #expect(noAdvance.dueDates(through: date(2026, 2, 12), calendar: cal) == [date(2026, 1, 15)])
+    }
+
+    @Test("Advance-remind lists upcoming instances without creating them")
+    func advanceRemind() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        let sx = ScheduledTransaction(
+            name: "Rent", currency: .aud,
+            recurrence: Recurrence(period: .monthly, startDate: date(2026, 1, 15)),
+            splits: [ScheduledSplit(accountGUID: .random(), value: 0)],
+            advanceRemindDays: 10)
+        // Through Feb 10, remind window reaches Feb 20 → the Feb 15 occurrence.
+        #expect(sx.remindDates(through: date(2026, 2, 10), calendar: cal) == [date(2026, 2, 15)])
+    }
+
     @Test("Posting creates a balanced transaction in the book")
     func post() throws {
         let (book, expense, bank) = makeBook()

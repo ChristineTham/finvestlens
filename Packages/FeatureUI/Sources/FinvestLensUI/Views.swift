@@ -1628,6 +1628,8 @@ struct ScheduleTransactionSheet: View {
     @State private var name = ""
     @State private var period: RecurrencePeriod = .monthly
     @State private var interval = 1
+    @State private var advanceCreateDays = 0
+    @State private var advanceRemindDays = 0
 
     var body: some View {
         NavigationStack {
@@ -1642,6 +1644,12 @@ struct ScheduleTransactionSheet: View {
                 }
                 Section("Name") {
                     TextField("Name", text: $name)
+                }
+                Section("Create ahead") {
+                    Stepper("Create \(advanceCreateDays) days early",
+                            value: $advanceCreateDays, in: 0...90)
+                    Stepper("Remind \(advanceRemindDays) days early",
+                            value: $advanceRemindDays, in: 0...90)
                 }
                 Section {
                     // The thing worth saying: this schedules the *next* one. The
@@ -1662,7 +1670,9 @@ struct ScheduleTransactionSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Schedule") {
                         model.scheduleTransaction(transactionID, period: period,
-                                                  interval: interval, name: name)
+                                                  interval: interval, name: name,
+                                                  advanceCreateDays: advanceCreateDays,
+                                                  advanceRemindDays: advanceRemindDays)
                         dismiss()
                     }
                     .keyboardShortcut(.defaultAction)

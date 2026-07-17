@@ -31,7 +31,8 @@ extension AppModel {
     /// the schedule's first act would be to post a duplicate of it.
     @discardableResult
     public func scheduleTransaction(_ id: GncGUID, period: RecurrencePeriod,
-                                    interval: Int = 1, name: String? = nil) -> GncGUID? {
+                                    interval: Int = 1, name: String? = nil,
+                                    advanceCreateDays: Int = 0, advanceRemindDays: Int = 0) -> GncGUID? {
         guard let book, let txn = book.transaction(with: id) else { return nil }
 
         // Every leg needs an account, or the template cannot post: `post` bails
@@ -51,7 +52,9 @@ extension AppModel {
             recurrence: Recurrence(period: period, interval: interval,
                                    startDate: txn.datePosted),
             splits: splits,
-            lastPosted: txn.datePosted)
+            lastPosted: txn.datePosted,
+            advanceCreateDays: advanceCreateDays,
+            advanceRemindDays: advanceRemindDays)
         addScheduledTransaction(scheduled)
         return scheduled.id
     }
