@@ -174,6 +174,48 @@ public extension Transaction {
     }
 }
 
+public extension Transaction {
+    /// GnuCash's canonical transaction order (`xaccTransOrder_num_action`): by
+    /// date posted, then a num/action string (numeric-aware), then date
+    /// entered, description, and finally guid to stay stable. `actionA`/`actionB`
+    /// are the split actions when ordering splits (empty falls back to the
+    /// transaction number). Returns negative / 0 / positive.
+    static func canonicalOrder(_ a: Transaction, action actionA: String,
+                               _ b: Transaction, action actionB: String) -> Int {
+        if a === b { return 0 }
+        if a.datePosted != b.datePosted { return a.datePosted < b.datePosted ? -1 : 1 }
+        // (FinvestLens has no closing-transaction concept — GnuCash sorts those
+        // after normal same-date transactions here.)
+        let cmp = (!actionA.isEmpty && !actionB.isEmpty)
+            ? numOrString(actionA, actionB)
+            : numOrString(a.number, b.number)
+        if cmp != 0 { return cmp }
+        if a.dateEntered != b.dateEntered { return a.dateEntered < b.dateEntered ? -1 : 1 }
+        let d = collate(a.transactionDescription, b.transactionDescription)
+        if d != 0 { return d }
+        return collate(a.guid.hexString, b.guid.hexString)
+    }
+
+    /// GnuCash's `order_by_int64_or_string`: numeric when both strings lead with
+    /// a non-zero integer (ties broken by the trailing text), else a collation.
+    static func numOrString(_ a: String, _ b: String) -> Int {
+        func leading(_ s: String) -> (UInt64, Substring)? {
+            let digits = s.prefix { $0.isASCII && $0.isNumber }
+            guard let n = UInt64(digits) else { return nil }
+            return (n, s[digits.endIndex...])
+        }
+        if let (na, ra) = leading(a), let (nb, rb) = leading(b), na != 0, nb != 0 {
+            if na != nb { return na < nb ? -1 : 1 }
+            return collate(String(ra), String(rb))
+        }
+        return collate(a, b)
+    }
+
+    private static func collate(_ a: String, _ b: String) -> Int {
+        a < b ? -1 : a > b ? 1 : 0
+    }
+}
+
 extension Transaction: Equatable, Hashable {
     public static func == (lhs: Transaction, rhs: Transaction) -> Bool { lhs === rhs }
     public func hash(into hasher: inout Hasher) { hasher.combine(ObjectIdentifier(self)) }

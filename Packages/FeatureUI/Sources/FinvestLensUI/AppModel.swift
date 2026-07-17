@@ -1519,8 +1519,13 @@ public final class AppModel {
         let splits = book.transactions
             .flatMap(\.splits)
             .filter { $0.account.map { focusSet.contains(ObjectIdentifier($0)) } ?? false }
-            .sorted {
-                ($0.transaction?.datePosted ?? .distantPast) < ($1.transaction?.datePosted ?? .distantPast)
+            .sorted { a, b in
+                // GnuCash's canonical order, so same-date rows and their running
+                // balances match its register (date, num/action, entered, …).
+                guard let ta = a.transaction, let tb = b.transaction else {
+                    return b.transaction != nil
+                }
+                return Transaction.canonicalOrder(ta, action: a.action, tb, action: b.action) < 0
             }
 
         // A running balance adds quantities up, and a quantity means "so many of
