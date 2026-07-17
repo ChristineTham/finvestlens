@@ -113,7 +113,7 @@ docs/reports.md for the findings and decisions. Landed across five commits:
 | Inline surface, no pregeneration | Reports live in the detail pane (⌘R); the detached window is an explicit menu item. Entering shows a gallery; nothing computes until a report is chosen, and computation runs in a task with a spinner — never in `body`, which used to recompute a 7s report per UI tick. | done |
 | Document polish + AI notes | Statement reports render through `ReportDocument`: header, KPI callouts, charts, Grid tables with ruled totals, methodology notes, optional on-device commentary (`ReportNarrator` — figures arrive computed; the model observes, never calculates). PDF prints the same value the screen renders. Verified on the reference book: Income Statement FY 2025–26 matches SQL to the cent (233,856.12 / 79,013.41). | done |
 | Legacy report internals | Transactions, Reconciliation, Forecast, Portfolio, Investment Lots, Price Scatter, Capital Gains keep their interactive views inside the new navigation; migrating their internals to the document scaffold (and giving them PDF export) is follow-up. | P8 |
-| Commentary live-model check | ReportNarrator follows the tested ForecastNarrator pattern; a GUI pass on a device with Apple Intelligence enabled is still owed. | monitor |
+| Commentary live-model check | **Done.** `ReportNarrator` now has its own live on-device test (`LiveModelTests.reportCommentary`), which runs with real Apple Intelligence inference on an eligible machine (verified passing, ~1s). It surfaced a real contract drift — the model sometimes returned five notes despite the "two-to-four" guide — now enforced by clamping the narrator's output to four. | done |
 
 ## Investment reports parity audit (17 Jul 2026)
 

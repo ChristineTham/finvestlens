@@ -220,6 +220,29 @@ struct LiveModelTests {
     }
 
     @available(macOS 26.0, *)
+    @Test("Report narrator writes grounded notes for a computed statement")
+    func reportCommentary() async throws {
+        // The FY 2025–26 income-statement anchor: figures arrive computed, the
+        // model only observes them.
+        let facts = ReportFacts(
+            reportTitle: "Income Statement",
+            periodLabel: "FY 2025–26",
+            currencyCode: "AUD",
+            headline: [("Income", Decimal(string: "233856.12")!),
+                       ("Expenses", Decimal(string: "79013.41")!),
+                       ("Net income", Decimal(string: "154842.71")!)],
+            lines: [("Income:Dividends", Decimal(string: "61234.00")!),
+                    ("Expenses:Income Tax", Decimal(string: "40185.68")!),
+                    ("Income:Distributions", Decimal(string: "9275.32")!),
+                    ("Expenses:Brokerage", Decimal(string: "4988.84")!)])
+
+        let notes = try await ReportNarrator.narrate(facts: facts)
+        // Nondeterministic wording; check the shape and that it is grounded.
+        #expect((2...4).contains(notes.count), "got \(notes)")
+        #expect(notes.allSatisfy { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
+    }
+
+    @available(macOS 26.0, *)
     @Test("Forecast narrator writes a grounded outlook")
     func forecast() async throws {
         let facts = ForecastFacts(

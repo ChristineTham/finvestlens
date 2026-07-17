@@ -81,7 +81,10 @@ public enum ReportNarrator {
                     """,
                 generating: ModelNotes.self
             ).content
-            return model.notes
+            // The guide asks for two-to-four notes, but the model does not
+            // always honour the ceiling; enforce it so the section stays tight.
+            return Array(model.notes.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                .prefix(4))
         } catch {
             throw IntelligenceError.wrap(error)
         }
