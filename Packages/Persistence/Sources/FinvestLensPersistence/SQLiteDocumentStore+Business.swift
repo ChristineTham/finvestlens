@@ -109,12 +109,13 @@ extension SQLiteDocumentStore {
                 try db.execute(sql: """
                     INSERT INTO invoice_entry (guid, invoiceGuid, date, entryDescription,
                         action, accountGuid, quantity, price, discount, discountType,
-                        taxable, taxIncluded, taxTableGuid, position)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        discountHow, taxable, taxIncluded, taxTableGuid, position)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """, arguments: [entry.guid.hexString, invoice.guid.hexString, entry.date,
                         entry.entryDescription, entry.action, entry.account?.guid.hexString,
                         Serialize.decimal(entry.quantity), Serialize.decimal(entry.price),
                         Serialize.decimal(entry.discount), entry.discountType.rawValue,
+                        entry.discountHow.rawValue,
                         entry.taxable, entry.taxIncluded, entry.taxTable?.guid.hexString, position])
             }
         }
@@ -250,6 +251,7 @@ extension SQLiteDocumentStore {
                     price: Serialize.parseDecimal(e["price"]),
                     discount: Serialize.parseDecimal(e["discount"]),
                     discountType: DiscountType(rawValue: e["discountType"]) ?? .percentage,
+                    discountHow: DiscountHow(rawValue: e["discountHow"] ?? "pretax") ?? .pretax,
                     taxable: e["taxable"], taxIncluded: e["taxIncluded"], taxTable: table(e["taxTableGuid"]))
             }
             invoice.postedAccount = acct(row["postedAccountGuid"])

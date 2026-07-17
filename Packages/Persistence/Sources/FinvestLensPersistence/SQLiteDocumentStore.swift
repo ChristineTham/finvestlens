@@ -236,6 +236,11 @@ public final class SQLiteDocumentStore {
                 t.add(column: "cutoff", .integer).notNull().defaults(to: 0)
             }
         }
+        migrator.registerMigration("v3_entry_disc_how") { db in
+            try db.alter(table: "invoice_entry") { t in
+                t.add(column: "discountHow", .text).notNull().defaults(to: "pretax")
+            }
+        }
         return migrator
     }
 

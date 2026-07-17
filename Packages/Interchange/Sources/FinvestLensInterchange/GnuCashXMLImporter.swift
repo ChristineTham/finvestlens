@@ -369,6 +369,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "entry:i-price", "entry:b-price": entry?.price = GnuCashNumeric.parse(value) ?? 0
         case "entry:i-discount": entry?.discount = GnuCashNumeric.parse(value) ?? 0
         case "entry:i-disc-type": entry?.discType = value
+        case "entry:i-disc-how": entry?.discHow = value
         case "entry:i-taxable", "entry:b-taxable": entry?.taxable = (value == "1")
         case "entry:i-taxincluded", "entry:b-taxincluded": entry?.taxIncluded = (value == "1")
         case "entry:i-taxtable", "entry:b-taxtable": entry?.taxTableGUID = GncGUID(hex: value)
@@ -774,6 +775,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
                 guid: b.guid ?? .random(), date: b.date ?? Date(), entryDescription: b.desc,
                 action: b.action, account: account(b.accountGUID), quantity: b.qty, price: b.price,
                 discount: b.discount, discountType: b.discType == "VALUE" ? .value : .percentage,
+                discountHow: DiscountHow(gnuCashName: b.discHow),
                 taxable: b.taxable, taxIncluded: b.taxIncluded,
                 taxTable: b.taxTableGUID.flatMap { tables[$0] }))
         }
@@ -917,7 +919,7 @@ struct InvoiceBuilder {
 struct EntryBuilder {
     var guid: GncGUID?; var date: Date?; var desc = ""; var action = ""; var qty: Decimal = 1
     var accountGUID: GncGUID?; var price: Decimal = 0; var discount: Decimal = 0
-    var discType = "PERCENT"; var taxable = false; var taxIncluded = false
+    var discType = "PERCENT"; var discHow = "PRETAX"; var taxable = false; var taxIncluded = false
     var taxTableGUID: GncGUID?; var invoiceGUID: GncGUID?
 }
 struct LotBuilder {

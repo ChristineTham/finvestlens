@@ -242,7 +242,7 @@ extension GnuCashXMLExporter {
         if !bill {
             b += "  <entry:i-discount>\(rational(e.discount, fallbackFraction: 100))</entry:i-discount>\n"
             b += "  <entry:i-disc-type>\(e.discountType == .percentage ? "PERCENT" : "VALUE")</entry:i-disc-type>\n"
-            b += "  <entry:i-disc-how>PRETAX</entry:i-disc-how>\n"
+            b += "  <entry:i-disc-how>\(e.discountHow.gnuCashName)</entry:i-disc-how>\n"
         }
         b += "  <entry:\(p)-taxable>\(e.taxable ? 1 : 0)</entry:\(p)-taxable>\n"
         b += "  <entry:\(p)-taxincluded>\(e.taxIncluded ? 1 : 0)</entry:\(p)-taxincluded>\n"

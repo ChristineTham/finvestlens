@@ -67,6 +67,28 @@ struct BusinessModelTests {
         #expect(entry.total == dec("110"))
     }
 
+    @Test("Discount-how modes tax the right base (GnuCash GncDiscountHow)")
+    func discountHowModes() {
+        let (_, income, gst, _) = book()
+        func entry(_ how: DiscountHow) -> InvoiceEntry {
+            InvoiceEntry(account: income, quantity: dec("1"), price: dec("100"),
+                         discount: dec("10"), discountType: .percentage, discountHow: how,
+                         taxable: true, taxTable: gstTable(gst))   // 10% tax
+        }
+        // PRETAX: discount off pretax, tax on the discounted 90 → tax 9.
+        let pretax = entry(.pretax)
+        #expect(pretax.subtotal == dec("90"))
+        #expect(pretax.tax == dec("9"))
+        // SAMETIME: discount off pretax, tax on the *undiscounted* 100 → tax 10.
+        let sametime = entry(.sametime)
+        #expect(sametime.subtotal == dec("90"))
+        #expect(sametime.tax == dec("10"))
+        // POSTTAX: discount off after-tax (110), tax on pretax 100 → net 89, tax 10.
+        let posttax = entry(.posttax)
+        #expect(posttax.subtotal == dec("89"))
+        #expect(posttax.tax == dec("10"))
+    }
+
     @Test("A non-taxable entry has no tax even with a table set")
     func nonTaxable() {
         let (_, income, gst, _) = book()

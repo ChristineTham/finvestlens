@@ -351,6 +351,34 @@ public enum DiscountType: String, Codable, Sendable, CaseIterable {
     case percentage, value
 }
 
+/// When the discount is applied relative to tax (GnuCash `GncDiscountHow`).
+public enum DiscountHow: String, Codable, Sendable, CaseIterable {
+    /// Discount off the pre-tax amount; tax on the discounted base (default).
+    case pretax
+    /// Discount off the pre-tax amount; tax on the *un*discounted base.
+    case sametime
+    /// Discount off pre-tax + tax; tax on the un-discounted base.
+    case posttax
+
+    /// GnuCash's XML storage string.
+    public var gnuCashName: String {
+        switch self {
+        case .pretax: "PRETAX"
+        case .sametime: "SAMETIME"
+        case .posttax: "POSTTAX"
+        }
+    }
+
+    /// Parses GnuCash's XML storage string.
+    public init(gnuCashName: String) {
+        switch gnuCashName {
+        case "SAMETIME": self = .sametime
+        case "POSTTAX": self = .posttax
+        default: self = .pretax
+        }
+    }
+}
+
 /// One line of an invoice/bill (GnuCash `gncEntry`). The public computed
 /// properties reproduce GnuCash's entry arithmetic for the common case: a
 /// pre-tax discount and tax-exclusive pricing.
@@ -365,6 +393,7 @@ public final class InvoiceEntry: Identifiable, @unchecked Sendable {
     public var price: Decimal
     public var discount: Decimal
     public var discountType: DiscountType
+    public var discountHow: DiscountHow
     public var taxable: Bool
     public var taxIncluded: Bool
     public var taxTable: TaxTable?
@@ -373,11 +402,13 @@ public final class InvoiceEntry: Identifiable, @unchecked Sendable {
                 entryDescription: String = "", action: String = "",
                 account: Account? = nil, quantity: Decimal = 1, price: Decimal = 0,
                 discount: Decimal = 0, discountType: DiscountType = .percentage,
+                discountHow: DiscountHow = .pretax,
                 taxable: Bool = false, taxIncluded: Bool = false,
                 taxTable: TaxTable? = nil) {
         self.guid = guid; self.date = date; self.entryDescription = entryDescription
         self.action = action; self.account = account; self.quantity = quantity
         self.price = price; self.discount = discount; self.discountType = discountType
+        self.discountHow = discountHow
         self.taxable = taxable; self.taxIncluded = taxIncluded; self.taxTable = taxTable
     }
 
@@ -406,25 +437,40 @@ public final class InvoiceEntry: Identifiable, @unchecked Sendable {
         return denom != 0 ? (gross - taxFlatValue) / denom : gross
     }
 
-    /// The discount amount, taken off the pre-tax base (GnuCash's default
-    /// `GNC_DISC_PRETAX`).
+    /// The base a percentage discount applies to. For `.posttax` the discount
+    /// is taken off the after-tax amount (pre-tax + tax); otherwise off pre-tax.
+    private var discountBase: Decimal {
+        switch discountHow {
+        case .pretax, .sametime: return pretax
+        case .posttax: return pretax + pretax * taxPercentFraction + taxFlatValue
+        }
+    }
+
+    /// The discount amount for this line.
     public var discountAmount: Decimal {
         switch discountType {
-        case .percentage: pretax * discount / 100
+        case .percentage: discountBase * discount / 100
         case .value: discount
         }
     }
 
-    /// The line subtotal: pre-tax base less discount (the taxable base).
+    /// The line subtotal (net value the merchant gets): pre-tax less discount.
     public var subtotal: Decimal { pretax - discountAmount }
 
+    /// The base percentage tax is charged on: the discounted subtotal under
+    /// `.pretax`, else the un-discounted pre-tax amount (GnuCash computes tax on
+    /// `pretax`, which it only re-points to the discounted result for `.pretax`).
+    public var taxBase: Decimal {
+        discountHow == .pretax ? subtotal : pretax
+    }
+
     /// Tax on this line, per `taxTable`, when `taxable`. Percentage entries take
-    /// a share of the subtotal; value entries add a flat amount.
+    /// a share of the tax base; value entries add a flat amount.
     public var tax: Decimal {
         guard taxable, let table = taxTable else { return 0 }
         return table.entries.reduce(Decimal(0)) { running, entry in
             switch entry.kind {
-            case .percentage: running + subtotal * entry.amount / 100
+            case .percentage: running + taxBase * entry.amount / 100
             case .value: running + entry.amount
             }
         }
@@ -508,7 +554,7 @@ public final class Invoice: Identifiable, @unchecked Sendable {
             guard let table = entry.taxTable else { continue }
             for line in table.entries {
                 let amount = line.kind == .percentage
-                    ? entry.subtotal * line.amount / 100 : line.amount
+                    ? entry.taxBase * line.amount / 100 : line.amount
                 pairs.append((line.account, amount))
             }
         }
