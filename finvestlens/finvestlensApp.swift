@@ -183,6 +183,10 @@ struct finvestlensApp: App {
                     .disabled(!model.isOpen)
                 Button("Prices & Quotes…") { model.presentedPanel = .prices }
                     .disabled(!model.isOpen)
+                Button("Linked Documents…") { model.presentedPanel = .linkedDocuments }
+                    .disabled(!model.isOpen)
+                Button("Loan Calculator…") { model.presentedPanel = .loanCalculator }
+                    .disabled(!model.isOpen)
                 Button("Check & Repair…") { model.checkAndRepair() }
                     .disabled(!model.isOpen)
                 Divider()

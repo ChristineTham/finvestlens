@@ -342,6 +342,8 @@ public struct FinvestLensRootView: View {
                     ReconcileView(model: model, accountID: id)
                 }
             case .autoCategorize: AutoCategorizeSheet(model: model)
+            case .linkedDocuments: LinkedDocumentsView(model: model)
+            case .loanCalculator: LoanCalculatorView(model: model)
             case .find: FindSheet(model: model)
             case .findAccount: FindAccountSheet(model: model)
             case .business: BusinessHub(model: model)

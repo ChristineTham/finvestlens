@@ -127,6 +127,41 @@ extension AppModel {
         book?.transaction(with: transactionID)?.documentLink != nil
     }
 
+    /// One transaction's document association, for the book-wide list
+    /// (GnuCash's Tools ▸ Transaction Linked Documents).
+    public struct LinkedDocument: Identifiable, Sendable {
+        public let id: GncGUID
+        public var date: Date
+        public var description: String
+        public var link: String
+        /// The resolved file's name, or the raw link for a web URL.
+        public var displayName: String
+        public var isWeb: Bool
+        /// `false` when a file link points at something no longer present.
+        public var exists: Bool
+    }
+
+    /// Every transaction that carries a document link, newest first — the
+    /// roll-up GnuCash offers so links aren't only reachable one register row
+    /// at a time.
+    public func linkedDocuments() -> [LinkedDocument] {
+        guard let book else { return [] }
+        return book.transactions.compactMap { txn -> LinkedDocument? in
+            guard let link = txn.documentLink else { return nil }
+            let isWeb = link.hasPrefix("http://") || link.hasPrefix("https://")
+            let url = isWeb ? nil : linkedDocumentURL(for: txn.guid)
+            return LinkedDocument(
+                id: txn.guid,
+                date: txn.datePosted,
+                description: txn.transactionDescription,
+                link: link,
+                displayName: isWeb ? link : (url?.lastPathComponent ?? link),
+                isWeb: isWeb,
+                exists: isWeb ? true : (url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false))
+        }
+        .sorted { $0.date > $1.date }
+    }
+
     /// Opens the linked document in its default application (macOS).
     public func openLinkedDocument(for transactionID: GncGUID) {
         #if os(macOS)
