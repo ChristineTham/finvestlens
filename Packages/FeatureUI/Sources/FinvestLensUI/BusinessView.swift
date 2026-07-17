@@ -41,6 +41,16 @@ struct BusinessHub: View {
     var body: some View {
         NavigationStack {
             List {
+                Section("New") {
+                    Button("New Customer…", systemImage: "person.badge.plus") { editing = .customer }
+                    Button("New Vendor…", systemImage: "building.2") { editing = .vendor }
+                    Button("New Invoice…", systemImage: "doc.badge.plus") { editing = .invoice(.invoice) }
+                        .disabled(model.businessCustomers.isEmpty)
+                    Button("New Bill…", systemImage: "doc.text") { editing = .invoice(.bill) }
+                        .disabled(model.businessVendors.isEmpty)
+                    Button("Process Payment…", systemImage: "dollarsign.circle") { editing = .payment }
+                        .disabled(model.businessInvoices.isEmpty)
+                }
                 if !model.businessInvoices.isEmpty {
                     Section("Invoices & Bills") {
                         ForEach(model.businessInvoices) { invoice in
