@@ -91,7 +91,7 @@ FinvestLens is delivered in phases. Requirement priorities use **MoSCoW** (Must 
 | **P8 — Extended import/export** | Interop breadth | MT940/MT942 + CAMT.053 import; online bank sync; PDF export |
 | **P9 — Planning & insights** | Money-inspired | Debt Reduction Planner, Lifetime Planner, tax estimator, insights/comparison reports |
 
-Planning features that layer onto earlier phases (bill reminders, cash-flow forecast, alerts, budgets, payee rules, portfolio, dashboard, onboarding) are scheduled within P4–P7 — see [§5.16](#516-planning-forecasting--insights-microsoft-moneyinspired) and the [enhancement study](enhancements-msmoney.md). An on-device **Apple Intelligence** layer (FR-AI-01…08) adds PDF statement/invoice/dividend import, auto-categorisation, and budget/forecast narration over the same engine — see [Architecture §11](architecture.md#11-apple-intelligence-integration-intelligence-package).
+Planning features that layer onto earlier phases (bill reminders, cash-flow forecast, alerts, budgets, payee rules, portfolio, dashboard, onboarding) are scheduled within P4–P7 — see [§5.16](#516-planning-forecasting--insights-microsoft-moneyinspired) and the [enhancement study](enhancements-msmoney.md). An optional on-device **Apple Intelligence** layer ([§5.18](#518-on-device-intelligence-apple-intelligence), FR-AI-01…08) adds PDF statement/invoice/dividend import, auto-categorisation, and budget/forecast narration over the same engine — see [Architecture §11](architecture.md#11-apple-intelligence-integration-intelligence-package).
 
 ---
 
@@ -321,6 +321,21 @@ Automation and organization features that layer onto the engine. See the [enhanc
 | FR-RULE-03 | **Default category taxonomy + heuristic auto-categorisation** (Frollo-inspired): ship a standard category set and auto-suggest categories/merchant-name cleanup on import, complementing the rules engine and Import Matcher (optional on-device enrichment later). | Should | P4 |
 | FR-GOAL-02 | **Savings challenges** (Frollo-inspired): gamified, time-boxed savings challenges layered on savings goals, with in-app prompts/notifications. | Could | P9 |
 
+### 5.18 On-device intelligence (Apple Intelligence)
+
+An optional layer that runs entirely on-device over Apple's **Foundation Models** framework — no financial data leaves the device — and never mutates the book without review. The contract is **the model proposes; deterministic code disposes**: model output is typed, parsed tolerantly, resolved against the real chart of accounts, and arithmetically cross-checked before a reviewed result is applied. Every entry point is **availability-gated** and degrades gracefully when Apple Intelligence is unavailable. See [Architecture §11](architecture.md#11-apple-intelligence-integration-intelligence-package).
+
+| ID | Requirement | Pri | Phase |
+|---|---|---|---|
+| FR-AI-01 | **PDF statement import**: extract transactions from PDF bank/card statements (text extraction with an OCR fallback for scans) and stage them through the Import Matcher for review; matched register splits may be marked cleared (light reconciliation). | Could | P4 |
+| FR-AI-02 | **Auto-categorisation**: propose an account/category for uncategorised transactions after deterministic rules, history, and heuristics — in import review and a dedicated Auto-Categorise panel. | Could | P4 |
+| FR-AI-03 | **Invoice splitting**: read an invoice's line items and turn them into categorised splits on a transaction. | Could | P7 |
+| FR-AI-04 | **Dividend statement import**: extract dividend components (franked/unfranked amounts, franking/imputation credits) and book them, including gross-up, after review. | Could | P5 |
+| FR-AI-05 | **Budget suggestion**: derive per-line budget proposals from deterministic spending statistics for a reviewed, per-line apply. | Could | P4 |
+| FR-AI-06 | **Forecast narration**: turn computed cash-flow-forecast facts into a plain-language headline and insights in the Cash Flow report. | Could | P5 |
+| FR-AI-07 | **Smart Import (multi-PDF)**: classify each dropped PDF and route it — statements to `FR-AI-01` review, dividend statements to a verified booking, invoices matched to their transaction, split by line item, and re-dated to the invoice's economic date. | Could | P7 |
+| FR-AI-08 | **Document links**: copy applied statements/invoices into the document folder and link them to their transaction via GnuCash's `assoc_uri` slot, round-trippable through GnuCash XML. | Could | P6 |
+
 ---
 
 ## 6. Non-functional requirements
@@ -420,9 +435,9 @@ SQL backends (NG1); GnuCash's exact UI (NG2); Scheme/Python scripting (NG3); fin
 
 ## 13. Dependencies
 
-- Apple SwiftUI, Foundation (`Decimal`, `NSFileCoordinator`/`NSFilePresenter`/`NSFileVersion`), Swift Charts, App Intents, UniformTypeIdentifiers.
-- **GRDB** (SQLite) for the native document store.
-- A quote-retrieval mechanism for FR-INV-03 / FR-CUR-04 (pluggable; optional).
+- **GRDB** (SQLite) for the native `.finvestlens` document store — the **single external** dependency. Everything else is first-party Apple frameworks or hand-written native Swift (see [Architecture §9](architecture.md#9-dependencies)).
+- **Apple frameworks**: SwiftUI + AppKit/UIKit (UI); Foundation (`Decimal`, `NSFileCoordinator`/`NSFilePresenter`/`NSFileVersion`, `URLSession`); Swift Charts; App Intents (Shortcuts); UniformTypeIdentifiers (the `.finvestlens` UTI); Observation; CryptoKit (document fingerprint); Compression (gzip for GnuCash XML); Security (Keychain for quote API keys); LocalAuthentication (optional book lock); and — for the on-device intelligence layer (§5.18) — FoundationModels, Vision, and PDFKit.
+- A quote-retrieval mechanism for FR-INV-03 / FR-CUR-04 — native pluggable providers over `URLSession` (no external SDK).
 - A corpus of real/sample GnuCash XML files for round-trip CI (NFR-08).
 
 ---

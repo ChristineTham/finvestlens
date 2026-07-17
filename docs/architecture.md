@@ -358,4 +358,4 @@ Testing: deterministic parts are unit-tested; a live on-device model test exerci
 
 **Project docs** — [PRD](prd.md) · [Porting Strategy](porting.md) · [README](../README.md) · [LICENSE](../LICENSE)
 
-> All recommended dependencies are MIT-licensed (GPLv3-compatible). FinvestLens is licensed GPLv3 and is not affiliated with or endorsed by the GnuCash project.
+> GRDB — the single external dependency (§9) — is MIT-licensed (GPLv3-compatible); the CSV/QIF/OFX links above are conformance references, not linked code. FinvestLens is licensed GPLv3 and is not affiliated with or endorsed by the GnuCash project.
