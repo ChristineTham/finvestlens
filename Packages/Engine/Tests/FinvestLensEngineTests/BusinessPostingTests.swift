@@ -60,6 +60,28 @@ struct BusinessPostingTests {
         #expect(invoice.postedLot?.balance == dec("110"))
     }
 
+    @Test("The posting transaction carries the slots GnuCash's reports need")
+    func postingCarriesBusinessSlots() throws {
+        // GnuCash attributes a posting to its owner via the `gncInvoice` slot on
+        // the *transaction* (gncInvoiceGetInvoiceFromTxn), not only the lot —
+        // without it its aging/summary reports say "no suitable transactions".
+        let (book, ar, _, sales, _, _) = fixture()
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        let post = cal.date(from: DateComponents(year: 2026, month: 3, day: 1))!
+        let net30 = book.addBillTerm(BillTerm(name: "Net 30", kind: .days, dueDays: 30))
+        let customer = book.addCustomer(Customer(id: "C1", name: "Acme",
+                                                 currency: .aud, terms: net30))
+        let invoice = Invoice(id: "INV-1", kind: .invoice, owner: .customer(customer),
+                              terms: net30, currency: .aud,
+                              entries: [InvoiceEntry(account: sales, price: dec("100"))])
+        book.addInvoice(invoice)
+        let txn = try book.postInvoice(invoice, to: ar, postDate: post, calendar: cal)
+
+        #expect(txn.kvp["trans-txn-type"] == .string("I"))
+        #expect(txn.kvp["gncInvoice"] == .frame(KvpFrame(["invoice-guid": .guid(invoice.guid)])))
+        #expect(txn.kvp["trans-date-due"] == .date(invoice.dueDate!))
+    }
+
     @Test("Posting a vendor bill books a balanced A/P transaction")
     func postBill() throws {
         let (book, _, ap, _, gst, supplies) = fixture()

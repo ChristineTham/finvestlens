@@ -54,9 +54,17 @@ public extension Book {
                               description: invoice.owner.displayName)
         txn.number = invoice.id
         // GnuCash marks an invoice posting so its business reports recognise it
-        // and the register keeps it read-only until unposted.
+        // and the register keeps it read-only until unposted. The `gncInvoice`
+        // slot on the transaction is what the aging and owner reports read to
+        // attribute the posting to its invoice — and thence its owner — via
+        // `gncInvoiceGetInvoiceFromTxn` (GnuCash sets it in `gncInvoiceAttachTo
+        // Txn`). Without it the reports find the account but "no suitable
+        // transactions". `trans-date-due` carries the due date the aging report
+        // buckets by (GnuCash's `xaccTransSetDateDue`).
         txn.kvp["trans-txn-type"] = .string("I")
         txn.kvp["trans-read-only"] = .string("Generated from an invoice. Try unposting the invoice.")
+        txn.kvp["gncInvoice"] = .frame(KvpFrame(["invoice-guid": .guid(invoice.guid)]))
+        txn.kvp["trans-date-due"] = .date(resolvedDue)
 
         let total = invoice.total
         // The receivable/payable leg: +total on an A/R (asset up), −total on an
