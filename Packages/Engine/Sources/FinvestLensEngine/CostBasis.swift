@@ -215,13 +215,24 @@ public enum CostBasis {
         var costPerShare: Decimal
     }
 
+    /// An open short position: shares sold that haven't been bought back. It
+    /// remembers the sale's proceeds and fee so the realised gain can be struck
+    /// when a later buy covers it — GnuCash opens a negative lot and computes
+    /// the gain only on the closing (covering) split.
+    private struct MutableShort {
+        let date: Date              // the short-sale date (the opening)
+        var remainingShares: Decimal
+        var remainingProceeds: Decimal
+        var remainingFee: Decimal
+    }
+
     private static func matchedLots(
         _ events: [LotEvent], lifo: Bool, method: CostBasisMethod, threshold: Int,
         feeTreatment: FeeTreatment, fraction: Int?
     ) -> CostBasisResult {
         var open: [MutableLot] = []
+        var shorts: [MutableShort] = []   // uncovered sales awaiting a buy-back
         var gains: [RealizedGain] = []
-        var shortfall = Decimal(0)   // shares sold uncovered, awaiting a buy-back
         let includeFees = feeTreatment == .includeInBasis
 
         for event in events {
@@ -258,17 +269,27 @@ public enum CostBasis {
                 let cost = event.value + (includeFees ? event.fee : 0)
                 let perShare = cost / event.quantity
                 var quantity = event.quantity
-                // A buy after an uncovered sale first closes the short: the
-                // covering shares never open a lot, and the buy-back cost is
-                // realised as a (negative) gain dated at the cover.
-                if shortfall > 0 {
-                    let cover = min(quantity, shortfall)
+                // A buy after an uncovered sale first closes the short. GnuCash
+                // strikes the realised gain here, on the covering split, dated
+                // at the buy: the short-sale proceeds less the buy-back cost.
+                while quantity > 0, !shorts.isEmpty {
+                    let index = lifo ? shorts.count - 1 : 0
+                    let cover = min(quantity, shorts[index].remainingShares)
+                    let proceeds = rounded(
+                        shorts[index].remainingProceeds * cover / shorts[index].remainingShares, fraction)
+                    let shortFee = rounded(
+                        shorts[index].remainingFee * cover / shorts[index].remainingShares, fraction)
+                    let coverCost = rounded(cover * perShare, fraction) + shortFee
+                    let heldDays = Int(event.date.timeIntervalSince(shorts[index].date) / 86_400)
                     gains.append(RealizedGain(
-                        disposalDate: event.date, acquisitionDate: nil,
-                        quantity: cover, proceeds: 0,
-                        costBasis: rounded(cover * perShare, fraction), longTerm: nil))
-                    shortfall -= cover
+                        disposalDate: event.date, acquisitionDate: shorts[index].date,
+                        quantity: cover, proceeds: proceeds, costBasis: coverCost,
+                        longTerm: heldDays >= threshold))
+                    shorts[index].remainingProceeds -= proceeds
+                    shorts[index].remainingFee -= shortFee
+                    shorts[index].remainingShares -= cover
                     quantity -= cover
+                    if shorts[index].remainingShares == 0 { shorts.remove(at: index) }
                 }
                 if quantity > 0 {
                     open.append(MutableLot(date: event.date, remaining: quantity, costPerShare: perShare))
@@ -300,15 +321,13 @@ public enum CostBasis {
                     if open[index].remaining == 0 { open.remove(at: index) }
                 }
 
-                // Uncovered sale (sold more than held): only the fee is basis
-                // (there is no lot to draw from). The deficit is carried as a
-                // short position so later buys cover it before opening new lots.
+                // Uncovered sale (sold more than held): open a short position.
+                // No gain is realised yet — an open short has only unrealised
+                // P&L — its proceeds are struck against the eventual buy-back.
                 if sharesToSell > 0 {
-                    gains.append(RealizedGain(
-                        disposalDate: event.date, acquisitionDate: nil,
-                        quantity: sharesToSell, proceeds: proceedsRemaining,
-                        costBasis: feeRemaining, longTerm: nil))
-                    shortfall += sharesToSell
+                    shorts.append(MutableShort(
+                        date: event.date, remainingShares: sharesToSell,
+                        remainingProceeds: proceedsRemaining, remainingFee: feeRemaining))
                 }
             }
         }
@@ -317,6 +336,7 @@ public enum CostBasis {
             OpenLot(acquisitionDate: $0.date, quantity: $0.remaining,
                     costBasis: $0.remaining * $0.costPerShare)
         }
+        let shortfall = shorts.reduce(Decimal(0)) { $0 + $1.remainingShares }
         return CostBasisResult(method: method, openLots: openLots,
                                realizedGains: gains, shortQuantity: shortfall)
     }
@@ -328,8 +348,8 @@ public enum CostBasis {
                                     fraction: Int?) -> CostBasisResult {
         var pooledShares = Decimal(0)
         var pooledCost = Decimal(0)
+        var shorts: [MutableShort] = []   // uncovered sales awaiting a buy-back
         var gains: [RealizedGain] = []
-        var shortfall = Decimal(0)   // shares sold uncovered, awaiting a buy-back
         let includeFees = feeTreatment == .includeInBasis
 
         for event in events {
@@ -347,18 +367,26 @@ public enum CostBasis {
                 // A buy's fee raises its cost basis (include-in-basis mode).
                 var value = event.value + (includeFees ? event.fee : 0)
                 let perShare = value / event.quantity
-                // A buy after an uncovered sale first closes the short: the
-                // covering shares never join the pool, and the buy-back cost is
-                // realised as a (negative) gain dated at the cover.
-                if shortfall > 0 {
-                    let cover = min(quantity, shortfall)
+                // A buy after an uncovered sale first closes the short: the gain
+                // (short-sale proceeds less buy-back cost) is struck here, dated
+                // at the cover.
+                while quantity > 0, !shorts.isEmpty {
+                    let cover = min(quantity, shorts[0].remainingShares)
+                    let proceeds = rounded(
+                        shorts[0].remainingProceeds * cover / shorts[0].remainingShares, fraction)
+                    let shortFee = rounded(
+                        shorts[0].remainingFee * cover / shorts[0].remainingShares, fraction)
+                    let coverCost = rounded(cover * perShare, fraction) + shortFee
                     gains.append(RealizedGain(
                         disposalDate: event.date, acquisitionDate: nil,
-                        quantity: cover, proceeds: 0,
-                        costBasis: rounded(cover * perShare, fraction), longTerm: nil))
-                    shortfall -= cover
+                        quantity: cover, proceeds: proceeds, costBasis: coverCost,
+                        longTerm: nil))
+                    shorts[0].remainingProceeds -= proceeds
+                    shorts[0].remainingFee -= shortFee
+                    shorts[0].remainingShares -= cover
                     quantity -= cover
                     value -= cover * perShare
+                    if shorts[0].remainingShares == 0 { shorts.removeFirst() }
                 }
                 pooledShares += quantity
                 pooledCost += value
@@ -381,14 +409,13 @@ public enum CostBasis {
                     pooledShares -= covered
                     pooledCost -= lotCost
                 }
-                // Sold more than the pool holds: only the fee is basis, and the
-                // deficit is carried as a short position.
+                // Sold more than the pool holds: open a short position. No gain
+                // yet — it is struck when a later buy covers it.
                 if uncovered > 0 {
-                    gains.append(RealizedGain(
-                        disposalDate: event.date, acquisitionDate: nil,
-                        quantity: uncovered, proceeds: rounded(proceedsPerShare * uncovered, fraction),
-                        costBasis: rounded(uncovered * feePerShare, fraction), longTerm: nil))
-                    shortfall += uncovered
+                    shorts.append(MutableShort(
+                        date: event.date, remainingShares: uncovered,
+                        remainingProceeds: proceedsPerShare * uncovered,
+                        remainingFee: uncovered * feePerShare))
                 }
                 if pooledShares <= 0 { pooledShares = 0; pooledCost = 0 }
             }
@@ -397,6 +424,7 @@ public enum CostBasis {
         let openLots = pooledShares > 0
             ? [OpenLot(acquisitionDate: nil, quantity: pooledShares, costBasis: pooledCost)]
             : []
+        let shortfall = shorts.reduce(Decimal(0)) { $0 + $1.remainingShares }
         return CostBasisResult(method: .average, openLots: openLots,
                                realizedGains: gains, shortQuantity: shortfall)
     }

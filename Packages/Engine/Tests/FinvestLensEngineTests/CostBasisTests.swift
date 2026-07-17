@@ -83,23 +83,23 @@ struct CostBasisTests {
         #expect(result.totalRealizedGain == dec("-30"))
     }
 
-    @Test("Uncovered oversale gets zero cost basis")
+    @Test("An uncovered oversale opens a short with no realised gain yet")
     func oversale() {
         let result = CostBasis.compute(events: [
             LotEvent(date: day(0), quantity: dec("5"), value: dec("50")),
             LotEvent(date: day(10), quantity: dec("-8"), value: dec("-80")),
         ], method: .fifo)
-        // 5 covered (cost 50), 3 uncovered (cost 0). Proceeds 80.
+        // 5 covered (bought and sold at $10 → gain 0). The 3 uncovered shares
+        // are an open short: GnuCash records no gain until they're bought back.
+        #expect(result.realizedGains.count == 1)
         #expect(result.totalCostBasis == dec("50"))
-        #expect(result.totalProceeds == dec("80"))
-        #expect(result.realizedGains.contains { $0.acquisitionDate == nil && $0.costBasis == 0 })
-        // The 3 uncovered shares are an outstanding short, so the remaining
-        // quantity reflects the true (negative) balance.
+        #expect(result.totalProceeds == dec("50"))      // only the covered part
+        #expect(result.totalRealizedGain == 0)
         #expect(result.shortQuantity == dec("3"))
         #expect(result.remainingQuantity == dec("-3"))
     }
 
-    @Test("A buy after an oversale covers the short before opening lots",
+    @Test("A buy after an oversale strikes the short's gain at the cover",
           arguments: [CostBasisMethod.fifo, .lifo, .average])
     func shortCover(method: CostBasisMethod) {
         let result = CostBasis.compute(events: [
@@ -113,10 +113,28 @@ struct CostBasisTests {
         #expect(result.openLots.isEmpty)
         // Economic truth: proceeds 80 − buys 86 = −6 realised overall.
         #expect(result.totalRealizedGain == dec("-6"))
-        // The cover is its own record: zero proceeds, cost 36, dated at the buy.
+        // GnuCash strikes one net gain on the covering buy: the 3 short shares'
+        // proceeds (3 × $10 = 30) less the buy-back cost (36), dated at the buy.
         #expect(result.realizedGains.contains {
-            $0.disposalDate == day(20) && $0.proceeds == 0 && $0.costBasis == dec("36")
+            $0.disposalDate == day(20) && $0.proceeds == dec("30") && $0.costBasis == dec("36")
         })
+    }
+
+    @Test("A pure short sale realises the gain only when covered, at the cover")
+    func pureShortGainAtCover() {
+        // Short 50 @ $600, cover 50 @ $500 later. GnuCash books one +$100 gain
+        // dated at the cover — not +$600 at the sale and −$500 at the cover.
+        let result = CostBasis.compute(events: [
+            LotEvent(date: day(0), quantity: dec("-50"), value: dec("-600")),
+            LotEvent(date: day(30), quantity: dec("50"), value: dec("500")),
+        ], method: .fifo)
+        #expect(result.realizedGains.count == 1)
+        let g = result.realizedGains[0]
+        #expect(g.disposalDate == day(30))       // realised at the cover
+        #expect(g.proceeds == dec("600"))
+        #expect(g.costBasis == dec("500"))
+        #expect(g.gain == dec("100"))
+        #expect(result.shortQuantity == 0)
     }
 
     @Test("A buy larger than the short covers it and opens the remainder")
