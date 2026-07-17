@@ -46,16 +46,19 @@ Common workflows partly built; each is a bounded piece of work.
 | Open Read-Only on a live lock | FR-DAT-06 / P1 | Open fails with holder info + Break-Lock; no read-only mode. |
 | Autosave interval setting | FR-DAT-10 / P2 | Fixed 5-minute interval (`AppModel` hardcoded 300 s); not user-configurable/disableable, no Settings control. |
 
-## 3 — Platform enablement (needs a target / entitlement)
+## 3 — Platform enablement (targets/entitlements built — provisioning remains)
 
-Mechanical once the extension target or capability is provisioned; the feeding logic exists.
+The extension targets, entitlements, and feeding code are now in the project;
+what remains for each is the one-time **capability provisioning** in Xcode's
+Signing & Capabilities (a developer-portal round-trip that can't be scripted)
+plus on-device verification.
 
 | Item | FR / Phase | Notes |
 |---|---|---|
-| iCloud Documents container | FR-PLT-02 / P6 | Sync machinery done + storage-agnostic; enabling the container needs a dev-team provisioning step. |
-| Widgets | FR-PLT-03 / P6 | WidgetKit extension target; `IntentSupport` summaries ready to feed it. |
-| Quick Look preview | FR-PLT-03 / P6 | Quick Look extension target. |
-| Push notifications for alerts | FR-PLAN-05 / P6 | Alerts engine + dashboard done; `UNUserNotificationCenter` delivery pending. |
+| iCloud Documents container | FR-PLT-02 / P6 | Entitlement (`iCloud.com.hellotham.finvestlens`, CloudDocuments) + `NSUbiquitousContainers` declared and wired via `CODE_SIGN_ENTITLEMENTS`; the sync machinery was already done. Remaining: enable the iCloud capability against the dev team. |
+| Widgets | FR-PLT-03 / P6 | `FinvestLensWidgets` WidgetKit extension target built (Net Worth + Alerts), fed by the App Group snapshot the app publishes on save/open (`AppModel.publishWidgetData` → `FinvestLensShared.WidgetSnapshot`); app scheme builds and embeds the `.appex`. Remaining: provision the App Group capability; verify on device. |
+| Quick Look preview | FR-PLT-03 / P6 | `FinvestLensQuickLook` preview-extension target built — a `QLPreviewingController` reading the previewed file via read-only SQLite3 (accounts/transactions/commodities/prices). Remaining: verify Finder registers the preview once signed. |
+| App Group provisioning | FR-PLT-03 / P6 | `group.com.hellotham.finvestlens` is declared in the app's and widget's entitlements (`REGISTER_APP_GROUPS` was already on); it must be provisioned for the snapshot hand-off to work at runtime. |
 
 ## 4 — Feature tails within delivered phases
 

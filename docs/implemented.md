@@ -19,6 +19,47 @@ Companions: [PRD](prd.md) · [Architecture](architecture.md) · [Plan](plan.md) 
 
 ---
 
+## Platform enablement — extension targets & capabilities (18 Jul 2026)
+
+Closed most of the deferred.md §3 "needs a target / entitlement" gaps by adding
+the targets, entitlements, and feeding code (the remaining step for each is the
+one-time capability provisioning in Xcode's Signing & Capabilities, which is a
+developer-portal round-trip).
+
+- **App entitlements** — new `finvestlens.entitlements` (wired via
+  `CODE_SIGN_ENTITLEMENTS` on both app configs): the App Group
+  `group.com.hellotham.finvestlens` and the iCloud CloudDocuments container
+  `iCloud.com.hellotham.finvestlens` (FR-PLT-02). `Info.plist` gained
+  `NSUbiquitousContainers` so the book surfaces as a "FinvestLens" folder in
+  iCloud Drive. App Sandbox stays off (the sibling `.lock` needs it off).
+- **FinvestLensShared** — a Foundation-only leaf package: the App Group helper
+  (`SharedAppGroup`) + the `WidgetSnapshot` the app publishes for its
+  extensions. Deliberately dependency-free so a memory-limited extension links
+  it without pulling Engine/GRDB/SwiftUI. Unit-tested.
+- **Snapshot pipeline** — `AppModel.publishWidgetData()` builds the snapshot
+  from the **live in-memory book** (never re-reading the 56 MB document) on
+  save / open / close, writes it to the App Group container, and reloads widget
+  timelines. `IntentSupport.snapshot()` does the same out-of-process (for
+  intents) by reading the last book.
+- **FinvestLensWidgets** — a WidgetKit app-extension target with Net Worth and
+  Alerts widgets (small/medium), reading only the snapshot (FR-PLT-03).
+- **FinvestLensQuickLook** — a Quick Look preview extension: a
+  `QLPreviewingController` that reads the previewed `.finvestlens` file with
+  read-only system SQLite3 (no GRDB) and shows headline counts (accounts /
+  transactions / commodities / prices) (FR-PLT-03).
+- **Local notifications** — `AlertNotificationScheduler` delivers the alerts
+  engine as `UNUserNotificationCenter` local notifications (FR-PLAN-05), deduped
+  by each alert's stable id, warning/critical only; authorization requested once
+  at launch. (Remote/APNs push stays a non-goal — FinvestLens is local-first,
+  with no server to originate a push.)
+
+The two extension targets were registered in the modern (objectVersion-77,
+synchronized-group) `project.pbxproj` by scripted, cross-referenced insertion;
+each step was validated with `plutil -lint` + `xcodebuild -list`, and the app
+scheme builds and embeds both `.appex` bundles
+(`xcodebuild … CODE_SIGNING_ALLOWED=NO`). The `FinvestLensShared` package is
+`swift build`/`swift test` green.
+
 ## Release 1.0 (P0–P6)
 
 The engine, native `.finvestlens` document + locking, GnuCash import/export,
