@@ -88,6 +88,8 @@ struct APIKeyStoreTests {
         #expect(QuoteProviderKind.yahoo.requiresAPIKey == false)
         #expect(QuoteProviderKind.eodhd.requiresAPIKey)
         #expect(QuoteProviderKind.finnhub.supportsHistory == false)
-        #expect(QuoteProviderKind.allCases.count == 4)
+        #expect(QuoteProviderKind.stooq.requiresAPIKey == false)
+        #expect(QuoteProviderKind.twelveData.supportsHistory)
+        #expect(QuoteProviderKind.allCases.count == 6)
     }
 }

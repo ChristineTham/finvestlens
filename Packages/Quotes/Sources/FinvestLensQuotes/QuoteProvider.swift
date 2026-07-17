@@ -18,6 +18,10 @@ public enum QuoteProviderKind: String, CaseIterable, Codable, Sendable, Identifi
     case alphaVantage
     /// Finnhub (keyed, latest quotes only).
     case finnhub
+    /// Twelve Data — latest + daily history (keyed).
+    case twelveData
+    /// Stooq — keyless CSV end-of-day fallback.
+    case stooq
 
     public var id: String { rawValue }
 
@@ -28,21 +32,23 @@ public enum QuoteProviderKind: String, CaseIterable, Codable, Sendable, Identifi
         case .eodhd: return "EODHD"
         case .alphaVantage: return "Alpha Vantage"
         case .finnhub: return "Finnhub"
+        case .twelveData: return "Twelve Data"
+        case .stooq: return "Stooq"
         }
     }
 
     /// Whether the provider needs a user-supplied API key.
     public var requiresAPIKey: Bool {
         switch self {
-        case .yahoo: return false
-        case .eodhd, .alphaVantage, .finnhub: return true
+        case .yahoo, .stooq: return false
+        case .eodhd, .alphaVantage, .finnhub, .twelveData: return true
         }
     }
 
     /// Whether the provider can return historical series.
     public var supportsHistory: Bool {
         switch self {
-        case .yahoo, .eodhd, .alphaVantage: return true
+        case .yahoo, .eodhd, .alphaVantage, .twelveData, .stooq: return true
         case .finnhub: return false
         }
     }
@@ -50,10 +56,11 @@ public enum QuoteProviderKind: String, CaseIterable, Codable, Sendable, Identifi
     /// Where the user can obtain an API key.
     public var signupURL: URL? {
         switch self {
-        case .yahoo: return nil
+        case .yahoo, .stooq: return nil
         case .eodhd: return URL(string: "https://eodhd.com/register")
         case .alphaVantage: return URL(string: "https://www.alphavantage.co/support/#api-key")
         case .finnhub: return URL(string: "https://finnhub.io/register")
+        case .twelveData: return URL(string: "https://twelvedata.com/pricing")
         }
     }
 }
@@ -94,6 +101,11 @@ public enum QuoteProviderFactory {
         case .finnhub:
             guard let apiKey, !apiKey.isEmpty else { return nil }
             return FinnhubQuoteProvider(apiKey: apiKey, http: http)
+        case .twelveData:
+            guard let apiKey, !apiKey.isEmpty else { return nil }
+            return TwelveDataQuoteProvider(apiKey: apiKey, http: http)
+        case .stooq:
+            return StooqQuoteProvider(http: http)
         }
     }
 }
