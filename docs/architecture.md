@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Document status** | As-built v1.0 (P0–P6 shipped) |
-| **Last updated** | 2026-07-13 |
-| **Companions** | [PRD](prd.md) · [Porting Strategy](porting.md) |
+| **Document status** | As-built — P0–P7 complete (v1.0 was P0–P6) |
+| **Last updated** | 2026-07-18 |
+| **Companions** | [PRD](prd.md) · [Porting Strategy](porting.md) · [Implemented](implemented.md) · [Deferred](deferred.md) |
 | **Scope** | Target architecture, technology choices, native file format, and how the hard problems are solved |
 
 This document evaluates implementation alternatives, recommends specific technologies and Swift packages, and defines the module layout and the **native document format**. Decisions are recorded ADR-style: **context → options → decision → rationale**.
@@ -306,16 +306,20 @@ Framework: **Swift Testing** for new tests; XCTest where needed for UI/perf harn
 
 ---
 
-## 10. Open decisions to revisit
+## 10. Decisions — resolved
 
-| # | Question | Trigger |
+The ADR-style questions this document opened are now settled by what shipped.
+The one still genuinely open (OD-2) is gated on the deferred 100k-txn perf
+validation (see [deferred.md](deferred.md)); the rest are decided.
+
+| # | Question | Resolution |
 |---|---|---|
-| OD-1 | Heartbeat interval & stale-lock threshold | Field-test on real SMB/NFS latency |
-| OD-2 | Direct-mode vs always-working-copy on local volumes | Perf vs safety measurement |
-| OD-3 | WAL vs DELETE journal for the working copy | Crash-recovery testing (§7.4) |
-| OD-4 | `Decimal` rounding mode per commodity (half-up vs banker's) | Compare against common statements |
-| OD-5 | Which quote providers ship by default | Free-tier/licensing review (P5) |
-| OD-6 | Target GnuCash XML schema version for export | Confirm vs current stable GnuCash (v5-era) |
+| OD-1 | Heartbeat interval & stale-lock threshold | **Decided:** 25 s heartbeat (and on every save), 90 s stale threshold (§6.1). Stable in day-to-day use on Box/iCloud provider drives; the field-test on high-latency SMB/NFS is folded into the deferred perf validation. |
+| OD-2 | Direct-mode vs always-working-copy on local volumes | **Open** — always working-copy as built; direct mode is available for genuinely local volumes but not yet perf-justified. Decision deferred to the 100k-txn perf validation. |
+| OD-3 | WAL vs DELETE journal for the working copy | **Decided: rollback (DELETE) journal** — the working copy uses GRDB's default `DatabaseQueue`, so the file written back to the share is always a single self-contained file (§5.2). WAL + `wal_checkpoint(TRUNCATE)` remains an option only if perf validation demands it. |
+| OD-4 | `Decimal` rounding mode per commodity | **Decided: half-up (`.plain`)** per commodity fraction, applied through `Commodity.round`/`Money`. Matches common bank-statement rounding; verified to the cent against GnuCash across the reference book. |
+| OD-5 | Which quote providers ship by default | **Decided:** keyless **Yahoo** (yfinance-like) as the default out-of-box source; keyed **EODHD / Alpha Vantage / Finnhub** shipped. Twelve Data and Stooq are specced but not shipped (in [deferred.md](deferred.md), P8). |
+| OD-6 | Target GnuCash XML schema version for export | **Decided: GnuCash v5-era** (`gnc:book` 2.0.0). Round-trip byte-verified against a real 8.5 MB book written by GnuCash 5.16, which reopens our export without error. |
 
 ---
 
@@ -415,10 +419,11 @@ Each edit now captures only what it is about to change, before changing it:
 
 ```swift
 editing([id], named: "Edit Transaction") { … }   // copies just those transactions
-editingWholeBook(named: "Move Account") { … }    // exports first; structural/bulk changes
+editingAccounts([id], named: "Move Account") { … } // copies those accounts + tree slot
+editingWholeBook(named: "Close Book") { … }       // exports first; genuinely book-wide
 ```
 
-A `nil` snapshot means "did not exist", which makes undo-of-add and redo-of-delete the same operation. Undo re-enters the wrapper and captures the state it replaces, so redo falls out of the same path. Naming each edit at its call site is also what lets the Edit menu read "Undo Delete Transaction" rather than "Undo Change".
+`editing` snapshots the named transactions; `editingAccounts` snapshots the named accounts' value fields (including the KVP frame carrying colour and tax slots) plus their tree placement (parent + sibling index, restored via `Account.addChild(_:at:)`), so an account rename or a tax-flag toggle costs a copy of one account rather than a whole-book serialisation (**~6.6s → 0.067s** on the reference book). `editingWholeBook` is kept only where a change genuinely spans the book (period-end close, business posting). A `nil` snapshot means "did not exist", which makes undo-of-add and redo-of-delete the same operation. Undo re-enters the wrapper and captures the state it replaces, so redo falls out of the same path. Naming each edit at its call site is also what lets the Edit menu read "Undo Delete Transaction" rather than "Undo Change".
 
 With no baseline to maintain, opening a book stops exporting entirely.
 

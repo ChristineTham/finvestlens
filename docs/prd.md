@@ -4,8 +4,8 @@
 |---|---|
 | **Product** | FinvestLens — native Apple double-entry accounting |
 | **Platforms** | macOS, iPadOS, iOS |
-| **Document status** | Draft v0.1 |
-| **Last updated** | 2026-07-14 |
+| **Document status** | Baseline v1.0 — requirements for phases **P0–P7 are implemented** (see [implemented.md](implemented.md)); **P8–P9** remain (see [deferred.md](deferred.md)) |
+| **Last updated** | 2026-07-18 |
 | **Author** | Christine Tham |
 | **License** | GNU GPL v3.0 |
 
@@ -77,20 +77,25 @@ See the [Glossary](#15-glossary) (§15).
 
 FinvestLens is delivered in phases. Requirement priorities use **MoSCoW** (Must / Should / Could / Won't-for-now). Each phase is releasable.
 
-| Phase | Theme | Highlights |
-|---|---|---|
-| **P0 — Foundation** | Core engine | Data model, `Decimal`-based `Money`, double-entry invariant, unit tests |
-| **P1 — Document & Import** | Native SQLite document + read GnuCash | GRDB schema, `.finvestlens` open/save, NAS locking, GnuCash XML import |
-| **P2 — Core UX** | Usable app | Chart of accounts, transaction register, editing |
-| **P3 — Export & round-trip** | Interoperability | GnuCash XML export, round-trip fidelity tests |
-| **P4 — Everyday finance & bank import** | Depth | Reconciliation, scheduled transactions, basic reports; **native CSV/QIF/OFX-QFX import + Import Matcher**, CSV export |
-| **P5 — Investments & multi-currency** | Advanced | Commodities, price DB, quotes, capital gains |
-| **P6 — Sync & polish** | Ecosystem | File-level sync, Shortcuts, widgets, accessibility pass |
-| **P7 — Business features** | SMB | Customers/vendors, invoices/bills, tax tables, A/R–A/P |
-| **P8 — Extended import/export** | Interop breadth | MT940/MT942 (bank statement) import; PDF export |
-| **P9 — Planning & insights** | Money-inspired | Debt Reduction Planner, Lifetime Planner, tax estimator, insights/comparison reports |
+Status: ✅ implemented · ⬜ planned. Per-requirement detail is in
+[implemented.md](implemented.md) and [deferred.md](deferred.md).
 
-Planning features that layer onto earlier phases (bill reminders, cash-flow forecast, alerts, budgets, payee rules, portfolio, dashboard, onboarding) are scheduled within P4–P7 — see [§5.16](#516-planning-forecasting--insights-microsoft-moneyinspired) and the [enhancement study](enhancements-msmoney.md).
+| Phase | Theme | Highlights | Status |
+|---|---|---|---|
+| **P0 — Foundation** | Core engine | Data model, `Decimal`-based `Money`, double-entry invariant, unit tests | ✅ |
+| **P1 — Document & Import** | Native SQLite document + read GnuCash | GRDB schema, `.finvestlens` open/save, NAS locking, GnuCash XML import | ✅ |
+| **P2 — Core UX** | Usable app | Chart of accounts, transaction register, editing | ✅ |
+| **P3 — Export & round-trip** | Interoperability | GnuCash XML export, round-trip fidelity tests | ✅ |
+| **P4 — Everyday finance & bank import** | Depth | Reconciliation, scheduled transactions, basic reports; **native CSV/QIF/OFX-QFX import + Import Matcher**, CSV export | ✅ |
+| **P5 — Investments & multi-currency** | Advanced | Commodities, price DB, quotes, capital gains | ✅ |
+| **P6 — Sync & polish** | Ecosystem | File-level sync, Shortcuts, widgets, accessibility pass | ✅ |
+| **P7 — Business features** | SMB | Customers/vendors, invoices/bills, tax tables, A/R–A/P | ✅ |
+| **P8 — Extended import/export** | Interop breadth | MT940/MT942 + CAMT.053 import; online bank sync; PDF export | ⬜ |
+| **P9 — Planning & insights** | Money-inspired | Debt Reduction Planner, Lifetime Planner, tax estimator, insights/comparison reports | ⬜ |
+
+Planning features that layer onto earlier phases (bill reminders, cash-flow forecast, alerts, budgets, payee rules, portfolio, dashboard, onboarding) are scheduled within P4–P7 and **implemented** — see [§5.16](#516-planning-forecasting--insights-microsoft-moneyinspired) and the [enhancement study](enhancements-msmoney.md). Post-1.0, an on-device **Apple Intelligence** layer (FR-AI-01…08) was added — PDF statement/invoice/dividend import, auto-categorisation, budget and forecast narration (see [Architecture §11](architecture.md#11-apple-intelligence-integration-intelligence-package)).
+
+> **Note on Status.** The column marks the *phase* as delivered; a handful of low-priority (Could/Won't-for-now) requirements inside completed phases are still open and are listed, with their FR IDs, in [deferred.md](deferred.md) (e.g. saved CSV mapping profiles, re-open reconciliation, savings goals). The `Phase` column in the §5 requirement tables is the *target* phase, not a per-requirement status.
 
 ---
 
@@ -375,16 +380,16 @@ Book
 
 ## 9. Milestones (mapped to phases)
 
-1. **P0 Foundation** — engine types, `Decimal`-based `Money`, double-entry invariant, unit tests. *(FR-ENG-\*)*
-2. **P1 Document & Import** — GRDB SQLite `.finvestlens` open/save; NAS locking & atomic write-back; GnuCash XML import + summary. *(FR-DAT-\*, FR-IMP-\*)*
-3. **P2 Core UX** — chart of accounts + register editing. *(FR-COA-\*, FR-REG-\*)*
-4. **P3 Export** — GnuCash XML export + round-trip tests. *(FR-EXP-\*)*
-5. **P4 Everyday finance & bank import** — reconciliation, scheduled txns, core reports, budgets; native CSV/QIF/OFX-QFX import + Import Matcher, CSV export. *(FR-REC/SCH/RPT/BUD-\*, FR-XIO-01/02/03/05/06/08)*
-6. **P5 Investments & currency** — commodities, prices, quotes, capital gains, multi-currency. *(FR-INV/CUR-\*)*
-7. **P6 Sync & polish** — file-level sync, Shortcuts, widgets, accessibility. *(FR-PLT-\*)*
-8. **P7 Business features** — customers/vendors, invoices/bills, tax tables. *(FR-BUS-\*)*
-9. **P8 Extended import/export** — MT940/MT942 bank-statement import; PDF export. *(FR-XIO-04, FR-RPT-05)*
-10. **P9 Planning & insights** — Debt Reduction Planner, Lifetime Planner, tax estimator/tagging, insights/comparison reports. *(FR-PLAN-10..13, 15)* Earlier planning features (bill reminders, forecast, alerts, payee rules, portfolio, dashboard, onboarding) land in P4–P7. *(FR-PLAN-01..09, 14)*
+1. ✅ **P0 Foundation** — engine types, `Decimal`-based `Money`, double-entry invariant, unit tests. *(FR-ENG-\*)*
+2. ✅ **P1 Document & Import** — GRDB SQLite `.finvestlens` open/save; NAS locking & atomic write-back; GnuCash XML import + summary. *(FR-DAT-\*, FR-IMP-\*)*
+3. ✅ **P2 Core UX** — chart of accounts + register editing. *(FR-COA-\*, FR-REG-\*)*
+4. ✅ **P3 Export** — GnuCash XML export + round-trip tests. *(FR-EXP-\*)*
+5. ✅ **P4 Everyday finance & bank import** — reconciliation, scheduled txns, core reports, budgets; native CSV/QIF/OFX-QFX import + Import Matcher, CSV export. *(FR-REC/SCH/RPT/BUD-\*, FR-XIO-01/02/03/05/06/08)*
+6. ✅ **P5 Investments & currency** — commodities, prices, quotes, capital gains, multi-currency. *(FR-INV/CUR-\*)*
+7. ✅ **P6 Sync & polish** — file-level sync, Shortcuts, widgets, accessibility. *(FR-PLT-\*)*
+8. ✅ **P7 Business features** — customers/vendors, invoices/bills, tax tables, A/R–A/P, business XML round-trip. *(FR-BUS-\*)*
+9. ⬜ **P8 Extended import/export** — MT940/MT942 + CAMT.053 bank-statement import; online bank sync (SimpleFIN/GoCardless/AU CDR); QIF/OFX investment rows; CSV mapping profiles. *(FR-XIO-04/07, and the P8 rows of FR-XIO-01/02/08)* Report PDF export (FR-RPT-05) shipped early in P4.
+10. ⬜ **P9 Planning & insights** — Debt Reduction Planner, Lifetime Planner, tax estimator/TXF, insights/comparison reports, savings goals, wellbeing score. *(FR-PLAN-10..13, 15..17, FR-GOAL-*)* Earlier planning features (bill reminders, forecast, alerts, payee rules, portfolio, dashboard, onboarding) landed in P4–P7. *(FR-PLAN-01..09, 14)*
 
 ---
 
