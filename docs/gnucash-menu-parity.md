@@ -45,7 +45,7 @@ Legend: **=** parity · **+** exceeds GnuCash · **−** gap (see notes).
 | GnuCash | FinvestLens | |
 |---|---|---|
 | Toolbar / Status Bar / Tab Bar | Native toolbar; single-window navigation | = |
-| **Summary Bar** (Present/Future/Cleared/Reconciled/Projected Min.) | **register summary bar** | = — *see [deferred.md] history; added by this audit* |
+| **Summary Bar** (Present/Future/Cleared/Reconciled/Projected Min.) | **register summary bar** | = — *added by this audit; see [implemented.md](implemented.md)* |
 | Basic Ledger / Auto-Split / Transaction Journal | Register styles: Basic / Journal / General Ledger | = |
 | Double Line | Double-line toggle (`registerDoubleLine`) | = |
 | Sort By… | `sortMenu` in the register toolbar | = |

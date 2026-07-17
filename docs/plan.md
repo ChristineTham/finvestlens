@@ -2,20 +2,24 @@
 
 | | |
 |---|---|
-| **Document status** | **Version 1.0 shipped** — Phases P0–P6 complete (13 July 2026) |
-| **Last updated** | 2026-07-13 |
+| **Document status** | **Phases P0–P7 complete** (v1.0 was P0–P6, 13 July 2026; P7 business features since). P8–P9 remain. |
+| **Last updated** | 2026-07-18 |
 | **Scope** | The build plan: phases, workstreams, tasks, dependencies, and exit criteria |
-| **Companions** | [PRD](prd.md) · [Architecture](architecture.md) · [Porting Strategy](porting.md) · [Deferred backlog](deferred.md) · [Money study](enhancements-msmoney.md) · [Firefly study](enhancements-firefly.md) · [Frollo study](enhancements-frollo.md) |
+| **Companions** | [PRD](prd.md) · [Architecture](architecture.md) · [Porting Strategy](porting.md) · [Implemented](implemented.md) · [Deferred backlog](deferred.md) · [Money study](enhancements-msmoney.md) · [Firefly study](enhancements-firefly.md) · [Frollo study](enhancements-frollo.md) |
 
 > **Release 1.0 (P0–P6).** The engine, native document + locking, GnuCash
 > import/export, core UX, everyday finance (reconcile/scheduled/budgets/
 > reports/bank import/rules/search), investments + multi-currency + quotes,
-> and sync/dashboard/alerts/lock are complete, with undo/redo, save-on-quit
-> and a full menu bar after the usability + HIG passes. Remaining known items
-> live in [deferred.md](deferred.md). P7–P9 (business, extended import/bank
-> sync, planning) are post-1.0.
+> and sync/dashboard/alerts/lock — with undo/redo, save-on-quit and a full
+> menu bar after the usability + HIG passes.
 
-> **Deferred items from completed phases** (P0–P5) are tracked in [deferred.md](deferred.md), with FR refs, status, and a suggested pick-up phase.
+> **P7 Business features** (customers/vendors/employees, invoices/bills,
+> payments, aging, tax tables, business XML round-trip) are since **complete**
+> and GnuCash-verified. **P8** (extended import / bank sync) and **P9**
+> (planning & insights) remain. Everything built is recorded in
+> [implemented.md](implemented.md); everything still open — the P8/P9 work plus
+> cross-cutting infra and small completed-phase tails — is in
+> [deferred.md](deferred.md), with FR refs and a pick-up phase.
 
 > **Post-1.0 (13 Jul 2026): Apple Intelligence.** A new `Intelligence` package
 > (on-device Foundation Models) adds six features — PDF statement import with

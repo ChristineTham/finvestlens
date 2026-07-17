@@ -106,14 +106,18 @@ The core engine is kept free of UI and persistence dependencies so it can be uni
 
 ## Roadmap
 
-1. **Foundation** — core model types, `Decimal`-based money, double-entry invariant, unit tests.
-2. **Document** — native `.finvestlens` SQLite store (GRDB); open/save; NAS locking + atomic write-back.
-3. **Import** — read GnuCash XML into the native store.
-4. **UI** — chart of accounts and transaction register.
-5. **Export** — write GnuCash XML back out; verify round-trip fidelity.
-6. **Reports & reconciliation.**
-7. **Scheduled transactions.**
-8. **File-level sync.**
+Phased delivery (full detail in [docs/plan.md](docs/plan.md)):
+
+- ✅ **P0 Foundation** — core model, `Decimal` money, double-entry invariant, unit tests.
+- ✅ **P1 Document + import** — native `.finvestlens` SQLite store (GRDB); open/save; NAS locking + atomic write-back; GnuCash XML import.
+- ✅ **P2 Core UX** — chart of accounts and transaction register.
+- ✅ **P3 Export + round-trip** — write GnuCash XML back out; verified lossless round-trip.
+- ✅ **P4 Everyday finance** — reconcile, scheduled transactions, budgets, reports, bank import (CSV/QIF/OFX), rules, search.
+- ✅ **P5 Investments** — multi-currency, price quotes, lots/cost-basis, trading accounts.
+- ✅ **P6 Sync, dashboard, alerts & polish** — file-level sync machinery, home dashboard, alerts, book lock, usability + HIG passes. *(Plus post-1.0: Apple Intelligence — on-device PDF import, categorisation, forecasts.)*
+- ✅ **P7 Business** — customers/vendors/employees, invoices/bills, payments, aging, tax tables, business XML round-trip.
+- ⬜ **P8 Extended import & bank sync** — QIF/OFX investment rows, CSV export/profiles, MT940/CAMT.053, online bank sync (SimpleFIN/GoCardless/AU CDR).
+- ⬜ **P9 Planning & insights** — debt & lifetime planners, tax estimator/TXF, savings goals, wellbeing score.
 
 ## Platform requirements
 
@@ -128,8 +132,10 @@ The GnuCash XML format is treated as an interchange specification. This is not a
 
 ## Status
 
-Feature-complete against the v1 scope above and exercised against a real GnuCash book — 46,553 transactions, 559 accounts, 102,706 prices, multi-currency — imported and compared side by side with GnuCash, which it matches to the cent (net worth, every account subtree, register running balances, and the balance sheet).
+**Phases P0–P7 are complete** — the core engine, native document + NAS locking, GnuCash import/export, core UX, everyday finance, investments/multi-currency/quotes, sync/dashboard/alerts, Apple Intelligence, and small-business features. **P8** (extended import / bank sync) and **P9** (planning & insights) remain. What has been built is recorded in [implemented.md](docs/implemented.md); everything still open is in [deferred.md](docs/deferred.md).
 
-Performance work is measured against that book rather than a synthetic one. Opening it takes ~6.5s and a register edit ~0.26s, down from 45s and 5.8s respectively; the general ledger scrolls all 46k transactions with jumps to either end instant. The design behind those numbers — and what is still deliberately slow — is [architecture.md §12](docs/architecture.md#12-derived-state-and-performance); known gaps are tracked in [deferred.md](docs/deferred.md).
+Exercised against a real GnuCash book — 46,553 transactions, 559 accounts, 102,706 prices, multi-currency — imported and compared side by side with GnuCash 5.16, which it matches to the cent (net worth, every account subtree, register running balances, the balance sheet, and the investment reports). Interoperability is round-trip verified: a re-export is byte-identical, and GnuCash reads FinvestLens's exported file back.
 
-Not yet released. iOS can open and create books but not import or export (a deliberate non-goal, see the PRD); there is no CI pipeline.
+Performance is measured against that book, not a synthetic one. Opening it takes ~6.3s and a register edit ~0.26s (an account edit 0.067s), down from ~26s and several seconds; the general ledger scrolls all 46k transactions with jumps to either end instant. The design behind those numbers — and what is still deliberately slow — is [architecture.md §12](docs/architecture.md#12-derived-state-and-performance).
+
+Not yet released. iOS can open, create, and edit books but not import or export (a deliberate non-goal — see the PRD); there is no CI pipeline yet.
