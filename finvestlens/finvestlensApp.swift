@@ -189,6 +189,8 @@ struct finvestlensApp: App {
                     .disabled(!model.isOpen)
                 Button("Check & Repair…") { model.checkAndRepair() }
                     .disabled(!model.isOpen)
+                Button("Period-End Close…") { model.presentedPanel = .closeBook }
+                    .disabled(!model.isOpen)
                 Divider()
                 // Apple Intelligence features — disabled (with the reason as
                 // a tooltip) when the on-device model isn't available.

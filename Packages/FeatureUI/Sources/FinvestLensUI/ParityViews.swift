@@ -76,6 +76,97 @@ struct LinkedDocumentsView: View {
     }
 }
 
+// MARK: - Period-end Close Book
+
+/// Moves income and expense balances into an equity account as of a date, so
+/// the profit-and-loss accounts start the next period at zero (GnuCash's
+/// Tools ▸ Close Book). Previews the effect before posting; the post is one
+/// undoable action.
+struct CloseBookView: View {
+    @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var date = Date()
+    @State private var equityID: GncGUID?
+    @State private var description = "Closing Entries"
+    @State private var posted: Int?
+
+    private var equityChoices: [(id: GncGUID, name: String)] { model.equityAccountChoices }
+    private var code: String { model.reportCurrency.mnemonic }
+
+    private var preview: (accounts: Int, byCurrency: [AppModel.ClosingCurrencyPreview])? {
+        guard let equityID else { return nil }
+        return model.closingPreview(asOf: date, equityID: equityID)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if equityChoices.isEmpty {
+                    ContentUnavailableView("No equity account", systemImage: "building.columns",
+                        description: Text("Create an equity account (e.g. Retained Earnings) to close into."))
+                } else {
+                    Section("Close as of") {
+                        DatePicker("Date", selection: $date, displayedComponents: .date)
+                        Picker("Into equity", selection: $equityID) {
+                            Text("Choose…").tag(GncGUID?.none)
+                            ForEach(equityChoices, id: \.id) { choice in
+                                Text(choice.name).tag(GncGUID?.some(choice.id))
+                            }
+                        }
+                        TextField("Description", text: $description)
+                    }
+                    Section("Preview") {
+                        if let preview {
+                            LabeledContent("Accounts to close") { Text("\(preview.accounts)") }
+                            // One net per currency — a multi-currency book closes
+                            // into a balanced transaction per currency.
+                            ForEach(preview.byCurrency) { row in
+                                LabeledContent("Net to equity (\(row.currencyCode))") {
+                                    Text(AmountFormat.string(row.netToEquity, code: row.currencyCode))
+                                        .monospacedDigit()
+                                }
+                            }
+                            if preview.accounts == 0 {
+                                Text("Nothing has a balance to close as of this date.")
+                                    .foregroundStyle(.secondary).scaledFont(.caption)
+                            } else if preview.byCurrency.count > 1 {
+                                Text("Spans \(preview.byCurrency.count) currencies — one closing transaction each.")
+                                    .foregroundStyle(.secondary).scaledFont(.caption)
+                            }
+                        } else {
+                            Text("Choose an equity account to preview.")
+                                .foregroundStyle(.secondary).scaledFont(.caption)
+                        }
+                    }
+                    if let posted {
+                        Section {
+                            Label("Closed \(posted) account\(posted == 1 ? "" : "s"). Undo with ⌘Z.",
+                                  systemImage: "checkmark.circle")
+                                .foregroundStyle(.green)
+                        }
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("Close Book")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Close Book") {
+                        if let equityID { posted = model.closeBook(asOf: date, equityID: equityID,
+                                                                   description: description) }
+                    }
+                    .disabled(equityID == nil || (preview?.accounts ?? 0) == 0)
+                }
+            }
+        }
+        .frame(minWidth: 460, minHeight: 420)
+    }
+}
+
 // MARK: - Loan Repayment Calculator
 
 /// A fixed-rate loan calculator (GnuCash's Tools ▸ Loan Repayment Calculator).

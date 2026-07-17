@@ -327,6 +327,63 @@ extension AppModel {
         )
     }
 
+    // MARK: Period-end close (GnuCash Tools ▸ Close Book)
+
+    /// Equity accounts a period close can post its result into, as (id, name).
+    public var equityAccountChoices: [(id: GncGUID, name: String)] {
+        guard let book else { return [] }
+        return book.accounts
+            .filter { $0.type == .equity && !$0.isPlaceholder }
+            .map { ($0.guid, $0.fullName) }
+            .sorted { $0.name < $1.name }
+    }
+
+    /// The net result of a close in one currency, for the preview.
+    public struct ClosingCurrencyPreview: Identifiable, Sendable {
+        public var currencyCode: String
+        /// The amount landing in equity, sign-adjusted so a profit reads
+        /// positive (retained earnings grew).
+        public var netToEquity: Decimal
+        public var id: String { currencyCode }
+    }
+
+    /// Previews a period-end close without touching the book: how many income/
+    /// expense accounts have a balance to move, and the net per currency.
+    ///
+    /// Nets are reported *per currency*, never blended — a book spanning AUD
+    /// and USD income closes into one balanced transaction each, and adding
+    /// their quantities into a single figure would be a sum of unlike units.
+    public func closingPreview(asOf date: Date, equityID: GncGUID)
+        -> (accounts: Int, byCurrency: [ClosingCurrencyPreview])? {
+        guard let book, let equity = book.account(with: equityID) else { return nil }
+        let result = BookClosing.build(in: book, asOf: date, into: equity)
+        let byCurrency = result.transactions.map { txn in
+            let equityQuantity = txn.splits
+                .filter { $0.account === equity }
+                .reduce(Decimal(0)) { $0 + $1.value }
+            // The equity leg carries the P&L quantity sum; negate so a profit
+            // (credit-normal income) shows as a positive addition to equity.
+            return ClosingCurrencyPreview(currencyCode: txn.currency.mnemonic,
+                                          netToEquity: -equityQuantity)
+        }
+        return (result.closedAccountCount, byCurrency)
+    }
+
+    /// Posts the period-end closing transactions, moving income/expense balances
+    /// into `equityID` as of `date`. Undoable as one action. Returns the number
+    /// of accounts closed, or `nil` if the book or account is missing.
+    @discardableResult
+    public func closeBook(asOf date: Date, equityID: GncGUID,
+                          description: String = "Closing Entries") -> Int? {
+        guard let book, let equity = book.account(with: equityID) else { return nil }
+        let result = BookClosing.build(in: book, asOf: date, into: equity, description: description)
+        guard !result.transactions.isEmpty else { return 0 }
+        editingWholeBook(named: "Close Book") {
+            for txn in result.transactions { book.addTransaction(txn) }
+        }
+        return result.closedAccountCount
+    }
+
     public func updateAccount(id: GncGUID, name: String, code: String, description: String,
                               notes: String, isPlaceholder: Bool, isHidden: Bool) {
         guard let book, let account = book.account(with: id) else { return }
