@@ -21,144 +21,12 @@ public struct ReportsWindow: View {
     public init(model: AppModel) { self.model = model }
     public var body: some View {
         if model.isOpen {
-            ReportsView(model: model)
+            NavigationStack { ReportsHome(model: model) }
         } else {
             ContentUnavailableView("No book open", systemImage: "chart.pie",
                                    description: Text("Open a book to see its reports."))
                 .frame(minWidth: 520, minHeight: 440)
         }
-    }
-}
-
-struct ReportsView: View {
-    @Bindable var model: AppModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var selection: ReportKind = .balanceSheet
-    @State private var exporting = false
-    @State private var pdfDocument: PDFReportDocument?
-
-    enum ReportKind: String, CaseIterable, Identifiable {
-        case balanceSheet = "Balance Sheet"
-        case incomeStatement = "Income Statement"
-        case equityStatement = "Equity Statement"
-        case trialBalance = "Trial Balance"
-        case accountSummary = "Account Summary"
-        case incomeExpense = "Income & Expense"
-        case cashFlow = "Cash Flow"
-        case transactions = "Transactions"
-        case reconcile = "Reconciliation"
-        case netWorth = "Net Worth"
-        /// The balance projection that used to be called Cash Flow — renamed
-        /// because GnuCash's Cash Flow is the report above: an accounting of a
-        /// period that happened, not a projection of one that hasn't.
-        case forecast = "Forecast"
-        case portfolio = "Portfolio"
-        case investmentLots = "Investment Lots"
-        case priceScatter = "Price Scatter"
-        case capitalGains = "Capital Gains"
-        var id: String { rawValue }
-    }
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // A menu picker keeps a small, fixed width; a segmented control
-                // grows with the number of reports and clips inside the sheet.
-                HStack {
-                    Picker("Report", selection: $selection) {
-                        ForEach(ReportKind.allCases) { Text($0.rawValue).tag($0) }
-                    }
-                    .pickerStyle(.menu)
-                    .fixedSize()
-                    Spacer()
-                }
-                .padding()
-                Divider()
-                switch selection {
-                case .balanceSheet: BalanceSheetView(model: model)
-                case .incomeStatement: IncomeStatementView(model: model)
-                case .equityStatement: EquityStatementView(model: model)
-                case .trialBalance: TrialBalanceView(model: model)
-                case .accountSummary: AccountSummaryView(model: model)
-                case .incomeExpense: IncomeExpenseView(model: model)
-                case .cashFlow: CashFlowReportView(model: model)
-                case .transactions: TransactionReportView(model: model)
-                case .reconcile: ReconcileReportView(model: model)
-                case .netWorth: NetWorthChartView(model: model)
-                case .forecast: CashFlowView(model: model)
-                case .portfolio: PortfolioView(model: model)
-                case .investmentLots: InvestmentLotsView(model: model)
-                case .priceScatter: PriceScatterView(model: model)
-                case .capitalGains: CapitalGainsView(model: model)
-                }
-            }
-            .navigationTitle("Reports")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-                if printableStatement != nil {
-                    ToolbarItem {
-                        Button("PDF", systemImage: "arrow.up.doc") { exportPDF() }
-                    }
-                }
-            }
-            .fileExporter(isPresented: $exporting, document: pdfDocument,
-                          contentType: .pdf, defaultFilename: selection.rawValue) { _ in }
-        }
-        .frame(minWidth: 520, minHeight: 440)
-    }
-
-    /// A printable statement for the current report, or `nil` for reports that
-    /// are chart/table-only.
-    private var printableStatement: PrintableStatement? {
-        let code = model.reportCurrency.mnemonic
-        switch selection {
-        case .balanceSheet:
-            guard let sheet = model.balanceSheet() else { return nil }
-            return PrintableStatement(
-                title: "Balance Sheet",
-                subtitle: "As of \(sheet.asOf.formatted(.dateTime.year().month().day())) · \(code)",
-                code: code,
-                sections: [
-                    PrintableSection(heading: "Assets", rows:
-                        sheet.assets.map { PrintableRow(label: $0.name, amount: $0.amount) }
-                        + [PrintableRow(label: "Total Assets", amount: sheet.totalAssets, bold: true)]),
-                    PrintableSection(heading: "Liabilities", rows:
-                        sheet.liabilities.map { PrintableRow(label: $0.name, amount: $0.amount) }
-                        + [PrintableRow(label: "Total Liabilities", amount: sheet.totalLiabilities, bold: true)]),
-                    PrintableSection(heading: "Equity", rows:
-                        sheet.equity.map { PrintableRow(label: $0.name, amount: $0.amount) }
-                        + [PrintableRow(label: "Retained Earnings", amount: sheet.retainedEarnings),
-                           PrintableRow(label: "Total Equity", amount: sheet.totalEquity, bold: true)]),
-                ])
-        case .incomeStatement:
-            let cal = Calendar(identifier: .gregorian)
-            let start = cal.date(byAdding: .month, value: -12, to: Date()) ?? Date()
-            guard let statement = model.incomeStatement(from: start, to: Date()) else { return nil }
-            return PrintableStatement(
-                title: "Income Statement",
-                subtitle: "\(start.formatted(.dateTime.year().month())) – \(Date().formatted(.dateTime.year().month())) · \(code)",
-                code: code,
-                sections: [
-                    PrintableSection(heading: "Income", rows:
-                        statement.income.map { PrintableRow(label: $0.name, amount: $0.amount) }
-                        + [PrintableRow(label: "Total Income", amount: statement.totalIncome, bold: true)]),
-                    PrintableSection(heading: "Expenses", rows:
-                        statement.expenses.map { PrintableRow(label: $0.name, amount: $0.amount) }
-                        + [PrintableRow(label: "Total Expenses", amount: statement.totalExpenses, bold: true)]),
-                    PrintableSection(heading: "Summary", rows:
-                        [PrintableRow(label: "Net Income", amount: statement.netIncome, bold: true)]),
-                ])
-        default:
-            return nil
-        }
-    }
-
-    private func exportPDF() {
-        guard let statement = printableStatement, let data = ReportExport.pdf(statement) else { return }
-        pdfDocument = PDFReportDocument(data: data)
-        exporting = true
     }
 }
 
@@ -196,380 +64,7 @@ private struct LineRows: View {
     }
 }
 
-private struct BalanceSheetView: View {
-    @Bindable var model: AppModel
-    @State private var asOf = Date()
-    var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                DatePicker("As of", selection: $asOf, displayedComponents: .date)
-            }
-            .frame(maxHeight: 70)
-            Divider()
-            content
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if let sheet = model.balanceSheet(asOf: asOf) {
-            List {
-                Section("Assets") {
-                    LineRows(lines: sheet.assets, code: sheet.currencyCode)
-                    TotalRow(label: "Total Assets", amount: sheet.totalAssets,
-                             code: sheet.currencyCode, emphasised: true)
-                }
-                Section("Liabilities") {
-                    LineRows(lines: sheet.liabilities, code: sheet.currencyCode)
-                    TotalRow(label: "Total Liabilities", amount: sheet.totalLiabilities,
-                             code: sheet.currencyCode, emphasised: true)
-                }
-                Section("Equity") {
-                    LineRows(lines: sheet.equity, code: sheet.currencyCode)
-                    TotalRow(label: "Retained Earnings", amount: sheet.retainedEarnings,
-                             code: sheet.currencyCode)
-                    TotalRow(label: "Total Equity", amount: sheet.totalEquity,
-                             code: sheet.currencyCode, emphasised: true)
-                }
-            }
-        } else {
-            ContentUnavailableView("No data", systemImage: "chart.pie")
-        }
-    }
-}
-
-private struct IncomeStatementView: View {
-    @Bindable var model: AppModel
-    /// Defaults to the calendar year to date — the period the question "how is
-    /// the year going" is about, and one whose answer can be checked against a
-    /// year-end figure.
-    @State private var from = Calendar.current.date(
-        from: Calendar.current.dateComponents([.year], from: Date())) ?? Date()
-    @State private var to = Date()
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                DatePicker("From", selection: $from, displayedComponents: .date)
-                DatePicker("To", selection: $to, displayedComponents: .date)
-            }
-            .frame(maxHeight: 100)
-            Divider()
-            content
-        }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if let statement = model.incomeStatement(from: from, to: to) {
-            List {
-                Section("Income") {
-                    LineRows(lines: statement.income, code: statement.currencyCode)
-                    TotalRow(label: "Total Income", amount: statement.totalIncome,
-                             code: statement.currencyCode, emphasised: true)
-                }
-                Section("Expenses") {
-                    LineRows(lines: statement.expenses, code: statement.currencyCode)
-                    TotalRow(label: "Total Expenses", amount: statement.totalExpenses,
-                             code: statement.currencyCode, emphasised: true)
-                }
-                Section {
-                    TotalRow(label: "Net Income", amount: statement.netIncome,
-                             code: statement.currencyCode, emphasised: true)
-                }
-            }
-        } else {
-            ContentUnavailableView("No data", systemImage: "chart.bar")
-        }
-    }
-}
-
-/// GnuCash's Equity Statement: the bridge between two balance sheets.
-private struct EquityStatementView: View {
-    @Bindable var model: AppModel
-    @State private var from = Calendar.current.date(
-        from: Calendar.current.dateComponents([.year], from: Date())) ?? Date()
-    @State private var to = Date()
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                DatePicker("From", selection: $from, displayedComponents: .date)
-                DatePicker("To", selection: $to, displayedComponents: .date)
-            }
-            .frame(maxHeight: 100)
-            Divider()
-            if let statement = model.equityStatement(from: from, to: to) {
-                List {
-                    Section("Capital") {
-                        TotalRow(label: "Opening capital", amount: statement.openingCapital,
-                                 code: statement.currencyCode)
-                        TotalRow(label: "Net income", amount: statement.netIncome,
-                                 code: statement.currencyCode)
-                        TotalRow(label: "Contributions", amount: statement.contributions,
-                                 code: statement.currencyCode)
-                        TotalRow(label: "Withdrawals", amount: -statement.withdrawals,
-                                 code: statement.currencyCode)
-                        TotalRow(label: "Unrealised gains and FX",
-                                 amount: statement.unrealisedChange,
-                                 code: statement.currencyCode)
-                    }
-                    Section {
-                        TotalRow(label: "Closing capital", amount: statement.closingCapital,
-                                 code: statement.currencyCode, emphasised: true)
-                    } footer: {
-                        if !statement.isConsistent {
-                            Text("These figures do not add up. Please report this.")
-                                .foregroundStyle(.red)
-                        }
-                    }
-                }
-            } else {
-                ContentUnavailableView("No data", systemImage: "chart.bar")
-            }
-        }
-    }
-}
-
-/// GnuCash's Trial Balance: every balance in a debit or credit column, and the
-/// columns must agree — with the unrealised adjustment shown, not hidden.
-private struct TrialBalanceView: View {
-    @Bindable var model: AppModel
-    @State private var asOf = Date()
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                DatePicker("As of", selection: $asOf, displayedComponents: .date)
-            }
-            .frame(maxHeight: 70)
-            Divider()
-            if let report = model.trialBalance(asOf: asOf) {
-                Table(report.rows) {
-                    TableColumn("Account") { row in Text(row.fullName) }
-                    TableColumn("Debit") { row in
-                        if let debit = row.debit {
-                            Text(AmountFormat.string(debit, code: report.currencyCode))
-                                .monospacedDigit()
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                        }
-                    }
-                    TableColumn("Credit") { row in
-                        if let credit = row.credit {
-                            Text(AmountFormat.string(credit, code: report.currencyCode))
-                                .monospacedDigit()
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                        }
-                    }
-                }
-                Divider()
-                VStack(spacing: 4) {
-                    if report.unrealisedAdjustment != 0 {
-                        HStack {
-                            Text("Unrealised gains (adjustment)")
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text(AmountFormat.string(report.unrealisedAdjustment,
-                                                     code: report.currencyCode))
-                                .monospacedDigit()
-                        }
-                    }
-                    HStack {
-                        Text("Totals").fontWeight(.semibold)
-                        Spacer()
-                        Text("Debits \(AmountFormat.string(report.totalDebits, code: report.currencyCode))"
-                             + "   Credits \(AmountFormat.string(report.totalCredits, code: report.currencyCode))")
-                            .monospacedDigit()
-                            .fontWeight(.semibold)
-                            .foregroundStyle(report.isBalanced ? .primary : Color.red)
-                    }
-                }
-                .scaledFont(.body)
-                .padding(10)
-            } else {
-                ContentUnavailableView("No data", systemImage: "chart.bar")
-            }
-        }
-    }
-}
-
-/// GnuCash's Account Summary: the whole chart of accounts, cut at a depth.
-private struct AccountSummaryView: View {
-    @Bindable var model: AppModel
-    @State private var asOf = Date()
-    @State private var depth = 2
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                DatePicker("As of", selection: $asOf, displayedComponents: .date)
-                Stepper("Depth: \(depth)", value: $depth, in: 1...6)
-            }
-            .frame(maxHeight: 100)
-            Divider()
-            if let report = model.accountSummary(asOf: asOf, depthLimit: depth) {
-                List {
-                    ForEach(report.sections) { section in
-                        Section(section.title) {
-                            ForEach(section.rows) { row in
-                                HStack {
-                                    Text(row.name)
-                                        .padding(.leading, CGFloat(row.depth - 1) * 16)
-                                        .foregroundStyle(row.depth == 1 ? .primary : .secondary)
-                                    Spacer()
-                                    Text(AmountFormat.string(row.balance, code: report.currencyCode))
-                                        .monospacedDigit()
-                                }
-                            }
-                            TotalRow(label: "Total \(section.title)", amount: section.total,
-                                     code: report.currencyCode, emphasised: true)
-                        }
-                    }
-                }
-            } else {
-                ContentUnavailableView("No data", systemImage: "list.bullet.indent")
-            }
-        }
-    }
-}
-
-/// GnuCash's Cash Flow: where the period's money came from and went.
-private struct CashFlowReportView: View {
-    @Bindable var model: AppModel
-    @State private var accountIDs: Set<GncGUID> = []
-    @State private var pickerShown = false
-    @State private var from = Calendar.current.date(
-        from: Calendar.current.dateComponents([.year], from: Date())) ?? Date()
-    @State private var to = Date()
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                HStack {
-                    Text("Accounts")
-                    Spacer()
-                    Button(label) { pickerShown = true }
-                        .popover(isPresented: $pickerShown) {
-                            AccountMatchPicker(tree: model.accountTree,
-                                               selection: $accountIDs)
-                        }
-                }
-                DatePicker("From", selection: $from, displayedComponents: .date)
-                DatePicker("To", selection: $to, displayedComponents: .date)
-            }
-            .frame(maxHeight: 130)
-            Divider()
-            if let report = model.cashFlow(accountIDs: accountIDs, from: from, to: to) {
-                List {
-                    Section("Money in, from") {
-                        LineRows(lines: report.inflows, code: report.currencyCode)
-                        TotalRow(label: "Total in", amount: report.totalIn,
-                                 code: report.currencyCode, emphasised: true)
-                    }
-                    Section("Money out, to") {
-                        LineRows(lines: report.outflows, code: report.currencyCode)
-                        TotalRow(label: "Total out", amount: report.totalOut,
-                                 code: report.currencyCode, emphasised: true)
-                    }
-                    Section {
-                        TotalRow(label: "Net change", amount: report.netChange,
-                                 code: report.currencyCode, emphasised: true)
-                    }
-                }
-            } else {
-                ContentUnavailableView("Choose accounts", systemImage: "arrow.left.arrow.right",
-                                       description: Text("Pick the accounts to follow the money "
-                                                         + "through — usually your bank accounts."))
-            }
-        }
-    }
-
-    private var label: String {
-        switch accountIDs.count {
-        case 0: "Choose…"
-        case 1: model.accountName(accountIDs.first!) ?? "1 account"
-        default: "\(accountIDs.count) accounts"
-        }
-    }
-}
-
-/// GnuCash's Income & Expense charts: where does it all go, as a picture.
-private struct IncomeExpenseView: View {
-    @Bindable var model: AppModel
-    @State private var from = Calendar.current.date(
-        from: Calendar.current.dateComponents([.year], from: Date())) ?? Date()
-    @State private var to = Date()
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                DatePicker("From", selection: $from, displayedComponents: .date)
-                DatePicker("To", selection: $to, displayedComponents: .date)
-            }
-            .frame(maxHeight: 100)
-            Divider()
-            if let breakdown = model.categoryBreakdown(from: from, to: to),
-               !breakdown.months.isEmpty {
-                List {
-                    Section("By month") {
-                        Chart(breakdown.months) { month in
-                            BarMark(x: .value("Month", month.month, unit: .month),
-                                    y: .value("Income", month.income))
-                                .foregroundStyle(by: .value("Kind", "Income"))
-                                .position(by: .value("Kind", "Income"))
-                            BarMark(x: .value("Month", month.month, unit: .month),
-                                    y: .value("Expenses", month.expenses))
-                                .foregroundStyle(by: .value("Kind", "Expenses"))
-                                .position(by: .value("Kind", "Expenses"))
-                        }
-                        .chartForegroundStyleScale(["Income": Color.accentColor,
-                                                    "Expenses": Color.red.opacity(0.75)])
-                        .frame(height: 220)
-                        .padding(.vertical, 6)
-                    }
-                    Section("Spending by category") {
-                        LineRows(lines: breakdown.expenseSlices, code: breakdown.currencyCode)
-                        TotalRow(label: "Total Expenses", amount: breakdown.totalExpenses,
-                                 code: breakdown.currencyCode, emphasised: true)
-                    }
-                    Section("Income by category") {
-                        LineRows(lines: breakdown.incomeSlices, code: breakdown.currencyCode)
-                        TotalRow(label: "Total Income", amount: breakdown.totalIncome,
-                                 code: breakdown.currencyCode, emphasised: true)
-                    }
-                }
-            } else {
-                ContentUnavailableView("No activity", systemImage: "chart.pie",
-                                       description: Text("No income or spending in this period."))
-            }
-        }
-    }
-}
-
-private struct NetWorthChartView: View {
-    @Bindable var model: AppModel
-    var body: some View {
-        let points = model.netWorthSeries(months: 12)
-        if points.contains(where: { $0.netWorth != 0 }) {
-            Chart(points) { point in
-                LineMark(x: .value("Month", point.date, unit: .month),
-                         y: .value("Net Worth", point.netWorth))
-                    .interpolationMethod(.monotone)
-                AreaMark(x: .value("Month", point.date, unit: .month),
-                         y: .value("Net Worth", point.netWorth))
-                    .interpolationMethod(.monotone)
-                    .foregroundStyle(.linearGradient(colors: [.accentColor.opacity(0.3), .clear],
-                                                     startPoint: .top, endPoint: .bottom))
-            }
-            .padding()
-            .accessibilityLabel("Net worth trend")
-        } else {
-            ContentUnavailableView("Not enough history", systemImage: "chart.line.uptrend.xyaxis")
-        }
-    }
-}
-
-private struct PortfolioView: View {
+struct PortfolioView: View {
     @Bindable var model: AppModel
 
     var body: some View {
@@ -740,7 +235,7 @@ private struct PriceHistorySection: View {
 
 /// GnuCash's Reconciliation Report: of what is in this account, how much has the
 /// bank agreed to? (`FR-RPT-05`)
-private struct ReconcileReportView: View {
+struct ReconcileReportView: View {
     @Bindable var model: AppModel
     @State private var accountID: GncGUID?
     @State private var asOf = Date()
@@ -843,7 +338,7 @@ private struct ReconcileReportView: View {
     }
 }
 
-private struct TransactionReportView: View {
+struct TransactionReportView: View {
     @Bindable var model: AppModel
     @State private var accountID: GncGUID?
     @State private var from = Calendar.current.date(byAdding: .month, value: -3, to: Date()) ?? Date()
@@ -902,7 +397,7 @@ private struct TransactionReportView: View {
     }
 }
 
-private struct InvestmentLotsView: View {
+struct InvestmentLotsView: View {
     @Bindable var model: AppModel
 
     var body: some View {
@@ -949,7 +444,7 @@ private struct InvestmentLotsView: View {
     }
 }
 
-private struct PriceScatterView: View {
+struct PriceScatterView: View {
     @Bindable var model: AppModel
 
     private struct Point: Identifiable {
@@ -988,7 +483,7 @@ private struct PriceScatterView: View {
     }
 }
 
-private struct CapitalGainsView: View {
+struct CapitalGainsView: View {
     @Bindable var model: AppModel
 
     var body: some View {
@@ -1075,7 +570,7 @@ private struct CapitalGainsView: View {
     }
 }
 
-private struct CashFlowView: View {
+struct CashFlowView: View {
     @Bindable var model: AppModel
     @State private var showAddWhatIf = false
     @State private var wiDate = Date()

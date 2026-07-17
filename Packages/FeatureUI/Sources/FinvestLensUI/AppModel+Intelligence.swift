@@ -408,4 +408,15 @@ extension AppModel {
         }
         return try await ForecastNarrator.narrate(facts: facts)
     }
+
+    /// Annual-report-style notes for a computed report (`FR-AI-06`). The
+    /// figures arrive already computed; the model observes, it never
+    /// calculates.
+    public func reportCommentary(for facts: ReportFacts) async throws -> [String] {
+        try requireIntelligence()
+        guard #available(macOS 26.0, iOS 26.0, *) else {
+            throw IntelligenceError.unavailable("Apple Intelligence requires macOS 26 or iOS 26.")
+        }
+        return try await ReportNarrator.narrate(facts: facts)
+    }
 }

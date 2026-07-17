@@ -157,15 +157,23 @@ struct finvestlensApp: App {
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                     .disabled(!model.isOpen || model.selectedAccountID == nil)
                 Divider()
+                // Inline, in the detail pane, like the dashboard — a detached
+                // window only when asked for (docs/reports.md).
                 Button("Reports…") {
                     #if os(macOS)
-                    openWindow(id: "reports")
+                    model.isShowingReports = true
                     #else
                     model.presentedPanel = .reports
                     #endif
                 }
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(!model.isOpen)
+                #if os(macOS)
+                // No shortcut: ⇧⌘R is Reconcile's. A window you open once per
+                // arrangement of monitors does not need a chord.
+                Button("Reports in New Window") { openWindow(id: "reports") }
+                    .disabled(!model.isOpen)
+                #endif
                 Button("Budget…") { model.presentedPanel = .budget }
                     .keyboardShortcut("b", modifiers: .command)
                     .disabled(!model.isOpen)

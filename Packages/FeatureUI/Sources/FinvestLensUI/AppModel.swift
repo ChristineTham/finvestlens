@@ -210,6 +210,8 @@ public final class AppModel {
 
     public var selectedAccountID: GncGUID? {
         didSet {
+            // Choosing an account is navigation: it leaves Reports.
+            if selectedAccountID != nil { isShowingReports = false }
             // GnuCash's Save Sort Order / Save Filter, without the button:
             // leaving a register remembers how it was arranged, returning
             // restores it. Held outside the book, as GnuCash holds it in its
@@ -447,6 +449,12 @@ public final class AppModel {
     /// The transaction being turned into a schedule, if any. Same arrangement as
     /// ``editingTransactionID``: the command sets it, the register shows it.
     public var schedulingTransactionID: GncGUID?
+
+    /// Whether the detail pane is showing Reports (docs/reports.md). Inline,
+    /// like the dashboard — the detached window is the explicit alternative.
+    /// Sidebar navigation clears it: selecting an account always answers
+    /// "show me this account".
+    public var isShowingReports = false
 
     /// The transaction the selected row belongs to — what a menu command acts on.
     public var selectedTransactionID: GncGUID? {
@@ -1006,6 +1014,7 @@ public final class AppModel {
         isLocked = false
         externalChangePending = false
         presentedPanel = nil
+        isShowingReports = false
         searchQuery = ""
         clearFind()
         document?.discard()

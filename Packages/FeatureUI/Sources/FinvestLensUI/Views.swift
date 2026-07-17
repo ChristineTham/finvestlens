@@ -220,6 +220,8 @@ public struct FinvestLensRootView: View {
         } detail: {
             if model.isSearching {
                 SearchResultsView(model: model)
+            } else if model.isShowingReports {
+                ReportsHome(model: model)
             } else if model.selectedAccountID == nil {
                 DashboardView(model: model)
             } else {
@@ -236,6 +238,7 @@ public struct FinvestLensRootView: View {
             ToolbarItemGroup {
                 Button("Dashboard", systemImage: "house") {
                     model.selectedAccountID = nil
+                    model.isShowingReports = false
                 }
                 .help("Show the dashboard (⌘D)")
                 Button("New Transaction", systemImage: "plus.circle") {
@@ -327,7 +330,7 @@ public struct FinvestLensRootView: View {
             case .newTransaction: TransactionEditorSheet(model: model)
             case .stockTransaction: StockTransactionSheet(model: model)
             case .currencyTransfer: CurrencyTransferSheet(model: model)
-            case .reports: ReportsView(model: model)
+            case .reports: NavigationStack { ReportsHome(model: model) }
             case .rules: RulesView(model: model)
             case .scheduled: ScheduledView(model: model)
             case .budget: BudgetView(model: model)
