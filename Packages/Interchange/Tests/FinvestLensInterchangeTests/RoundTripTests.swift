@@ -114,6 +114,36 @@ struct RoundTripTests {
         let bank = try #require(account(twice, "Bank"))
         #expect(twice.book.balance(of: bank).rounded.amount == dec("100.00"))
     }
+
+    @Test("A split's reconcile state and date survive round-trip")
+    func reconcileDateSurvives() throws {
+        let original = makeBook()
+        let reconciledOn = Date(timeIntervalSince1970: 1_710_000_000)
+        let bankSplit = try #require(original.transactions.first?.splits
+            .first { $0.account?.name == "Bank" })
+        bankSplit.reconcileState = .reconciled
+        bankSplit.reconcileDate = reconciledOn
+
+        let result = try GnuCashXMLImporter.importBook(from: GnuCashXMLExporter.export(original))
+        let imported = try #require(result.book.transactions.first?.splits
+            .first { $0.account?.name == "Bank" })
+        #expect(imported.reconcileState == .reconciled)
+        #expect(imported.reconcileDate == reconciledOn)
+    }
+
+    @Test("A list-typed KVP slot round-trips (GnuCash bare-value list format)")
+    func listSlotSurvives() throws {
+        let original = makeBook()
+        original.kvp["test-list"] = .list([.string("alpha"), .int64(42), .string("beta")])
+
+        let data = GnuCashXMLExporter.export(original)
+        let xml = String(decoding: data, as: UTF8.self)
+        // Elements are bare <slot:value> with no <slot> wrapper, as GnuCash writes.
+        #expect(xml.contains("<slot:value type=\"list\">"))
+
+        let result = try GnuCashXMLImporter.importBook(from: data)
+        #expect(result.book.kvp["test-list"] == .list([.string("alpha"), .int64(42), .string("beta")]))
+    }
 }
 
 @Suite("Document link round-trip")

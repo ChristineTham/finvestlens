@@ -138,7 +138,8 @@ extension AppModel {
 
         do {
             let splits = try AutoClear.splitsToClear(in: account, of: book,
-                                                     targetBalance: session.statementBalance)
+                                                     targetBalance: session.statementBalance,
+                                                     asOf: session.statementDate)
             let found = Set(splits.map(\.guid))
             var updated = session
             for index in updated.items.indices {

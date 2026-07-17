@@ -240,6 +240,9 @@ public enum GnuCashXMLExporter {
             block += "      <split:action>\(escape(split.action))</split:action>\n"
         }
         block += "      <split:reconciled-state>\(split.reconcileState.rawValue)</split:reconciled-state>\n"
+        if let reconcileDate = split.reconcileDate {
+            block += "      <split:reconcile-date><ts:date>\(GnuCashDate.format(reconcileDate))</ts:date></split:reconcile-date>\n"
+        }
         block += "      <split:value>\(rational(split.value, fallbackFraction: currencyFraction))</split:value>\n"
         block += "      <split:quantity>\(rational(split.quantity, fallbackFraction: quantityFraction))</split:quantity>\n"
         if let account = split.account {
@@ -302,11 +305,12 @@ public enum GnuCashXMLExporter {
             block += "\(indent)</slot:value>\n"
             return block
         case .list(let values):
-            // Elements ride as keyless <slot> children; the importer reads
-            // them back positionally.
+            // GnuCash writes list elements as bare, keyless <slot:value> nodes
+            // (no <slot> wrapper) — its reader keys off each child's type=
+            // attribute (sixtp-dom-generators.cpp add_kvp_value_node).
             var block = "\(indent)<slot:value type=\"list\">\n"
             for child in values {
-                block += slotXML(key: "", value: child, indent: indent + "  ")
+                block += slotValueXML(child, indent: indent + "  ")
             }
             block += "\(indent)</slot:value>\n"
             return block

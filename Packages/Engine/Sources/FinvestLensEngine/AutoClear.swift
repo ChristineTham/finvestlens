@@ -70,9 +70,17 @@ public enum AutoClear {
     /// so the sums are exact integers and can be hashed. Decimal is exact but
     /// `1.10 + 2.20` is not a hash key you want to depend on.
     public static func splitsToClear(in account: Account, of book: Book,
-                                     targetBalance: Decimal) throws -> [Split] {
-        let all = book.splits(for: account).filter { $0.reconcileState != .voided }
-        let uncleared = all.filter { $0.reconcileState == .notReconciled }
+                                     targetBalance: Decimal, asOf: Date? = nil) throws -> [Split] {
+        var all = book.splits(for: account).filter { $0.reconcileState != .voided }
+        // GnuCash stops at the statement date: splits posted after it are
+        // neither candidates nor counted toward the cleared balance.
+        if let asOf {
+            all = all.filter { ($0.transaction?.datePosted ?? .distantPast) <= asOf }
+        }
+        // Zero-amount uncleared splits carry no value; GnuCash skips them, and
+        // keeping them would re-offer every reachable sum and make the solve
+        // spuriously ambiguous.
+        let uncleared = all.filter { $0.reconcileState == .notReconciled && $0.quantity != 0 }
         guard !uncleared.isEmpty else { throw Failure.nothingUncleared }
         guard uncleared.count <= Limits.splits else { throw Failure.tooComplex }
 

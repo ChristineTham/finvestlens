@@ -120,6 +120,9 @@ private final class Delegate: NSObject, XMLParserDelegate {
         var valueType = "string"
         var scalar = ""
         var children: [SlotNode] = []
+        /// True for a list element, which GnuCash writes as a bare `<slot:value>`
+        /// (no `<slot>` wrapper) — so the value element itself is its own node.
+        var openedByValue = false
     }
 
     private var parentElement: String? { stack.count >= 2 ? stack[stack.count - 2] : nil }
@@ -172,7 +175,18 @@ private final class Delegate: NSObject, XMLParserDelegate {
             slotStack.append(node)
         case "slot:value":
             guard slotContainer != nil else { break }
-            slotStack.last?.valueType = attributes["type"] ?? "string"
+            let type = attributes["type"] ?? "string"
+            if let parent = slotStack.last, parent.valueType == "list" {
+                // A bare list element: it has no <slot> wrapper, so the value
+                // element becomes its own child node.
+                let node = SlotNode()
+                node.valueType = type
+                node.openedByValue = true
+                parent.children.append(node)
+                slotStack.append(node)
+            } else {
+                slotStack.last?.valueType = type
+            }
         default: break
         }
     }
@@ -254,7 +268,14 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "slot:value":
             // Scalar text; frames/lists keep "" and use children instead.
             // gdate/timespec scalars were already set by their child element.
-            if slotContainer != nil, !value.isEmpty { slotStack.last?.scalar = value }
+            guard slotContainer != nil else { break }
+            if let node = slotStack.last, node.openedByValue {
+                // A bare list element closes here — capture its scalar and pop.
+                if !value.isEmpty { node.scalar = value }
+                slotStack.removeLast()
+            } else if !value.isEmpty {
+                slotStack.last?.scalar = value
+            }
         case "slot":
             if slotContainer != nil, !slotStack.isEmpty { slotStack.removeLast() }
         case "act:slots", "trn:slots", "split:slots", "cmdty:slots", "book:slots", "lot:slots":
@@ -405,6 +426,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
         switch parentElement {
         case "trn:date-posted": transaction?.datePosted = date
         case "trn:date-entered": transaction?.dateEntered = date
+        case "split:reconcile-date": split?.reconcileDate = date
         case "price:time": price?.date = date
         case "invoice:opened": invoice?.opened = date
         case "invoice:posted": invoice?.posted = date
@@ -536,6 +558,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
             value: builder.value ?? 0,
             quantity: builder.quantity ?? builder.value ?? 0,
             reconcileState: ReconcileState(rawValue: builder.reconcileState ?? "n") ?? .notReconciled,
+            reconcileDate: builder.reconcileDate,
             memo: builder.memo,
             action: builder.action
         )
@@ -840,6 +863,7 @@ private struct TransactionBuilder {
 private struct SplitBuilder {
     var guid: GncGUID?
     var reconcileState: String?
+    var reconcileDate: Date?
     var value: Decimal?
     var quantity: Decimal?
     var accountGUID: GncGUID?

@@ -112,6 +112,30 @@ struct AutoClearTests {
         }
     }
 
+    /// A zero-amount uncleared split (memo-only, fully netted) must not make the
+    /// solve ambiguous — GnuCash skips it.
+    @Test("A zero-amount uncleared split does not poison the solve")
+    func zeroAmountSkipped() throws {
+        let (book, bank) = makeBook(["100", "0"])
+        let found = try AutoClear.splitsToClear(in: bank, of: book, targetBalance: 100)
+        #expect(amounts(found) == [100])
+    }
+
+    /// Splits posted after the statement date are neither candidates nor counted
+    /// toward the cleared balance (GnuCash's end_date cutoff).
+    @Test("Post-statement splits are excluded by the statement date")
+    func statementDateCutoff() throws {
+        // Two 100s on day 0 and day 1. Without a cutoff, target 100 is ambiguous.
+        let (book, bank) = makeBook(["100", "100"])
+        #expect(throws: AutoClear.Failure.ambiguous) {
+            try AutoClear.splitsToClear(in: bank, of: book, targetBalance: 100)
+        }
+        // As of mid-day-0 only the first split exists, so the answer is unique.
+        let asOf = Date(timeIntervalSince1970: 43_200)   // between day 0 and day 1
+        let found = try AutoClear.splitsToClear(in: bank, of: book, targetBalance: 100, asOf: asOf)
+        #expect(amounts(found) == [100])
+    }
+
     /// Negative amounts are the normal case for a bank account, and a target can
     /// sit below the cleared balance.
     @Test("Withdrawals clear as readily as deposits")
