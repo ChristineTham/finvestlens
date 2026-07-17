@@ -115,6 +115,24 @@ docs/reports.md for the findings and decisions. Landed across five commits:
 | Legacy report internals | Transactions, Reconciliation, Forecast, Portfolio, Investment Lots, Price Scatter, Capital Gains keep their interactive views inside the new navigation; migrating their internals to the document scaffold (and giving them PDF export) is follow-up. | P8 |
 | Commentary live-model check | ReportNarrator follows the tested ForecastNarrator pattern; a GUI pass on a device with Apple Intelligence enabled is still owed. | monitor |
 
+## Investment reports parity audit (17 Jul 2026)
+
+Figure-verified Advanced Portfolio / Lots / Capital Gains against GnuCash
+5.16's own report engine (`gnucash-cli` on an identical copy of the reference
+book; a hand-written saved-report config aligned the options). Result: **every
+real holding matches to the cent** — shares, basis, value, realised,
+unrealised, under both FIFO and average — and the FIFO grand totals for basis
+($2,424,903.45 pre-fix) and realised gain ($925,239.50) matched exactly across
+~2,069 disposals spanning 46 years. Total market value and total gain
+($2,983,229.61 / $1,483,565.66) match GnuCash to the cent after the fix below.
+
+| Item | Notes | Status |
+|---|---|---|
+| Phantom lots after an oversell | An uncovered sale discarded the deficit, so a later buy opened a fresh lot instead of covering the short — four long-exited super accounts (WSSP-*, AMP BB Investment) showed ≈$1,471 of holdings that do not exist. `CostBasis` now carries the shortfall: covering buys close it (zero proceeds, buy-back cost as basis, dated at the cover) and `remainingQuantity` reflects the true balance. GnuCash has the same lot quirk (stranded basis on zero units, self-inconsistent rows); ours now drops fully-exited rows instead. | fixed |
+| Brokerage-fee treatment | Our figures equal GnuCash with "ignore brokerage fees"; GnuCash's default *includes fees in basis* (its third mode: include in gain). An explicit fee-treatment option, plus Money In/Out, Income and Rate-of-Return columns, would complete Advanced Portfolio parity. | P8 |
+| Per-lot oracle | GnuCash's Investment Lots report needs explicit lot records; the reference book has none, so lots were verified through the basis/realised columns instead. Nothing further owed. | done |
+| Average-method rounding | GnuCash rounds each sale's basis to cents progressively; we keep full precision until the report edge — 2¢ drift on one account over 40 years. Not worth chasing. | wontfix |
+
 ## Usability review (July 2026)
 
 Resolved in the usability pass: File/Book menu bar (New/Open/Open Recent/

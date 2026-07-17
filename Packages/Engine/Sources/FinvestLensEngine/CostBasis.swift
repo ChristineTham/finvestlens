@@ -79,6 +79,9 @@ public struct OpenLot: Hashable, Sendable {
 }
 
 /// A realised gain (or loss) from disposing of shares against one lot.
+///
+/// A buy that covers an earlier uncovered sale also produces a record: zero
+/// proceeds, the buy-back cost as basis (a negative gain), dated at the cover.
 public struct RealizedGain: Hashable, Sendable {
     public let disposalDate: Date
     /// The matched acquisition date, or `nil` for average-cost / uncovered sales.
@@ -115,8 +118,11 @@ public struct CostBasisResult: Sendable {
     public let method: CostBasisMethod
     public let openLots: [OpenLot]
     public let realizedGains: [RealizedGain]
+    /// Shares sold uncovered and never bought back — an outstanding short
+    /// position, so ``remainingQuantity`` reflects the true account balance.
+    public let shortQuantity: Decimal
 
-    public var remainingQuantity: Decimal { openLots.reduce(0) { $0 + $1.quantity } }
+    public var remainingQuantity: Decimal { openLots.reduce(0) { $0 + $1.quantity } - shortQuantity }
     public var remainingCostBasis: Decimal { openLots.reduce(0) { $0 + $1.costBasis } }
     public var totalProceeds: Decimal { realizedGains.reduce(0) { $0 + $1.proceeds } }
     public var totalCostBasis: Decimal { realizedGains.reduce(0) { $0 + $1.costBasis } }
@@ -169,6 +175,7 @@ public enum CostBasis {
     ) -> CostBasisResult {
         var open: [MutableLot] = []
         var gains: [RealizedGain] = []
+        var shortfall = Decimal(0)   // shares sold uncovered, awaiting a buy-back
 
         for event in events {
             if event.isSplit {
@@ -201,7 +208,22 @@ public enum CostBasis {
             }
             if event.quantity > 0 {
                 let perShare = event.value / event.quantity
-                open.append(MutableLot(date: event.date, remaining: event.quantity, costPerShare: perShare))
+                var quantity = event.quantity
+                // A buy after an uncovered sale first closes the short: the
+                // covering shares never open a lot, and the buy-back cost is
+                // realised as a (negative) gain dated at the cover.
+                if shortfall > 0 {
+                    let cover = min(quantity, shortfall)
+                    gains.append(RealizedGain(
+                        disposalDate: event.date, acquisitionDate: nil,
+                        quantity: cover, proceeds: 0,
+                        costBasis: cover * perShare, longTerm: nil))
+                    shortfall -= cover
+                    quantity -= cover
+                }
+                if quantity > 0 {
+                    open.append(MutableLot(date: event.date, remaining: quantity, costPerShare: perShare))
+                }
             } else if event.quantity < 0 {
                 var sharesToSell = -event.quantity
                 let proceedsPerShare = sharesToSell != 0 ? (-event.value) / sharesToSell : 0
@@ -222,12 +244,14 @@ public enum CostBasis {
                 }
 
                 // Uncovered sale (sold more than held): zero cost basis, unknown
-                // holding period.
+                // holding period. The deficit is carried as a short position so
+                // later buys cover it before opening new lots.
                 if sharesToSell > 0 {
                     gains.append(RealizedGain(
                         disposalDate: event.date, acquisitionDate: nil,
                         quantity: sharesToSell, proceeds: sharesToSell * proceedsPerShare,
                         costBasis: 0, longTerm: nil))
+                    shortfall += sharesToSell
                 }
             }
         }
@@ -236,7 +260,8 @@ public enum CostBasis {
             OpenLot(acquisitionDate: $0.date, quantity: $0.remaining,
                     costBasis: $0.remaining * $0.costPerShare)
         }
-        return CostBasisResult(method: method, openLots: openLots, realizedGains: gains)
+        return CostBasisResult(method: method, openLots: openLots,
+                               realizedGains: gains, shortQuantity: shortfall)
     }
 
     // MARK: Average cost
@@ -245,6 +270,7 @@ public enum CostBasis {
         var pooledShares = Decimal(0)
         var pooledCost = Decimal(0)
         var gains: [RealizedGain] = []
+        var shortfall = Decimal(0)   // shares sold uncovered, awaiting a buy-back
 
         for event in events {
             if event.isSplit {
@@ -257,19 +283,49 @@ public enum CostBasis {
                 continue
             }
             if event.quantity > 0 {
-                pooledShares += event.quantity
-                pooledCost += event.value
+                var quantity = event.quantity
+                var value = event.value
+                // A buy after an uncovered sale first closes the short: the
+                // covering shares never join the pool, and the buy-back cost is
+                // realised as a (negative) gain dated at the cover.
+                if shortfall > 0 {
+                    let perShare = event.value / event.quantity
+                    let cover = min(quantity, shortfall)
+                    gains.append(RealizedGain(
+                        disposalDate: event.date, acquisitionDate: nil,
+                        quantity: cover, proceeds: 0,
+                        costBasis: cover * perShare, longTerm: nil))
+                    shortfall -= cover
+                    quantity -= cover
+                    value -= cover * perShare
+                }
+                pooledShares += quantity
+                pooledCost += value
             } else if event.quantity < 0 {
                 let sharesSold = -event.quantity
                 let proceeds = -event.value
-                let avg = pooledShares != 0 ? pooledCost / pooledShares : 0
-                let costBasis = avg * sharesSold
-                gains.append(RealizedGain(
-                    disposalDate: event.date, acquisitionDate: nil,
-                    quantity: sharesSold, proceeds: proceeds, costBasis: costBasis,
-                    longTerm: nil))
-                pooledShares -= sharesSold
-                pooledCost -= costBasis
+                let proceedsPerShare = sharesSold != 0 ? proceeds / sharesSold : 0
+                let covered = min(sharesSold, max(pooledShares, 0))
+                let uncovered = sharesSold - covered
+                if covered > 0 {
+                    let avg = pooledShares != 0 ? pooledCost / pooledShares : 0
+                    let costBasis = avg * covered
+                    gains.append(RealizedGain(
+                        disposalDate: event.date, acquisitionDate: nil,
+                        quantity: covered, proceeds: proceedsPerShare * covered,
+                        costBasis: costBasis, longTerm: nil))
+                    pooledShares -= covered
+                    pooledCost -= costBasis
+                }
+                // Sold more than the pool holds: zero cost basis, and the
+                // deficit is carried as a short position.
+                if uncovered > 0 {
+                    gains.append(RealizedGain(
+                        disposalDate: event.date, acquisitionDate: nil,
+                        quantity: uncovered, proceeds: proceedsPerShare * uncovered,
+                        costBasis: 0, longTerm: nil))
+                    shortfall += uncovered
+                }
                 if pooledShares <= 0 { pooledShares = 0; pooledCost = 0 }
             }
         }
@@ -277,6 +333,7 @@ public enum CostBasis {
         let openLots = pooledShares > 0
             ? [OpenLot(acquisitionDate: nil, quantity: pooledShares, costBasis: pooledCost)]
             : []
-        return CostBasisResult(method: .average, openLots: openLots, realizedGains: gains)
+        return CostBasisResult(method: .average, openLots: openLots,
+                               realizedGains: gains, shortQuantity: shortfall)
     }
 }

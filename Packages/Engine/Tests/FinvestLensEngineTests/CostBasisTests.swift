@@ -93,7 +93,44 @@ struct CostBasisTests {
         #expect(result.totalCostBasis == dec("50"))
         #expect(result.totalProceeds == dec("80"))
         #expect(result.realizedGains.contains { $0.acquisitionDate == nil && $0.costBasis == 0 })
+        // The 3 uncovered shares are an outstanding short, so the remaining
+        // quantity reflects the true (negative) balance.
+        #expect(result.shortQuantity == dec("3"))
+        #expect(result.remainingQuantity == dec("-3"))
+    }
+
+    @Test("A buy after an oversale covers the short before opening lots",
+          arguments: [CostBasisMethod.fifo, .lifo, .average])
+    func shortCover(method: CostBasisMethod) {
+        let result = CostBasis.compute(events: [
+            LotEvent(date: day(0), quantity: dec("5"), value: dec("50")),
+            LotEvent(date: day(10), quantity: dec("-8"), value: dec("-80")),
+            LotEvent(date: day(20), quantity: dec("3"), value: dec("36")),
+        ], method: method)
+        // The buy-back closes the short instead of becoming a phantom holding.
+        #expect(result.shortQuantity == 0)
         #expect(result.remainingQuantity == 0)
+        #expect(result.openLots.isEmpty)
+        // Economic truth: proceeds 80 − buys 86 = −6 realised overall.
+        #expect(result.totalRealizedGain == dec("-6"))
+        // The cover is its own record: zero proceeds, cost 36, dated at the buy.
+        #expect(result.realizedGains.contains {
+            $0.disposalDate == day(20) && $0.proceeds == 0 && $0.costBasis == dec("36")
+        })
+    }
+
+    @Test("A buy larger than the short covers it and opens the remainder")
+    func partialCover() {
+        let result = CostBasis.compute(events: [
+            LotEvent(date: day(0), quantity: dec("5"), value: dec("50")),
+            LotEvent(date: day(10), quantity: dec("-8"), value: dec("-80")),
+            LotEvent(date: day(20), quantity: dec("10"), value: dec("120")),
+        ], method: .fifo)
+        // 3 of the 10 bought shares cover the short; 7 open at $12 each.
+        #expect(result.shortQuantity == 0)
+        #expect(result.remainingQuantity == dec("7"))
+        #expect(result.remainingCostBasis == dec("84"))
+        #expect(result.openLots.count == 1)
     }
 
     @Test("No disposals leaves every lot open")
