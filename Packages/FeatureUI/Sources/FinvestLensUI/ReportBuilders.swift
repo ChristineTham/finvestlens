@@ -316,12 +316,16 @@ extension AppModel {
                 chart: report.intervals.isEmpty ? nil : .averageBars(report.intervals),
                 sections: [
                     ReportDocumentSection(
-                        title: "Average balance by \(step.displayName.lowercased())",
+                        title: "By \(step.displayName.lowercased())",
                         rows: report.intervals.map { interval in
-                            ReportDocumentRow(label: intervalLabel(interval),
-                                              amount: interval.average)
+                            ReportDocumentRow(
+                                label: intervalLabel(interval),
+                                amounts: [interval.average, interval.minimum, interval.maximum,
+                                          interval.gain, interval.loss])
                         },
-                        total: ("Weighted average", average)),
+                        columns: ["Average", "Minimum", "Maximum", "Gain", "Loss"],
+                        columnTotals: ("Weighted average / totals",
+                                       [average, nil, nil, report.totalGain, report.totalLoss])),
                 ],
                 notes: ["Balances are sampled at each day's end; an interval's average is "
                         + "the mean of its daily balances. Across "

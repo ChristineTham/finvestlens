@@ -68,7 +68,12 @@ struct AverageBalanceDocumentTests {
             Issue.record("expected an averageBars chart"); return
         }
         #expect(intervals.count == 2)
-        #expect(document.sections.first?.rows.count == 2)
+        let table = try #require(document.sections.first)
+        #expect(table.rows.count == 2)
+        // Each interval row carries the five metric columns (avg/min/max/gain/loss).
+        #expect(table.columns == ["Average", "Minimum", "Maximum", "Gain", "Loss"])
+        #expect(table.rows.allSatisfy { ($0.amounts?.count ?? 0) == 5 })
+        #expect(table.columnTotals?.amounts.count == 5)
         // Every average sits within its own min/max range, and is positive here.
         #expect(intervals.allSatisfy { $0.average > 0 })
         #expect(intervals.allSatisfy { $0.average <= $0.maximum && $0.average >= $0.minimum })
