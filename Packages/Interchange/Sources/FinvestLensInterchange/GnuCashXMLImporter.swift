@@ -85,6 +85,27 @@ private final class Delegate: NSObject, XMLParserDelegate {
     private var split: SplitBuilder?
     private var price: PriceBuilder?
 
+    // Business builders and their finished collections.
+    private var billTerm: BillTermBuilder?
+    private var taxTable: TaxTableBuilder?
+    private var taxEntry: TaxEntryBuilder?
+    private var party: PartyBuilder?          // active customer/vendor/employee
+    private var partyKind: OwnerType?
+    private var job: JobBuilder?
+    private var invoice: InvoiceBuilder?
+    private var entry: EntryBuilder?
+    private var lot: LotBuilder?
+    private var billTermBuilders: [BillTermBuilder] = []
+    private var taxTableBuilders: [TaxTableBuilder] = []
+    private var customerBuilders: [PartyBuilder] = []
+    private var vendorBuilders: [PartyBuilder] = []
+    private var employeeBuilders: [PartyBuilder] = []
+    private var jobBuilders: [JobBuilder] = []
+    private var invoiceBuilders: [InvoiceBuilder] = []
+    private var entryBuilders: [EntryBuilder] = []
+    private var lotBuilders: [LotBuilder] = []
+    private var splitLotGUID: [GncGUID: GncGUID] = [:]   // split guid → its lot
+
     // KVP slot capture (ADR-4: slots are preserved verbatim so GnuCash
     // round-trips are lossless). Active while inside a recognised slots
     // container; nested frames/lists build a small tree that is converted
@@ -122,12 +143,26 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "trn:split": split = SplitBuilder()
         case "price": price = PriceBuilder(); summary.priceCount += 1
 
+        // Business objects.
+        case "gnc:GncBillTerm": billTerm = BillTermBuilder()
+        case "gnc:GncTaxTable": taxTable = TaxTableBuilder()
+        case "gnc:GncTaxTableEntry": taxEntry = TaxEntryBuilder()
+        case "gnc:GncCustomer": party = PartyBuilder(); partyKind = .customer
+        case "gnc:GncVendor": party = PartyBuilder(); partyKind = .vendor
+        case "gnc:GncEmployee": party = PartyBuilder(); partyKind = .employee
+        case "gnc:GncJob": job = JobBuilder()
+        case "gnc:GncInvoice": invoice = InvoiceBuilder()
+        case "gnc:GncEntry": entry = EntryBuilder()
+        case "gnc:lot" where account != nil:
+            lot = LotBuilder(); lot?.accountGUID = account?.guid
+
         // Slot containers — capture only when the matching builder is live,
         // so budget/sx/template slots never leak onto the wrong object.
         case "act:slots" where account != nil,
              "trn:slots" where transaction != nil && split == nil,
              "split:slots" where split != nil,
              "cmdty:slots" where commodity != nil,
+             "lot:slots" where lot != nil,
              "book:slots":
             slotContainer = name
         case "slot":
@@ -222,11 +257,115 @@ private final class Delegate: NSObject, XMLParserDelegate {
             if slotContainer != nil, !value.isEmpty { slotStack.last?.scalar = value }
         case "slot":
             if slotContainer != nil, !slotStack.isEmpty { slotStack.removeLast() }
-        case "act:slots", "trn:slots", "split:slots", "cmdty:slots", "book:slots":
+        case "act:slots", "trn:slots", "split:slots", "cmdty:slots", "book:slots", "lot:slots":
             finishSlotContainer(name)
+
+        // MARK: Business fields
+
+        // Billing terms.
+        case "billterm:guid": billTerm?.guid = GncGUID(hex: value)
+        case "billterm:name": billTerm?.name = value
+        case "billterm:desc": billTerm?.desc = value
+        case "billterm:invisible": billTerm?.invisible = (value == "1")
+        case "bt-days:due-days": billTerm?.kind = "days"; billTerm?.dueDays = Int(value) ?? 0
+        case "bt-days:disc-days": billTerm?.discDays = Int(value) ?? 0
+        case "bt-days:discount": billTerm?.discount = GnuCashNumeric.parse(value) ?? 0
+        case "bt-prox:due-day": billTerm?.kind = "prox"; billTerm?.dueDays = Int(value) ?? 0
+        case "bt-prox:disc-day": billTerm?.discDays = Int(value) ?? 0
+        case "bt-prox:discount": billTerm?.discount = GnuCashNumeric.parse(value) ?? 0
+        case "gnc:GncBillTerm": if let b = billTerm { billTermBuilders.append(b) }; billTerm = nil
+
+        // Tax tables.
+        case "taxtable:guid": taxTable?.guid = GncGUID(hex: value)
+        case "taxtable:name": taxTable?.name = value
+        case "taxtable:invisible": taxTable?.invisible = (value == "1")
+        case "tte:acct": taxEntry?.accountGUID = GncGUID(hex: value)
+        case "tte:type": taxEntry?.type = value
+        case "tte:amount": taxEntry?.amount = GnuCashNumeric.parse(value) ?? 0
+        case "gnc:GncTaxTableEntry": if let e = taxEntry { taxTable?.entries.append(e) }; taxEntry = nil
+        case "gnc:GncTaxTable": if let t = taxTable { taxTableBuilders.append(t) }; taxTable = nil
+
+        // Parties (customer / vendor / employee share the `party` builder).
+        case "cust:guid", "vendor:guid", "employee:guid": party?.guid = GncGUID(hex: value)
+        case "cust:name", "vendor:name": party?.name = value
+        case "employee:username": party?.name = value
+        case "cust:id", "vendor:id", "employee:id": party?.id = value
+        case "cust:notes", "vendor:notes": party?.notes = value
+        case "cust:active", "vendor:active", "employee:active": party?.active = (value == "1")
+        case "cust:discount": party?.discount = GnuCashNumeric.parse(value) ?? 0
+        case "cust:credit": party?.credit = GnuCashNumeric.parse(value) ?? 0
+        case "employee:rate": party?.rate = GnuCashNumeric.parse(value) ?? 0
+        case "cust:use-tt", "vendor:use-tt": party?.useTaxTable = (value == "1")
+        case "cust:terms", "vendor:terms": party?.termsGUID = GncGUID(hex: value)
+        case "cust:taxtable", "vendor:taxtable": party?.taxTableGUID = GncGUID(hex: value)
+        case "employee:ccard": party?.creditAccountGUID = GncGUID(hex: value)
+        case "addr:name": setAddress { $0.name = value }
+        case "addr:addr1": setAddress { $0.line1 = value }
+        case "addr:addr2": setAddress { $0.line2 = value }
+        case "addr:addr3": setAddress { $0.line3 = value }
+        case "addr:addr4": setAddress { $0.line4 = value }
+        case "addr:phone": setAddress { $0.phone = value }
+        case "addr:fax": setAddress { $0.fax = value }
+        case "addr:email": setAddress { $0.email = value }
+        case "gnc:GncCustomer": if let p = party { customerBuilders.append(p) }; party = nil; partyKind = nil
+        case "gnc:GncVendor": if let p = party { vendorBuilders.append(p) }; party = nil; partyKind = nil
+        case "gnc:GncEmployee": if let p = party { employeeBuilders.append(p) }; party = nil; partyKind = nil
+
+        // Owner references (inside invoice:owner / job:owner).
+        case "owner:type":
+            if invoice != nil { invoice?.owner.type = value } else if job != nil { job?.owner.type = value }
+        case "owner:id":
+            if invoice != nil { invoice?.owner.guid = GncGUID(hex: value) }
+            else if job != nil { job?.owner.guid = GncGUID(hex: value) }
+
+        // Jobs.
+        case "job:guid": job?.guid = GncGUID(hex: value)
+        case "job:id": job?.id = value
+        case "job:name": job?.name = value
+        case "job:reference": job?.reference = value
+        case "job:active": job?.active = (value == "1")
+        case "gnc:GncJob": if let j = job { jobBuilders.append(j) }; job = nil
+
+        // Invoices.
+        case "invoice:guid": invoice?.guid = GncGUID(hex: value)
+        case "invoice:id": invoice?.id = value
+        case "invoice:terms": invoice?.termsGUID = GncGUID(hex: value)
+        case "invoice:billing_id": invoice?.billingID = value
+        case "invoice:notes": invoice?.notes = value
+        case "invoice:active": invoice?.active = (value == "1")
+        case "invoice:postacc": invoice?.postAccountGUID = GncGUID(hex: value)
+        case "invoice:posttxn": invoice?.postTxnGUID = GncGUID(hex: value)
+        case "invoice:postlot": invoice?.postLotGUID = GncGUID(hex: value)
+        case "gnc:GncInvoice": if let i = invoice { invoiceBuilders.append(i) }; invoice = nil
+
+        // Entries (i- for invoices, b- for bills).
+        case "entry:guid": entry?.guid = GncGUID(hex: value)
+        case "entry:description": entry?.desc = value
+        case "entry:action": entry?.action = value
+        case "entry:qty": entry?.qty = GnuCashNumeric.parse(value) ?? 1
+        case "entry:i-acct", "entry:b-acct": entry?.accountGUID = GncGUID(hex: value)
+        case "entry:i-price", "entry:b-price": entry?.price = GnuCashNumeric.parse(value) ?? 0
+        case "entry:i-discount": entry?.discount = GnuCashNumeric.parse(value) ?? 0
+        case "entry:i-disc-type": entry?.discType = value
+        case "entry:i-taxable", "entry:b-taxable": entry?.taxable = (value == "1")
+        case "entry:i-taxincluded", "entry:b-taxincluded": entry?.taxIncluded = (value == "1")
+        case "entry:i-taxtable", "entry:b-taxtable": entry?.taxTableGUID = GncGUID(hex: value)
+        case "entry:invoice", "entry:bill": entry?.invoiceGUID = GncGUID(hex: value)
+        case "gnc:GncEntry": if let e = entry { entryBuilders.append(e) }; entry = nil
+
+        // Lots (inside an account) and split membership.
+        case "lot:id": lot?.guid = GncGUID(hex: value)
+        case "gnc:lot": if let l = lot { lotBuilders.append(l) }; lot = nil
+        case "split:lot": split?.lotGUID = GncGUID(hex: value)
 
         default: break
         }
+    }
+
+    /// Applies `mutate` to the active party's address.
+    private func setAddress(_ mutate: (inout BusinessAddress) -> Void) {
+        guard party != nil else { return }
+        mutate(&party!.address)
     }
 
     // MARK: Context-sensitive commodity fields
@@ -248,6 +387,13 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "price:currency":
             if let space { price?.currencySpace = space }
             if let id { price?.currencyID = id }
+        // Business currencies.
+        case "cust:currency", "vendor:currency", "employee:currency":
+            if let space { party?.currencySpace = space }
+            if let id { party?.currencyID = id }
+        case "invoice:currency":
+            if let space { invoice?.currencySpace = space }
+            if let id { invoice?.currencyID = id }
         default:
             break
         }
@@ -259,6 +405,9 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "trn:date-posted": transaction?.datePosted = date
         case "trn:date-entered": transaction?.dateEntered = date
         case "price:time": price?.date = date
+        case "invoice:opened": invoice?.opened = date
+        case "invoice:posted": invoice?.posted = date
+        case "entry:date": entry?.date = date
         default: break
         }
     }
@@ -297,6 +446,11 @@ private final class Delegate: NSObject, XMLParserDelegate {
             split?.kvp = frame
         case "cmdty:slots":
             commodity?.kvp = frame
+        case "lot:slots":
+            if case let .string(text)? = frame["title"] { lot?.title = text; frame["title"] = nil }
+            if case let .string(text)? = frame["notes"] { lot?.notes = text; frame["notes"] = nil }
+            if case let .int64(n)? = frame["closed"] { lot?.closed = (n != 0); frame["closed"] = nil }
+            lot?.kvp = frame   // keep gncInvoice/gncOwner for a faithful re-export
         case "book:slots":
             bookKvp = frame
         default:
@@ -385,6 +539,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
             action: builder.action
         )
         engineSplit.kvp = builder.kvp
+        if let lotGUID = builder.lotGUID { splitLotGUID[engineSplit.guid] = lotGUID }
         transaction?.pendingSplits.append(engineSplit)
     }
 
@@ -491,6 +646,8 @@ private final class Delegate: NSObject, XMLParserDelegate {
         for txn in transactions { book.addTransaction(txn) }
         for price in prices { book.addPrice(price) }
 
+        assembleBusiness(into: book)
+
         summary.commodityCount = commoditiesByKey.count
         summary.accountCount = book.accounts.count
         summary.transactionCount = transactions.count
@@ -499,6 +656,125 @@ private final class Delegate: NSObject, XMLParserDelegate {
         summary.scrubIssues = Scrub.check(book)
 
         return ImportResult(book: book, summary: summary)
+    }
+
+    // MARK: - Business assembly
+
+    private func assembleBusiness(into book: Book) {
+        func account(_ guid: GncGUID?) -> Account? { guid.flatMap { accountsByGUID[$0] } }
+        func currency(_ space: String?, _ id: String?) -> Commodity {
+            resolveCommodity(space: space, id: id, fractionHint: nil)
+        }
+
+        var terms: [GncGUID: BillTerm] = [:]
+        for b in billTermBuilders {
+            guard let guid = b.guid else { continue }
+            let term = BillTerm(guid: guid, name: b.name, termDescription: b.desc,
+                                kind: b.kind == "prox" ? .proximo : .days, dueDays: b.dueDays,
+                                discountDays: b.discDays, discountPercent: b.discount,
+                                active: !b.invisible)
+            terms[guid] = term; book.addBillTerm(term)
+        }
+        var tables: [GncGUID: TaxTable] = [:]
+        for b in taxTableBuilders {
+            guard let guid = b.guid else { continue }
+            let entries = b.entries.compactMap { e -> TaxTableEntry? in
+                guard let acc = account(e.accountGUID) else { return nil }
+                return TaxTableEntry(account: acc, kind: e.type == "VALUE" ? .value : .percentage,
+                                     amount: e.amount)
+            }
+            let table = TaxTable(guid: guid, name: b.name, entries: entries, active: !b.invisible)
+            tables[guid] = table; book.addTaxTable(table)
+        }
+        var customers: [GncGUID: Customer] = [:]
+        for b in customerBuilders {
+            guard let guid = b.guid else { continue }
+            let c = Customer(guid: guid, id: b.id, name: b.name, address: b.address, notes: b.notes,
+                             active: b.active, currency: currency(b.currencySpace, b.currencyID),
+                             terms: b.termsGUID.flatMap { terms[$0] },
+                             taxTable: b.taxTableGUID.flatMap { tables[$0] },
+                             taxTableOverride: b.useTaxTable, discountPercent: b.discount,
+                             creditLimit: b.credit)
+            customers[guid] = c; book.addCustomer(c)
+        }
+        var vendors: [GncGUID: Vendor] = [:]
+        for b in vendorBuilders {
+            guard let guid = b.guid else { continue }
+            let v = Vendor(guid: guid, id: b.id, name: b.name, address: b.address, notes: b.notes,
+                           active: b.active, currency: currency(b.currencySpace, b.currencyID),
+                           terms: b.termsGUID.flatMap { terms[$0] },
+                           taxTable: b.taxTableGUID.flatMap { tables[$0] }, taxTableOverride: b.useTaxTable)
+            vendors[guid] = v; book.addVendor(v)
+        }
+        var employees: [GncGUID: Employee] = [:]
+        for b in employeeBuilders {
+            guard let guid = b.guid else { continue }
+            let e = Employee(guid: guid, id: b.id, username: b.name, address: b.address, notes: b.notes,
+                             active: b.active, currency: currency(b.currencySpace, b.currencyID),
+                             hourlyRate: b.rate, creditAccount: account(b.creditAccountGUID))
+            employees[guid] = e; book.addEmployee(e)
+        }
+        func owner(_ ref: OwnerRef, allowJob: Bool = true, jobs: [GncGUID: Job] = [:]) -> BusinessOwner? {
+            guard let guid = ref.guid else { return nil }
+            switch ref.type {
+            case "gncCustomer": return customers[guid].map { .customer($0) }
+            case "gncVendor": return vendors[guid].map { .vendor($0) }
+            case "gncEmployee": return employees[guid].map { .employee($0) }
+            case "gncJob": return allowJob ? jobs[guid].map { .job($0) } : nil
+            default: return nil
+            }
+        }
+        var jobs: [GncGUID: Job] = [:]
+        for b in jobBuilders {
+            guard let guid = b.guid, let ownr = owner(b.owner, allowJob: false) else { continue }
+            let job = Job(guid: guid, id: b.id, name: b.name, reference: b.reference,
+                          active: b.active, owner: ownr)
+            jobs[guid] = job; book.addJob(job)
+        }
+        var splitsByGUID: [GncGUID: Split] = [:]
+        for txn in book.transactions { for s in txn.splits { splitsByGUID[s.guid] = s } }
+        var lots: [GncGUID: Lot] = [:]
+        for b in lotBuilders {
+            guard let guid = b.guid else { continue }
+            let lot = Lot(guid: guid, account: account(b.accountGUID), title: b.title,
+                          notes: b.notes, isClosed: b.closed, kvp: b.kvp)
+            lots[guid] = lot; book.addLot(lot)
+        }
+        for (splitGUID, lotGUID) in splitLotGUID {
+            if let split = splitsByGUID[splitGUID], let lot = lots[lotGUID] { lot.add(split) }
+        }
+        var entriesByInvoice: [GncGUID: [InvoiceEntry]] = [:]
+        for b in entryBuilders {
+            guard let invGUID = b.invoiceGUID else { continue }
+            entriesByInvoice[invGUID, default: []].append(InvoiceEntry(
+                guid: b.guid ?? .random(), date: b.date ?? Date(), entryDescription: b.desc,
+                action: b.action, account: account(b.accountGUID), quantity: b.qty, price: b.price,
+                discount: b.discount, discountType: b.discType == "VALUE" ? .value : .percentage,
+                taxable: b.taxable, taxIncluded: b.taxIncluded,
+                taxTable: b.taxTableGUID.flatMap { tables[$0] }))
+        }
+        for b in invoiceBuilders {
+            guard let guid = b.guid, let ownr = owner(b.owner, jobs: jobs) else { continue }
+            let kind: InvoiceKind
+            switch ownr {
+            case .customer: kind = .invoice
+            case .vendor: kind = .bill
+            case .employee: kind = .voucher
+            case .job(let j): kind = j.owner.type == .customer ? .invoice : .bill
+            }
+            let invoice = Invoice(guid: guid, id: b.id, kind: kind, owner: ownr,
+                                  dateOpened: b.opened ?? Date(), datePosted: b.posted,
+                                  terms: b.termsGUID.flatMap { terms[$0] }, billingID: b.billingID,
+                                  notes: b.notes, currency: currency(b.currencySpace, b.currencyID),
+                                  entries: entriesByInvoice[guid] ?? [], active: b.active)
+            invoice.postedAccount = account(b.postAccountGUID)
+            invoice.postedTransaction = b.postTxnGUID.flatMap { g in book.transactions.first { $0.guid == g } }
+            invoice.postedLot = b.postLotGUID.flatMap { lots[$0] }
+            if invoice.datePosted != nil, let posted = invoice.datePosted {
+                invoice.dueDate = invoice.terms?.dueDate(postedOn: posted)
+            }
+            book.addInvoice(invoice)
+        }
     }
 }
 
@@ -569,6 +845,7 @@ private struct SplitBuilder {
     var memo = ""
     var action = ""
     var kvp = KvpFrame()
+    var lotGUID: GncGUID?
 }
 
 private struct PriceBuilder {
@@ -581,4 +858,44 @@ private struct PriceBuilder {
     var value: Decimal?
     var source = ""
     var type = ""
+}
+
+// MARK: Business builders
+
+struct OwnerRef { var type: String?; var guid: GncGUID? }
+
+struct BillTermBuilder {
+    var guid: GncGUID?; var name = ""; var desc = ""; var kind = "days"
+    var dueDays = 0; var discDays = 0; var discount: Decimal = 0; var invisible = false
+}
+struct TaxEntryBuilder { var accountGUID: GncGUID?; var type = "PERCENT"; var amount: Decimal = 0 }
+struct TaxTableBuilder {
+    var guid: GncGUID?; var name = ""; var invisible = false; var entries: [TaxEntryBuilder] = []
+}
+struct PartyBuilder {   // customer / vendor / employee share these
+    var guid: GncGUID?; var name = ""; var id = ""; var notes = ""; var active = true
+    var address = BusinessAddress(); var currencySpace: String?; var currencyID: String?
+    var termsGUID: GncGUID?; var taxTableGUID: GncGUID?; var useTaxTable = false
+    var discount: Decimal = 0; var credit: Decimal = 0; var rate: Decimal = 0
+    var creditAccountGUID: GncGUID?
+}
+struct JobBuilder {
+    var guid: GncGUID?; var id = ""; var name = ""; var reference = ""; var active = true
+    var owner = OwnerRef()
+}
+struct InvoiceBuilder {
+    var guid: GncGUID?; var id = ""; var owner = OwnerRef(); var opened: Date?; var posted: Date?
+    var termsGUID: GncGUID?; var billingID = ""; var notes = ""; var active = true
+    var currencySpace: String?; var currencyID: String?
+    var postAccountGUID: GncGUID?; var postTxnGUID: GncGUID?; var postLotGUID: GncGUID?
+}
+struct EntryBuilder {
+    var guid: GncGUID?; var date: Date?; var desc = ""; var action = ""; var qty: Decimal = 1
+    var accountGUID: GncGUID?; var price: Decimal = 0; var discount: Decimal = 0
+    var discType = "PERCENT"; var taxable = false; var taxIncluded = false
+    var taxTableGUID: GncGUID?; var invoiceGUID: GncGUID?
+}
+struct LotBuilder {
+    var guid: GncGUID?; var accountGUID: GncGUID?; var title = ""; var notes = ""; var closed = false
+    var kvp = KvpFrame()
 }

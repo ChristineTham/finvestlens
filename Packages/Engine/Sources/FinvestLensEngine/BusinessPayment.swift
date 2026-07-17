@@ -44,6 +44,7 @@ public extension Book {
 
         let txn = Transaction(currency: bankAccount.commodity, datePosted: date,
                               description: owner.displayName)
+        txn.kvp["trans-txn-type"] = .string("P")   // GnuCash payment marker
         txn.addSplit(account: bankAccount, value: receivable ? amount : -amount, memo: memo)
             .action = "Payment"
 
@@ -65,7 +66,9 @@ public extension Book {
                                      value: receivable ? -remaining : remaining, memo: memo)
             split.action = "Payment"
             let lot = Lot(account: postingAccount, title: "Pre-payment")
-            lot.kvp[Self.paymentOwnerKey] = .string(owner.guid.hexString)
+            lot.kvp["gncOwner"] = .frame(KvpFrame([
+                "owner-type": .int64(Self.gncOwnerType(owner)),
+                "owner-guid": .guid(owner.guid)]))
             lot.add(split)
             addLot(lot)
         }
@@ -73,9 +76,6 @@ public extension Book {
         addTransaction(txn)
         return txn
     }
-
-    /// The kvp key tying a pre-payment lot to its owner.
-    static let paymentOwnerKey = "gncOwner/owner-guid"
 }
 
 // MARK: - Aging

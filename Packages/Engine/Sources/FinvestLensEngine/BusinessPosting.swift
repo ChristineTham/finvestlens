@@ -20,8 +20,15 @@ public extension Book {
     /// or *owed by us* (a bill or voucher).
     private static func isReceivable(_ kind: InvoiceKind) -> Bool { kind == .invoice }
 
-    /// The transaction kvp key that ties a posting back to its invoice.
-    static let invoiceGuidKey = "gncInvoice/invoice-guid"
+    /// GnuCash's `GncOwnerType` integer for a party, stored on business lots.
+    static func gncOwnerType(_ owner: BusinessOwner) -> Int64 {
+        switch owner.type {
+        case .customer: 2   // GNC_OWNER_CUSTOMER
+        case .job: 3        // GNC_OWNER_JOB
+        case .vendor: 4     // GNC_OWNER_VENDOR
+        case .employee: 5   // GNC_OWNER_EMPLOYEE
+        }
+    }
 
     /// Posts `invoice` to `account` (an A/R for an invoice, A/P for a bill or
     /// voucher), creating the balanced transaction and its settlement lot, and
@@ -46,7 +53,10 @@ public extension Book {
         let txn = Transaction(currency: invoice.currency, datePosted: postDate,
                               description: invoice.owner.displayName)
         txn.number = invoice.id
-        txn.kvp[Self.invoiceGuidKey] = .string(invoice.guid.hexString)
+        // GnuCash marks an invoice posting so its business reports recognise it
+        // and the register keeps it read-only until unposted.
+        txn.kvp["trans-txn-type"] = .string("I")
+        txn.kvp["trans-read-only"] = .string("Generated from an invoice. Try unposting the invoice.")
 
         let total = invoice.total
         // The receivable/payable leg: +total on an A/R (asset up), −total on an
@@ -67,9 +77,13 @@ public extension Book {
 
         addTransaction(txn)
 
-        // The lot the posting and its payments settle in.
+        // The lot the posting and its payments settle in. GnuCash's aging and
+        // owner reports find the invoice and its owner through these lot slots.
         let lot = Lot(account: account, title: invoice.id)
-        lot.kvp[Self.invoiceGuidKey] = .string(invoice.guid.hexString)
+        lot.kvp["gncInvoice"] = .frame(KvpFrame(["invoice-guid": .guid(invoice.guid)]))
+        lot.kvp["gncOwner"] = .frame(KvpFrame([
+            "owner-type": .int64(Self.gncOwnerType(invoice.owner)),
+            "owner-guid": .guid(invoice.owner.guid)]))
         lot.add(arSplit)
         addLot(lot)
 

@@ -9,6 +9,7 @@
 import Foundation
 import Testing
 import FinvestLensEngine
+import FinvestLensInterchange
 @testable import FinvestLensUI
 
 private func dec(_ s: String) -> Decimal { Decimal(string: s)! }
@@ -60,6 +61,30 @@ struct BusinessModelFlowTests {
         let aging = model.aging(receivable: true)
         #expect(aging.first?.name == "Acme")
         #expect(aging.first?.buckets.total == dec("50"))
+    }
+
+    @Test("The whole-book GnuCash-XML snapshot (used by undo) preserves business")
+    func wholeBookSnapshotRoundTrips() throws {
+        let url = tempURL()
+        let model = AppModel()
+        try model.newDocument(at: url)
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        let ar = try #require(model.addAccount(name: "A/R", type: .receivable))
+        let sales = try #require(model.addAccount(name: "Sales", type: .income))
+        let customer = try #require(model.addCustomer(id: "C1", name: "Acme"))
+        let invoice = try #require(model.createInvoice(
+            id: "INV-1", kind: .invoice, ownerType: .customer, ownerID: customer,
+            lines: [.init(accountID: sales, price: dec("100"))]))
+        #expect(model.postInvoice(invoice, to: ar))
+
+        // This is exactly what whole-book undo snapshots and restores.
+        let snapshot = try #require(model.gnuCashExportData())
+        let restored = try FinvestLensInterchange.GnuCashXMLImporter.importBook(from: snapshot).book
+        #expect(restored.customers.first?.name == "Acme")
+        #expect(restored.invoices.first?.isPosted == true)
+        // No tax table on this line, so the $100 invoice is fully outstanding.
+        #expect(restored.outstanding(restored.invoices.first!) == dec("100"))
     }
 
     @Test("A created invoice persists on save and reloads")

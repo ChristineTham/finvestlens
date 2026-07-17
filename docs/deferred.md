@@ -179,7 +179,7 @@ remaining phases.** Every GnuCash Business-menu item, mapped:
 | **Reports ▸ Business ▸ Receivable/Payable Aging** | **engine done**, report UI todo | `aging(forOwner:)`, `agingByOwner(receivable:)` — 0-30/31-60/61-90/91+ buckets; 2 tests |
 | Reports ▸ Business ▸ Customer/Vendor/Employee Report, Customer Summary | engine data ready, report UI todo | built from invoices + payments + aging |
 | Printable / Tax / Australian Tax Invoice | todo | render an `Invoice` through the report scaffold + PDF |
-| **Import** business objects from GnuCash (`FR-IMP-05`) + XML export round-trip | todo (interop) | the `GncCustomer/Vendor/Employee/Job/Invoice/Entry/BillTerm/TaxTable` + owner + lot elements — porting.md's round-trip priority |
+| **GnuCash-XML round-trip** of business objects (`FR-IMP-05`/`FR-EXP`) | **built + tested** | `GncCustomer/Vendor/Employee/Job/Invoice/Entry/BillTerm/TaxTable`, owners, addresses, `<act:lots>` and `<split:lot>`, and the business KVP slots (`gncInvoice`/`gncOwner`/`trans-txn-type`). Export→import preserves the whole graph incl. the posted lot and outstanding balance (2 round-trip tests). **GnuCash 5.16 opens our exported file cleanly and processes the invoice postings' financials** — Customer Summary shows the exact $3,500 of sales. Remaining: GnuCash's *own* aging/summary reports attribute those postings to "No Customer" — the KVP keys are confirmed correct against the engine binary, so the last mile is a structural lot↔owner reconstruction detail that needs the GnuCash C source to finish. |
 
 Engine coverage so far: object model + entry/invoice arithmetic (pre-tax
 discount, percentage & flat tax, grouped by account), A/R–A/P posting via lots,
@@ -187,16 +187,16 @@ payments, aging — all identity-verified. The `AppModel` bridge
 (`AppModel+Business.swift`) exposes create/post/pay/aging as undoable edits and
 is flow-tested end to end; business objects persist through save/reload (SQLite).
 
-**Known limitation found while wiring the app model:** whole-book undo snapshots
-via GnuCash-XML export (`editingWholeBook` → `gnuCashExportData`), which does not
-serialise business objects yet — so a business edit is *not* undoable and the
-undo can leave the graph inconsistent. Fixing this rides on the same
-GnuCash-XML business round-trip; until then, business mutations should either be
-excluded from that undo path or snapshot through the SQLite store. Save is
-unaffected (it goes through the SQLite store, which does cover business).
+**Undo now works.** The whole-book undo snapshots via GnuCash-XML export
+(`editingWholeBook` → `gnuCashExportData`); now that business objects are in
+that round-trip, a business edit is undoable — verified by round-tripping the
+exact whole-book snapshot undo uses (customer + posted invoice + outstanding
+survive).
 
-Next: a GnuCash business book for a numeric cross-check, the GnuCash-XML
-round-trip (which also fixes undo), then the Business menu, editors and reports.
+Next: the Business menu, editors and reports (the report surfaces can reuse the
+`aging`/`agingByOwner` engine data), and — for a to-the-cent numeric
+cross-check — the last-mile GnuCash lot↔owner reconstruction so GnuCash's own
+aging report attributes our postings.
 
 ## Usability review (July 2026)
 

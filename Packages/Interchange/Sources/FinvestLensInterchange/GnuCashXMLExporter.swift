@@ -41,7 +41,21 @@ public enum GnuCashXMLExporter {
              xmlns:split="http://www.gnucash.org/XML/split"
              xmlns:slot="http://www.gnucash.org/XML/slot"
              xmlns:price="http://www.gnucash.org/XML/price"
-             xmlns:ts="http://www.gnucash.org/XML/ts">
+             xmlns:ts="http://www.gnucash.org/XML/ts"
+             xmlns:lot="http://www.gnucash.org/XML/lot"
+             xmlns:addr="http://www.gnucash.org/XML/addr"
+             xmlns:billterm="http://www.gnucash.org/XML/billterm"
+             xmlns:bt-days="http://www.gnucash.org/XML/bt-days"
+             xmlns:bt-prox="http://www.gnucash.org/XML/bt-prox"
+             xmlns:cust="http://www.gnucash.org/XML/cust"
+             xmlns:vendor="http://www.gnucash.org/XML/vendor"
+             xmlns:employee="http://www.gnucash.org/XML/employee"
+             xmlns:entry="http://www.gnucash.org/XML/entry"
+             xmlns:invoice="http://www.gnucash.org/XML/invoice"
+             xmlns:job="http://www.gnucash.org/XML/job"
+             xmlns:owner="http://www.gnucash.org/XML/owner"
+             xmlns:taxtable="http://www.gnucash.org/XML/taxtable"
+             xmlns:tte="http://www.gnucash.org/XML/tte">
         <gnc:count-data cd:type="book">1</gnc:count-data>
         <gnc:book version="2.0.0">
         <book:id type="guid">\(book.guid.hexString)</book:id>
@@ -52,9 +66,19 @@ public enum GnuCashXMLExporter {
                           container: "book:slots", indent: "")
 
         let accounts = [book.rootAccount] + book.rootAccount.descendants
+        // Lots keyed by their account, and each split's owning lot, so lots nest
+        // under their account and splits carry a `<split:lot>` back-reference.
+        var lotsByAccount: [ObjectIdentifier: [Lot]] = [:]
+        var lotBySplit: [GncGUID: GncGUID] = [:]
+        for lot in book.lots {
+            if let account = lot.account { lotsByAccount[ObjectIdentifier(account), default: []].append(lot) }
+            for split in lot.splits { lotBySplit[split.guid] = lot.guid }
+        }
+
         out += "<gnc:count-data cd:type=\"commodity\">\(book.commodities.count)</gnc:count-data>\n"
         out += "<gnc:count-data cd:type=\"account\">\(accounts.count)</gnc:count-data>\n"
         out += "<gnc:count-data cd:type=\"transaction\">\(book.transactions.count)</gnc:count-data>\n"
+        out += businessCountData(book)
 
         for commodity in book.commodities {
             out += commodityBlock(commodity)
@@ -63,11 +87,13 @@ public enum GnuCashXMLExporter {
             out += priceDBBlock(book.prices)
         }
         for account in accounts {
-            out += accountBlock(account)
+            out += accountBlock(account, lots: lotsByAccount[ObjectIdentifier(account)] ?? [])
         }
         for transaction in book.transactions {
-            out += transactionBlock(transaction)
+            out += transactionBlock(transaction, lotBySplit: lotBySplit)
         }
+
+        out += businessBlocks(book)
 
         out += "</gnc:book>\n</gnc-v2>\n"
         return out
@@ -124,7 +150,7 @@ public enum GnuCashXMLExporter {
         return block
     }
 
-    private static func accountBlock(_ account: Account) -> String {
+    private static func accountBlock(_ account: Account, lots: [Lot] = []) -> String {
         var block = "<gnc:account version=\"2.0.0\">\n"
         block += "  <act:name>\(escape(account.name))</act:name>\n"
         block += "  <act:id type=\"guid\">\(account.guid.hexString)</act:id>\n"
@@ -149,11 +175,33 @@ public enum GnuCashXMLExporter {
         if let parent = account.parent {
             block += "  <act:parent type=\"guid\">\(parent.guid.hexString)</act:parent>\n"
         }
+        block += lotsBlock(lots)
         block += "</gnc:account>\n"
         return block
     }
 
-    private static func transactionBlock(_ transaction: Transaction) -> String {
+    /// The account's business lots (A/R / A/P), each with its title and closed
+    /// flag carried as GnuCash slots.
+    private static func lotsBlock(_ lots: [Lot]) -> String {
+        guard !lots.isEmpty else { return "" }
+        var block = "  <act:lots>\n"
+        for lot in lots {
+            block += "    <gnc:lot version=\"2.0.0\">\n"
+            block += "      <lot:id type=\"guid\">\(lot.guid.hexString)</lot:id>\n"
+            var slots: [(String, KvpValue)] = []
+            if !lot.title.isEmpty { slots.append(("title", .string(lot.title))) }
+            if !lot.notes.isEmpty { slots.append(("notes", .string(lot.notes))) }
+            if lot.isClosed { slots.append(("closed", .int64(1))) }
+            slots += lot.kvp.slots.sorted { $0.key < $1.key }
+            block += slotsBlock(slots, container: "lot:slots", indent: "      ")
+            block += "    </gnc:lot>\n"
+        }
+        block += "  </act:lots>\n"
+        return block
+    }
+
+    private static func transactionBlock(_ transaction: Transaction,
+                                         lotBySplit: [GncGUID: GncGUID] = [:]) -> String {
         var block = "<gnc:transaction version=\"2.0.0\">\n"
         block += "  <trn:id type=\"guid\">\(transaction.guid.hexString)</trn:id>\n"
         block += "  <trn:currency>\n"
@@ -172,14 +220,16 @@ public enum GnuCashXMLExporter {
         block += slotsBlock(slotEntries, container: "trn:slots", indent: "  ")
         block += "  <trn:splits>\n"
         for split in transaction.splits {
-            block += splitBlock(split, currencyFraction: transaction.currency.smallestFraction)
+            block += splitBlock(split, currencyFraction: transaction.currency.smallestFraction,
+                                lotGUID: lotBySplit[split.guid])
         }
         block += "  </trn:splits>\n"
         block += "</gnc:transaction>\n"
         return block
     }
 
-    private static func splitBlock(_ split: Split, currencyFraction: Int) -> String {
+    private static func splitBlock(_ split: Split, currencyFraction: Int,
+                                   lotGUID: GncGUID? = nil) -> String {
         let quantityFraction = split.account?.commodity.smallestFraction ?? currencyFraction
         var block = "    <trn:split>\n"
         block += "      <split:id type=\"guid\">\(split.guid.hexString)</split:id>\n"
@@ -195,6 +245,9 @@ public enum GnuCashXMLExporter {
         if let account = split.account {
             block += "      <split:account type=\"guid\">\(account.guid.hexString)</split:account>\n"
         }
+        if let lotGUID {
+            block += "      <split:lot type=\"guid\">\(lotGUID.hexString)</split:lot>\n"
+        }
         block += slotsBlock(split.kvp.slots.sorted { $0.key < $1.key },
                             container: "split:slots", indent: "      ")
         block += "    </trn:split>\n"
@@ -203,7 +256,7 @@ public enum GnuCashXMLExporter {
 
     /// Emits a `<…:slots>` container for the given entries (sorted by the
     /// caller for deterministic output), or nothing when empty.
-    private static func slotsBlock(_ entries: [(String, KvpValue)],
+    static func slotsBlock(_ entries: [(String, KvpValue)],
                                    container: String, indent: String) -> String {
         guard !entries.isEmpty else { return "" }
         var block = "\(indent)<\(container)>\n"
@@ -262,7 +315,7 @@ public enum GnuCashXMLExporter {
 
     // MARK: Helpers
 
-    private static func namespace(_ namespace: CommodityNamespace) -> String {
+    static func namespace(_ namespace: CommodityNamespace) -> String {
         switch namespace {
         case .currency: return "CURRENCY"
         case .security(let name): return name
@@ -275,7 +328,7 @@ public enum GnuCashXMLExporter {
     /// quantities routinely carry more decimals than the currency fraction).
     /// A value that can't be represented in Int64 falls back to rounding at
     /// `fallbackFraction` (the commodity SCU).
-    private static func rational(_ value: Decimal, fallbackFraction: Int) -> String {
+    static func rational(_ value: Decimal, fallbackFraction: Int) -> String {
         var scaled = value
         var denominator: Int64 = 1
         while true {
@@ -334,7 +387,7 @@ public enum GnuCashXMLExporter {
     /// Escapes element text content. Only `& < >` need escaping there —
     /// quotes and apostrophes stay literal, matching GnuCash's own output
     /// (we never emit user text inside attribute values).
-    private static func escape(_ text: String) -> String {
+    static func escape(_ text: String) -> String {
         var result = ""
         result.reserveCapacity(text.count)
         for character in text {
