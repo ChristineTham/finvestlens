@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		FE00000000000000000000B1 /* FinvestLensUI in Frameworks */ = {isa = PBXBuildFile; productRef = FE00000000000000000000D1 /* FinvestLensUI */; };
+		FEAA0000000000000000A10D /* FinvestLensShared in Frameworks */ = {isa = PBXBuildFile; productRef = FEAA0000000000000000A10C /* FinvestLensShared */; };
+		FEAA0000000000000000A10F /* FinvestLensWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FEAA0000000000000000A101 /* FinvestLensWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -25,12 +27,34 @@
 			remoteGlobalIDString = 878083613002E1FF001776CE;
 			remoteInfo = finvestlens;
 		};
+		FEAA0000000000000000A111 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8780835A3002E1FF001776CE /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FEAA0000000000000000A104;
+			remoteInfo = FinvestLensWidgets;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		FEAA0000000000000000A10E /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				FEAA0000000000000000A10F /* FinvestLensWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		878083623002E1FF001776CE /* finvestlens.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = finvestlens.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		878083723002E200001776CE /* finvestlensTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = finvestlensTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8780837C3002E200001776CE /* finvestlensUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = finvestlensUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		FEAA0000000000000000A101 /* FinvestLensWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FinvestLensWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -40,6 +64,13 @@
 				Info.plist,
 			);
 			target = 878083613002E1FF001776CE /* finvestlens */;
+		};
+		FEAA0000000000000000A103 /* Exceptions for "FinvestLensWidgets" folder in "FinvestLensWidgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = FEAA0000000000000000A104 /* FinvestLensWidgets */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -60,6 +91,14 @@
 		8780837F3002E200001776CE /* finvestlensUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = finvestlensUITests;
+			sourceTree = "<group>";
+		};
+		FEAA0000000000000000A102 /* FinvestLensWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				FEAA0000000000000000A103 /* Exceptions for "FinvestLensWidgets" folder in "FinvestLensWidgets" target */,
+			);
+			path = FinvestLensWidgets;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -87,6 +126,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FEAA0000000000000000A106 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FEAA0000000000000000A10D /* FinvestLensShared in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -106,6 +153,7 @@
 				878083623002E1FF001776CE /* finvestlens.app */,
 				878083723002E200001776CE /* finvestlensTests.xctest */,
 				8780837C3002E200001776CE /* finvestlensUITests.xctest */,
+				FEAA0000000000000000A101 /* FinvestLensWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -120,10 +168,12 @@
 				8780835E3002E1FF001776CE /* Sources */,
 				8780835F3002E1FF001776CE /* Frameworks */,
 				878083603002E1FF001776CE /* Resources */,
+				FEAA0000000000000000A10E /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				FEAA0000000000000000A110 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				878083643002E1FF001776CE /* finvestlens */,
@@ -182,6 +232,29 @@
 			productReference = 8780837C3002E200001776CE /* finvestlensUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		FEAA0000000000000000A104 /* FinvestLensWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FEAA0000000000000000A108 /* Build configuration list for PBXNativeTarget "FinvestLensWidgets" */;
+			buildPhases = (
+				FEAA0000000000000000A105 /* Sources */,
+				FEAA0000000000000000A106 /* Frameworks */,
+				FEAA0000000000000000A107 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				FEAA0000000000000000A102 /* FinvestLensWidgets */,
+			);
+			name = FinvestLensWidgets;
+			packageProductDependencies = (
+				FEAA0000000000000000A10C /* FinvestLensShared */,
+			);
+			productName = FinvestLensWidgets;
+			productReference = FEAA0000000000000000A101 /* FinvestLensWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -193,6 +266,9 @@
 				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					878083613002E1FF001776CE = {
+						CreatedOnToolsVersion = 26.6;
+					};
+					FEAA0000000000000000A104 = {
 						CreatedOnToolsVersion = 26.6;
 					};
 					878083713002E200001776CE = {
@@ -220,11 +296,13 @@
 			projectRoot = "";
 			packageReferences = (
 				FE00000000000000000000C1 /* XCLocalSwiftPackageReference "Packages/FeatureUI" */,
+				FEAA0000000000000000A10B /* XCLocalSwiftPackageReference "Packages/Shared" */,
 			);
 			targets = (
 				878083613002E1FF001776CE /* finvestlens */,
 				878083713002E200001776CE /* finvestlensTests */,
 				8780837B3002E200001776CE /* finvestlensUITests */,
+				FEAA0000000000000000A104 /* FinvestLensWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -245,6 +323,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		8780837A3002E200001776CE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FEAA0000000000000000A107 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -275,6 +360,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FEAA0000000000000000A105 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -287,6 +379,11 @@
 			isa = PBXTargetDependency;
 			target = 878083613002E1FF001776CE /* finvestlens */;
 			targetProxy = 8780837D3002E200001776CE /* PBXContainerItemProxy */;
+		};
+		FEAA0000000000000000A110 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FEAA0000000000000000A104 /* FinvestLensWidgets */;
+			targetProxy = FEAA0000000000000000A111 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -611,6 +708,72 @@
 			};
 			name = Release;
 		};
+		FEAA0000000000000000A109 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = FinvestLensWidgets/FinvestLensWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RPL5R637DS;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FinvestLensWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = FinvestLens;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks @executable_path/../../Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks @executable_path/../../../../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hellotham.finvestlens.FinvestLensWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 26.5;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		FEAA0000000000000000A10A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = FinvestLensWidgets/FinvestLensWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RPL5R637DS;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FinvestLensWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = FinvestLens;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks @executable_path/../../Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks @executable_path/../../../../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.hellotham.finvestlens.FinvestLensWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 26.5;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -650,6 +813,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		FEAA0000000000000000A108 /* Build configuration list for PBXNativeTarget "FinvestLensWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FEAA0000000000000000A109 /* Debug */,
+				FEAA0000000000000000A10A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -657,12 +829,20 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/FeatureUI;
 		};
+		FEAA0000000000000000A10B /* XCLocalSwiftPackageReference "Packages/Shared" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Shared;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		FE00000000000000000000D1 /* FinvestLensUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = FinvestLensUI;
+		};
+		FEAA0000000000000000A10C /* FinvestLensShared */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = FinvestLensShared;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
