@@ -103,7 +103,12 @@ extension AppModel {
             let transaction = Transaction(currency: target.commodity, datePosted: staged.date,
                                           number: staged.reference,
                                           description: name.isEmpty ? rawName : name)
-            transaction.addSplit(account: target, value: staged.amount, memo: staged.memo)
+            let targetSplit = transaction.addSplit(account: target, value: staged.amount, memo: staged.memo)
+            // Record the bank's FITID in the split's `online_id` slot, GnuCash's
+            // convention, so a re-import (here or in GnuCash) recognises it.
+            if !staged.reference.isEmpty {
+                targetSplit.kvp["online_id"] = .string(staged.reference)
+            }
             transaction.addSplit(account: destination, value: -staged.amount)
             created.append(transaction)
         }

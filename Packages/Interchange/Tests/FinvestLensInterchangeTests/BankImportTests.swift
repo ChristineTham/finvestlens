@@ -170,4 +170,22 @@ struct ImportMatcherTests {
         #expect(!results[1].isDuplicate)
         #expect(results[1].suggestedAccountID == nil)
     }
+
+    @Test("A matching FITID in a split's online_id is a definitive duplicate")
+    func onlineIDDedup() {
+        let (book, bank, _) = makeBook()
+        // Tag the existing bank split with an OFX FITID (GnuCash's online_id).
+        let bankSplit = book.splits(for: bank).first!
+        bankSplit.kvp["online_id"] = .string("FIT-12345")
+
+        // A re-imported row with the same FITID but a wildly different amount
+        // and a date months away — GnuCash still dedupes it on online_id.
+        let offAmount = StagedTransaction(date: day(2026, 6, 30),
+            amount: Decimal(string: "-999")!, payee: "SomethingElse", reference: "FIT-12345")
+        let fresh = StagedTransaction(date: day(2026, 6, 30),
+            amount: Decimal(string: "-77")!, payee: "New", reference: "FIT-99999")
+        let results = ImportMatcher.match([offAmount, fresh], into: bank, book: book)
+        #expect(results[0].isDuplicate)          // online_id definitive
+        #expect(!results[1].isDuplicate)         // different id + amount
+    }
 }

@@ -76,11 +76,19 @@ public enum ImportMatcher {
             let target = target.commodity.round(row.amount)
             for split in targetSplits {
                 guard let transaction = split.transaction else { continue }
-                if !row.reference.isEmpty,
-                   transaction.number == row.reference
-                    || split.action == row.reference
-                    || split.memo.contains(row.reference) {
-                    return split
+                if !row.reference.isEmpty {
+                    // The OFX/HBCI FITID GnuCash records in the split's
+                    // `online_id` KVP slot is a definitive duplicate match
+                    // (xaccSplitGetOnlineID); check it first.
+                    if case let .string(onlineID)? = split.kvp["online_id"],
+                       onlineID == row.reference {
+                        return split
+                    }
+                    if transaction.number == row.reference
+                        || split.action == row.reference
+                        || split.memo.contains(row.reference) {
+                        return split
+                    }
                 }
                 if split.account?.commodity.round(split.quantity) == target {
                     // Check the statement date too: when a transaction's
