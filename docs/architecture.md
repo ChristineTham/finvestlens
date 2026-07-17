@@ -266,13 +266,31 @@ Framework: **Swift Testing** for new tests; XCTest where needed for UI/perf harn
 
 ---
 
-## 9. Recommended Swift packages
+## 9. Dependencies
 
-| Package | Use | Phase | License | Notes |
-|---|---|---|---|---|
-| [groue/GRDB.swift](https://github.com/groue/GRDB.swift) | **Native document store** (SQLite) | P1 | MIT | The single external dependency. |
+**External SPM dependencies — exactly one.**
 
-**Native / no dependency:** money (`Decimal`), XML read (`XMLParser`), gzip (Apple Compression), CSV/QIF/OFX parsers (hand-written; no Swift package exists for QIF/OFX), charts (Swift Charts), coordinated file IO (`NSFileCoordinator`/`NSFilePresenter`/`NSFileVersion`), tests (Swift Testing), quotes (`URLSession`).
+| Package | Use | License |
+|---|---|---|
+| [groue/GRDB.swift](https://github.com/groue/GRDB.swift) (7.x) | The native SQLite document store; the `Persistence` target's only external dependency | MIT (GPLv3-compatible) |
+
+Everything else is first-party Apple frameworks or hand-written native code — money (`Decimal`), GnuCash XML read (`XMLParser`) and gzip (Apple **Compression**), the CSV/QIF/OFX parsers (hand-written; no maintained Swift package exists for QIF/OFX), coordinated file IO (`NSFileCoordinator`/`NSFilePresenter`/`NSFileVersion`), the file fingerprint (**CryptoKit** SHA-256), quotes (`URLSession`), Keychain (**Security**), and tests (**Swift Testing**).
+
+**Apple frameworks used** (by area): `SwiftUI` + `AppKit`/`UIKit` (UI), `Swift Charts` (`Charts`), `FoundationModels` + `Vision` + `PDFKit` (Intelligence — §11), `AppIntents` (Shortcuts), `LocalAuthentication` (book lock), `UniformTypeIdentifiers` (the `.finvestlens` UTI), `Observation`, `CryptoKit`, `Compression`, `Security`, `CoreGraphics`.
+
+**Internal package graph** (Swift Package targets; arrows = "depends on", downward only):
+
+```
+Engine        (no dependencies — pure Swift + Foundation)
+Persistence   → Engine, GRDB
+Interchange   → Engine
+Quotes        → Engine
+Reports       → Engine
+Rules         → Engine
+Intelligence  → Engine, Interchange
+FeatureUI     → Engine, Persistence, Interchange, Reports, Rules, Quotes, Intelligence
+FinvestLensApp (macOS/iPadOS/iOS targets) → FeatureUI
+```
 
 ---
 

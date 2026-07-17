@@ -15,7 +15,7 @@ accounts, 102,706 prices, multi-currency — compared side by side with GnuCash
 deferred.md.
 
 Companions: [PRD](prd.md) · [Architecture](architecture.md) · [Plan](plan.md) ·
-[Reports study](reports.md) · [GnuCash menu parity](gnucash-menu-parity.md).
+[Deferred](deferred.md).
 
 ---
 
@@ -154,8 +154,34 @@ own figures where possible):
 
 ## Reports redesign (17 Jul 2026)
 
-The GnuCash reports audit grew into a redesign of the whole surface — see
-[reports.md](reports.md) for findings and decisions. Landed across five commits:
+The GnuCash reports audit grew into a redesign of the whole surface. The
+arithmetic was already good — every report pinned to an identity (trial-balance
+columns agree, the equity statement bridges two balance sheets, cash flow's
+in − out equals the set's net change) and verified against the reference book —
+but the *surface* had five structural problems:
+
+1. **Detached window/modal.** Reports opened in their own window (macOS) / sheet
+   (iOS); an analytics surface should live in the detail pane where the data is.
+2. **Pregeneration.** Opening Reports immediately computed the default report —
+   seconds of work on a 46k-transaction book before the user chose anything.
+3. **Recompute-in-`body`.** Reports computed inside SwiftUI `body`, so a
+   date-picker interaction recomputed a full-book report per keystroke.
+4. **O(accounts × transactions) arithmetic.** Statement reports asked each
+   account for its balance and every balance walked the whole book (~26M split
+   visits) — the same shape as the `netWorthSeries` bug.
+5. **No period vocabulary / configurations / document rendering.** Dates were
+   ad-hoc; no financial-year selector, no saved configurations (despite
+   FR-RPT-04), and plain `List` rendering that read like another register.
+
+The decisions taken: Reports is an **inline** detail-pane destination (⌘R) with
+"Open in New Window" as a secondary command; entering shows a **gallery** and
+nothing computes until a report is chosen (`.task(id: configuration)`, never in
+`body`); one parameter model (`ReportPeriod` financial-year-aware vocabulary +
+Codable `ReportConfiguration` + book-KVP favourites, honouring FR-RPT-04);
+**one-pass arithmetic** (`Book.balancesByAccount` gains date bounds); and a
+shared **document scaffold** (header, KPI callouts, chart, `Grid` tables with
+ruled totals, methodology notes, optional Apple-Intelligence commentary). It
+landed across five commits:
 
 | Item | Notes |
 |---|---|
@@ -285,10 +311,24 @@ were audited and already match GnuCash's split structure — no change.
 ## GnuCash menu parity — Tools / View gaps (18 Jul 2026)
 
 A full audit of every FinvestLens menu against GnuCash's (File → Help), with
-GnuCash open on the same book — see [gnucash-menu-parity.md](gnucash-menu-parity.md)
-for the per-item table. The audit corrected itself (three items first read as
-missing — Sort By, Filter By, Go to Date — were already implemented) and closed
-five real gaps:
+GnuCash 5.x open on the same book. The Actions / Tools / View menus (where the
+functional verbs live) were read from the running app; the File / Edit /
+Reports / Business menus were cross-referenced against the command tree in
+`finvestlens/finvestlensApp.swift`. The audit corrected itself (three items
+first read as missing — Sort By, Filter By, Go to Date — were already
+implemented) and closed five real gaps. Legend: **=** parity · **+** exceeds · **≈** near · **−** gap.
+
+**File** — New/Open/Recent (=), Save/Revert (=), Import (**+**: adds Smart PDF/AI import), Export GnuCash (=), Print via Reports (=), Properties/Settings (=), Close/Quit (=).
+**Edit** — Cut/Copy/Paste (=), Find + Find Account (**+**: saved searches, tag search), Edit/Delete Account (=), Preferences/Settings (=), Tax Report Options (=, flags round-trip via `tax-related`/`tax-US`).
+**View** — Toolbar/Status Bar (=), **Summary Bar** (=, added by this audit), Basic/Auto-Split/Journal ledger styles (=), Double Line (=), Sort By (=), Filter By (=), Open Subaccounts (=), Refresh (= automatic).
+**Transaction** — Enter/Cancel/Duplicate (=), Delete/Void (=), Add Reversing (=), Jump to other account (=), Associate File/`assoc_uri` (=), Cut/Copy/Paste txn (≈ Duplicate covers it).
+**Actions** — Transfer (=), Reconcile (=), Auto-clear (≈), Stock Split (=), View Lots (≈ cost-basis report, not a lot editor), Blank Transaction (=), Go to Date (=), Split Transaction (=), Edit Exchange Rate (≈ via Currency Transfer), Scheduled Transactions (=), Budget (**+** rollover/envelope/zero-based), Check & Repair (**+** proposes/previews/one-undo).
+**Business** — Customers/Vendors/Employees (=, in the ⇧⌘B hub), Invoices/Bills/Vouchers (=), Receivable/Payable Aging (=).
+**Reports** — Assets & Liabilities / Balance Sheet / Net Worth (=), Income & Expense (=), Investment/Portfolio (=), Business Aging + Customer Summary (=), Transaction Report (=), Print/PDF export (=).
+**Tools** — Price Database (=), Security Editor (=), General Journal (= register style), Transaction Linked Documents (=, book-wide list), Import Map Editor (≈ our Rules), Close Book (=, Period-End Close), Loan Calculator (=), Online Banking Setup (n/a — bank-file/PDF import by design).
+**Windows / Help** — single-window; Reports opens its own window (=); About + onboarding (≈, no bundled manual).
+
+The five gaps closed by the audit:
 
 | Item | Notes |
 |---|---|
@@ -297,6 +337,8 @@ five real gaps:
 | Loan Calculator (Book menu) | Fixed-rate amortisation in the engine (pure `Decimal`), payment + totals + schedule. $300k @ 6% / 30yr → $1,798.65/mo. Totals summed from the schedule so they agree to the cent. |
 | Period-End Close (Book menu) | Moves income/expense into equity as of a date, one balanced closing transaction per currency, undoable, with a per-currency preview (AUD and USD shown separately, never blended). |
 | Tax Report Options (Edit menu) | Flag income/expense accounts, assign a tax code, see the schedule. Flags stored in GnuCash's exact `tax-related` / `tax-US` slots so they round-trip. |
+
+**Intentionally not built** (rarely relevant to a personal AUD book): Import Map Editor (GnuCash's Bayesian match store — our rules engine serves the purpose), Online Banking Setup (superseded by bank-file/PDF import), and a bundled help manual. **Where FinvestLens exceeds GnuCash:** AI/PDF Smart Import, saved searches and tag search, envelope/zero-based budgets, a previewing Check & Repair with single-action undo, and the home dashboard with alerts.
 
 **Account-scoped undo (18 Jul 2026).** `updateAccount`, `moveAccount`,
 `cascadeProperties` and `setAccountTax` went through `editingWholeBook`, which

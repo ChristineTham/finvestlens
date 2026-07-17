@@ -51,7 +51,7 @@ FinvestLens is not a fork of GnuCash. It is a clean, idiomatic Swift reimplement
 - Core reports (account balances, income/expense, net worth).
 
 **Bank/financial file import** (native, reimplemented in Swift — not GnuCash's importers)
-- **CSV** import with configurable column mapping and saved profiles.
+- **CSV** import with configurable column mapping (saved mapping profiles are planned — see [deferred.md](docs/deferred.md)).
 - **QIF** (Quicken Interchange Format) import.
 - **OFX / QFX** import (OFX v1 SGML and v2 XML; bank, card, and investment statements).
 - A shared **import matcher** for duplicate detection and destination-account assignment.
