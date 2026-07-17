@@ -290,9 +290,51 @@ extension AppModel {
                                ("Expenses", breakdown.totalExpenses)],
                     lines: ranked(breakdown.expenseSlices + breakdown.incomeSlices)))
 
+        case .averageBalance:
+            let scope = configuration.accountIDs ?? defaultCashFlowAccountIDs
+            let step = configuration.step ?? .month
+            guard let report = averageBalance(accountIDs: scope, from: from, to: to,
+                                              step: step) else { return nil }
+            let average = report.overallAverage ?? 0
+            return ReportDocument(
+                title: "Average Balance",
+                periodLabel: periodLabel,
+                currencyCode: report.currencyCode,
+                kpis: [
+                    ReportKPI(label: "Average balance", amount: average),
+                    ReportKPI(label: "Total in", amount: report.totalGain),
+                    ReportKPI(label: "Total out", amount: report.totalLoss),
+                ],
+                chart: report.intervals.isEmpty ? nil : .averageBars(report.intervals),
+                sections: [
+                    ReportDocumentSection(
+                        title: "Average balance by \(step.displayName.lowercased())",
+                        rows: report.intervals.map { interval in
+                            ReportDocumentRow(label: intervalLabel(interval),
+                                              amount: interval.average)
+                        },
+                        total: ("Weighted average", average)),
+                ],
+                notes: ["Balances are sampled at each day's end; an interval's average is "
+                        + "the mean of its daily balances. Across "
+                        + "\(report.accountNames.count) account(s): "
+                        + report.accountNames.joined(separator: ", ") + ".",
+                        "Foreign-currency accounts convert at each day's rate; an account "
+                        + "with no rate contributes nothing that day."],
+                facts: ReportFactsSource(
+                    headline: [("Average balance", average), ("Total in", report.totalGain),
+                               ("Total out", report.totalLoss)],
+                    lines: report.intervals.map { (intervalLabel($0), $0.average) }))
+
         default:
             return nil
         }
+    }
+
+    /// A short label for one average-balance interval — the start date, since
+    /// intervals abut (each ends the day before the next begins).
+    private func intervalLabel(_ interval: AverageBalanceInterval) -> String {
+        interval.start.formatted(date: .abbreviated, time: .omitted)
     }
 
     // MARK: Helpers

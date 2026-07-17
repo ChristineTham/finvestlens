@@ -61,6 +61,7 @@ struct ReportDocumentSection: Identifiable {
 enum ReportDocumentChart {
     case monthlyBars([MonthlyFlow])
     case line([NetWorthPoint])
+    case averageBars([AverageBalanceInterval])
 }
 
 /// A complete report, ready to render or print.
@@ -171,6 +172,14 @@ struct ReportDocumentView: View {
                     .interpolationMethod(.monotone)
                     .foregroundStyle(.linearGradient(colors: [.accentColor.opacity(0.3), .clear],
                                                      startPoint: .top, endPoint: .bottom))
+            }
+            .frame(height: 200)
+        case .averageBars(let intervals):
+            Chart(intervals) { interval in
+                BarMark(x: .value("Period", interval.start),
+                        y: .value("Average",
+                                  NSDecimalNumber(decimal: interval.average).doubleValue))
+                    .foregroundStyle(Color.accentColor)
             }
             .frame(height: 200)
         }

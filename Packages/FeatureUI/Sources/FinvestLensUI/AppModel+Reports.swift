@@ -68,6 +68,18 @@ extension AppModel {
                                          currency: reportCurrency)
     }
 
+    /// The daily-weighted average balance of a set of accounts over a period,
+    /// sliced by interval (`FR-RPT-03`).
+    public func averageBalance(accountIDs: Set<GncGUID>, from: Date, to: Date,
+                               step: AverageBalanceStep) -> AverageBalanceReport? {
+        guard let book, !accountIDs.isEmpty else { return nil }
+        let accounts = accountIDs.compactMap { book.account(with: $0) }
+        guard !accounts.isEmpty else { return nil }
+        return FinancialReports.averageBalance(book, accounts: accounts,
+                                               currency: reportCurrency,
+                                               from: from, to: to, step: step)
+    }
+
     /// Income and spending by category and by month (`FR-RPT-03`).
     public func categoryBreakdown(from: Date, to: Date) -> CategoryBreakdown? {
         guard let book else { return nil }

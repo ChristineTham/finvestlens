@@ -24,17 +24,21 @@ public struct ReportConfiguration: Codable, Hashable, Sendable {
     public var kind: String
     public var period: ReportPeriod
     /// The account scope, for the reports that take one (cash flow,
-    /// transactions, reconciliation).
+    /// transactions, reconciliation, average balance).
     public var accountIDs: Set<GncGUID>?
     /// Tree depth, for the account summary.
     public var depth: Int?
+    /// The interval size, for the average-balance report.
+    public var step: AverageBalanceStep?
 
     public init(kind: String, period: ReportPeriod,
-                accountIDs: Set<GncGUID>? = nil, depth: Int? = nil) {
+                accountIDs: Set<GncGUID>? = nil, depth: Int? = nil,
+                step: AverageBalanceStep? = nil) {
         self.kind = kind
         self.period = period
         self.accountIDs = accountIDs
         self.depth = depth
+        self.step = step
     }
 }
 

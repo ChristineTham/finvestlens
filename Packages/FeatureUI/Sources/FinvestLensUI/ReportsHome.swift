@@ -32,6 +32,7 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
     case netWorth = "Net Worth"
     case cashFlow = "Cash Flow"
     case incomeExpense = "Income & Expense"
+    case averageBalance = "Average Balance"
     case transactions = "Transactions"
     case reconcile = "Reconciliation"
     case forecast = "Forecast"
@@ -53,7 +54,7 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
         case .balanceSheet, .incomeStatement, .equityStatement, .trialBalance,
              .accountSummary, .netWorth, .cashFlow, .incomeExpense:
             .statements
-        case .transactions, .reconcile, .forecast:
+        case .averageBalance, .transactions, .reconcile, .forecast:
             .activity
         case .portfolio, .investmentLots, .priceScatter, .capitalGains:
             .investments
@@ -62,7 +63,7 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
 
     /// The kinds rendered as documents through ``ReportDocumentView``. The
     /// rest keep their existing interactive views inside the new navigation.
-    var usesScaffold: Bool { group == .statements }
+    var usesScaffold: Bool { group == .statements || self == .averageBalance }
 
     /// Point-in-time reports read the period's *end* as their as-of date, so
     /// one period selector serves both shapes.
@@ -74,7 +75,9 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
     }
 
     var usesDepth: Bool { self == .accountSummary }
-    var usesAccounts: Bool { self == .cashFlow }
+    var usesAccounts: Bool { self == .cashFlow || self == .averageBalance }
+    /// Whether the report takes an interval size (the average-balance report).
+    var usesStep: Bool { self == .averageBalance }
 
     var icon: String {
         switch self {
@@ -86,6 +89,7 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
         case .netWorth: "chart.line.uptrend.xyaxis"
         case .cashFlow: "arrow.triangle.branch"
         case .incomeExpense: "chart.bar"
+        case .averageBalance: "chart.bar.xaxis"
         case .transactions: "list.bullet.rectangle"
         case .reconcile: "checkmark.circle"
         case .forecast: "clock.arrow.trianglehead.counterclockwise.rotate.90"
@@ -106,6 +110,7 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
         case .netWorth: "Net worth over time"
         case .cashFlow: "Where the money came from and went"
         case .incomeExpense: "Spending and income by category and month"
+        case .averageBalance: "Average balance over time, by interval"
         case .transactions: "An account's postings over a period"
         case .reconcile: "Reconciled, cleared, and outstanding"
         case .forecast: "Projected balances from scheduled transactions"
@@ -122,7 +127,8 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
         ReportConfiguration(kind: rawValue,
                             period: model.defaultReportPeriod,
                             accountIDs: nil,
-                            depth: usesDepth ? 2 : nil)
+                            depth: usesDepth ? 2 : nil,
+                            step: usesStep ? .month : nil)
     }
 }
 
@@ -396,6 +402,17 @@ struct ReportScreen: View {
             }
             if kind?.usesAccounts == true {
                 AccountScopeButton(model: model, accountIDs: $configuration.accountIDs)
+            }
+            if kind?.usesStep == true {
+                Picker("Interval", selection: Binding(
+                    get: { configuration.step ?? .month },
+                    set: { configuration.step = $0 })) {
+                    ForEach(AverageBalanceStep.allCases) { step in
+                        Text(step.displayName).tag(step)
+                    }
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
             }
             Spacer()
         }
