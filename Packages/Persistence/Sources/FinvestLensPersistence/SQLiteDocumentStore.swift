@@ -115,6 +115,122 @@ public final class SQLiteDocumentStore {
                 t.add(column: "kvp", .text)
             }
         }
+        migrator.registerMigration("v3_business") { db in
+            try db.create(table: "billterm") { t in
+                t.primaryKey("guid", .text)
+                t.column("name", .text).notNull()
+                t.column("termDescription", .text).notNull().defaults(to: "")
+                t.column("kind", .text).notNull()
+                t.column("dueDays", .integer).notNull().defaults(to: 0)
+                t.column("discountDays", .integer).notNull().defaults(to: 0)
+                t.column("discountPercent", .text).notNull().defaults(to: "0")
+                t.column("active", .boolean).notNull().defaults(to: true)
+            }
+            try db.create(table: "taxtable") { t in
+                t.primaryKey("guid", .text)
+                t.column("name", .text).notNull()
+                t.column("active", .boolean).notNull().defaults(to: true)
+            }
+            try db.create(table: "taxtable_entry") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("taxtableGuid", .text).notNull()
+                    .references("taxtable", column: "guid", onDelete: .cascade)
+                t.column("accountGuid", .text).notNull()
+                t.column("kind", .text).notNull()
+                t.column("amount", .text).notNull()
+                t.column("position", .integer).notNull().defaults(to: 0)
+            }
+            // Customers, vendors, employees share most columns; one table each.
+            for owner in ["customer", "vendor"] {
+                try db.create(table: owner) { t in
+                    t.primaryKey("guid", .text)
+                    t.column("id", .text).notNull().defaults(to: "")
+                    t.column("name", .text).notNull()
+                    t.column("address", .text)         // JSON
+                    t.column("notes", .text).notNull().defaults(to: "")
+                    t.column("active", .boolean).notNull().defaults(to: true)
+                    t.column("currencyNamespace", .text).notNull()
+                    t.column("currencyMnemonic", .text).notNull()
+                    t.column("termsGuid", .text)
+                    t.column("taxTableGuid", .text)
+                    t.column("taxTableOverride", .boolean).notNull().defaults(to: false)
+                    t.column("taxIncluded", .boolean).notNull().defaults(to: false)
+                    t.column("discountPercent", .text).notNull().defaults(to: "0")
+                    t.column("creditLimit", .text).notNull().defaults(to: "0")
+                }
+            }
+            try db.create(table: "employee") { t in
+                t.primaryKey("guid", .text)
+                t.column("id", .text).notNull().defaults(to: "")
+                t.column("username", .text).notNull()
+                t.column("address", .text)
+                t.column("notes", .text).notNull().defaults(to: "")
+                t.column("active", .boolean).notNull().defaults(to: true)
+                t.column("currencyNamespace", .text).notNull()
+                t.column("currencyMnemonic", .text).notNull()
+                t.column("hourlyRate", .text).notNull().defaults(to: "0")
+                t.column("creditAccountGuid", .text)
+            }
+            try db.create(table: "job") { t in
+                t.primaryKey("guid", .text)
+                t.column("id", .text).notNull().defaults(to: "")
+                t.column("name", .text).notNull()
+                t.column("reference", .text).notNull().defaults(to: "")
+                t.column("active", .boolean).notNull().defaults(to: true)
+                t.column("ownerType", .text).notNull()
+                t.column("ownerGuid", .text).notNull()
+            }
+            try db.create(table: "lot") { t in
+                t.primaryKey("guid", .text)
+                t.column("accountGuid", .text)
+                t.column("title", .text).notNull().defaults(to: "")
+                t.column("notes", .text).notNull().defaults(to: "")
+                t.column("isClosed", .boolean).notNull().defaults(to: false)
+                t.column("kvp", .text)
+            }
+            try db.create(table: "lot_split") { t in
+                t.column("lotGuid", .text).notNull()
+                    .references("lot", column: "guid", onDelete: .cascade)
+                t.column("splitGuid", .text).notNull()
+                t.column("position", .integer).notNull().defaults(to: 0)
+            }
+            try db.create(table: "invoice") { t in
+                t.primaryKey("guid", .text)
+                t.column("id", .text).notNull().defaults(to: "")
+                t.column("kind", .text).notNull()
+                t.column("ownerType", .text).notNull()
+                t.column("ownerGuid", .text).notNull()
+                t.column("dateOpened", .datetime).notNull()
+                t.column("datePosted", .datetime)
+                t.column("dueDate", .datetime)
+                t.column("termsGuid", .text)
+                t.column("billingID", .text).notNull().defaults(to: "")
+                t.column("notes", .text).notNull().defaults(to: "")
+                t.column("currencyNamespace", .text).notNull()
+                t.column("currencyMnemonic", .text).notNull()
+                t.column("postedAccountGuid", .text)
+                t.column("postedTxnGuid", .text)
+                t.column("postedLotGuid", .text)
+                t.column("active", .boolean).notNull().defaults(to: true)
+            }
+            try db.create(table: "invoice_entry") { t in
+                t.primaryKey("guid", .text)
+                t.column("invoiceGuid", .text).notNull()
+                    .references("invoice", column: "guid", onDelete: .cascade)
+                t.column("date", .datetime).notNull()
+                t.column("entryDescription", .text).notNull().defaults(to: "")
+                t.column("action", .text).notNull().defaults(to: "")
+                t.column("accountGuid", .text)
+                t.column("quantity", .text).notNull().defaults(to: "0")
+                t.column("price", .text).notNull().defaults(to: "0")
+                t.column("discount", .text).notNull().defaults(to: "0")
+                t.column("discountType", .text).notNull()
+                t.column("taxable", .boolean).notNull().defaults(to: false)
+                t.column("taxIncluded", .boolean).notNull().defaults(to: false)
+                t.column("taxTableGuid", .text)
+                t.column("position", .integer).notNull().defaults(to: 0)
+            }
+        }
         return migrator
     }
 
@@ -124,7 +240,10 @@ public final class SQLiteDocumentStore {
     /// the change counter, in a single transaction.
     public func write(_ book: Book) throws {
         try dbQueue.write { db in
-            for table in ["split", "txn", "account", "commodity", "price"] {
+            for table in ["split", "txn", "account", "commodity", "price",
+                          "invoice_entry", "invoice", "lot_split", "lot", "job",
+                          "customer", "vendor", "employee",
+                          "taxtable_entry", "taxtable", "billterm"] {
                 try db.execute(sql: "DELETE FROM \(table)")
             }
 
@@ -197,6 +316,8 @@ public final class SQLiteDocumentStore {
                         price.date, Serialize.decimal(price.value), price.source, price.type,
                     ])
             }
+
+            try Self.writeBusiness(book, into: db)
 
             changeCounter += 1
             try db.execute(sql: "INSERT OR REPLACE INTO meta (key, value) VALUES ('changeCounter', ?)",
@@ -308,6 +429,7 @@ public final class SQLiteDocumentStore {
             }
 
             // Transactions and their splits.
+            var splitsByGUID: [GncGUID: Split] = [:]
             var splitsByTxn: [String: [Row]] = [:]
             var groupedSplits = 0
             for row in try Row.fetchAll(db, sql: "SELECT * FROM split") {
@@ -344,6 +466,7 @@ public final class SQLiteDocumentStore {
                         kvp: Serialize.parseKvp(splitRow["kvp"])
                     )
                     txn.addSplit(split)
+                    splitsByGUID[split.guid] = split
                 }
                 book.addTransaction(txn)
                 builtTxns += 1
@@ -367,6 +490,9 @@ public final class SQLiteDocumentStore {
                 builtPrices += 1
                 reporter?.builtPrices(builtPrices)
             }
+
+            try Self.readBusiness(into: book, db: db, accounts: accountsByGUID,
+                                  splits: splitsByGUID, commodity: commodity)
 
             reporter?.finished()
             return book
