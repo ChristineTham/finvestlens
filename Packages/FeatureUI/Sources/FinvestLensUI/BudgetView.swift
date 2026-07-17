@@ -136,6 +136,8 @@ struct EditBudgetSheet: View {
 
     @State private var amounts: [GncGUID: String] = [:]
     @State private var rollovers: [GncGUID: Bool] = [:]
+    /// nil edits the flat amount (every period); an index edits that period.
+    @State private var selectedPeriod: Int?
 
     private var incomeAccounts: [AccountNode] {
         model.postableAccounts.filter { $0.typeName == "Income" }
@@ -147,6 +149,15 @@ struct EditBudgetSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Picker("Period", selection: $selectedPeriod) {
+                        Text("Every period").tag(Int?.none)
+                        ForEach(0..<budget.numPeriods, id: \.self) { p in
+                            Text("Period \(p + 1)").tag(Int?.some(p))
+                        }
+                    }
+                    .onChange(of: selectedPeriod) { _, _ in loadAmounts() }
+                }
                 if !incomeAccounts.isEmpty {
                     Section("Income") {
                         ForEach(incomeAccounts) { node in
@@ -185,14 +196,23 @@ struct EditBudgetSheet: View {
                     Button("Save") { save() }
                 }
             }
-            .onAppear {
-                for node in incomeAccounts + expenseAccounts {
-                    if let amount = budget.amount(for: node.id) {
-                        amounts[node.id] = NSDecimalNumber(decimal: amount).stringValue
-                    }
-                    rollovers[node.id] = budget.lines.first { $0.accountGUID == node.id }?.rollover ?? false
+            .onAppear(perform: loadAmounts)
+        }
+    }
+
+    private func loadAmounts() {
+        amounts = [:]
+        for node in incomeAccounts + expenseAccounts {
+            let line = budget.lines.first { $0.accountGUID == node.id }
+            if let period = selectedPeriod {
+                // Only show a value where this period has an explicit override.
+                if let amount = line?.periodAmounts[period] {
+                    amounts[node.id] = NSDecimalNumber(decimal: amount).stringValue
                 }
+            } else if let amount = line?.amount {
+                amounts[node.id] = NSDecimalNumber(decimal: amount).stringValue
             }
+            rollovers[node.id] = line?.rollover ?? false
         }
     }
 
@@ -205,12 +225,26 @@ struct EditBudgetSheet: View {
 
     private func save() {
         var updated = budget
-        updated.lines = []
-        for (id, text) in amounts {
-            if let amount = Decimal(string: text), amount != 0 {
-                updated.setAmount(amount, for: id)
-                updated.setRollover(rollovers[id] ?? false, for: id)
+        if let period = selectedPeriod {
+            // Edit only this period's overrides, preserving flat amounts and
+            // every other period.
+            for (id, text) in amounts where Decimal(string: text) != nil {
+                updated.setAmount(Decimal(string: text)!, for: id, period: period)
             }
+        } else {
+            // Flat amounts (every period), keeping any per-period overrides.
+            var byID = Dictionary(budget.lines.map { ($0.accountGUID, $0) },
+                                  uniquingKeysWith: { a, _ in a })
+            var lines: [BudgetLine] = []
+            for (id, text) in amounts {
+                guard let amount = Decimal(string: text), amount != 0 else { continue }
+                var line = byID[id] ?? BudgetLine(accountGUID: id, amount: 0)
+                line.amount = amount
+                line.rollover = rollovers[id] ?? false
+                lines.append(line)
+                byID[id] = nil
+            }
+            updated.lines = lines
         }
         model.updateBudget(updated)
         dismiss()

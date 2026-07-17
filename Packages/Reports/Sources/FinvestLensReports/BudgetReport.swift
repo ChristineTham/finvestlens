@@ -43,8 +43,10 @@ public extension FinancialReports {
     /// income statement (so expense spending is positive). For rollover lines,
     /// the unspent remainder of the immediately-preceding period of equal length
     /// is carried into the effective budget.
+    /// - Parameter period: when given, budgeted amounts use that period's value
+    ///   (GnuCash's per-period budget); `nil` uses each line's flat amount.
     static func budgetActuals(_ book: Book, budget: Budget, from: Date, to: Date,
-                              currency: Commodity) -> [BudgetActual] {
+                              currency: Commodity, period: Int? = nil) -> [BudgetActual] {
         let length = to.timeIntervalSince(from)
         let priorTo = from
         let priorFrom = from.addingTimeInterval(-length)
@@ -52,7 +54,7 @@ public extension FinancialReports {
         return budget.lines.compactMap { line -> BudgetActual? in
             guard let account = book.account(with: line.accountGUID) else { return nil }
             let actual = currency.round(displayBalance(of: account, in: book, from: from, to: to))
-            let budgeted = currency.round(line.amount)
+            let budgeted = currency.round(period.map { line.amount(inPeriod: $0) } ?? line.amount)
 
             var carryover = Decimal(0)
             if line.rollover {
