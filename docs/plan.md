@@ -7,43 +7,24 @@
 | **Scope** | The build plan: phases, workstreams, tasks, dependencies, and exit criteria |
 | **Companions** | [PRD](prd.md) · [Architecture](architecture.md) · [Porting Strategy](porting.md) · [Implemented](implemented.md) · [Deferred backlog](deferred.md) · [Money study](enhancements-msmoney.md) · [Firefly study](enhancements-firefly.md) · [Frollo study](enhancements-frollo.md) |
 
-> **Release 1.0 (P0–P6).** The engine, native document + locking, GnuCash
-> import/export, core UX, everyday finance (reconcile/scheduled/budgets/
-> reports/bank import/rules/search), investments + multi-currency + quotes,
-> and sync/dashboard/alerts/lock — with undo/redo, save-on-quit and a full
-> menu bar after the usability + HIG passes.
+This is the authoritative **delivery schedule and status record**. It sequences the requirements from the [PRD](prd.md) (`FR-*`), the architecture decisions ([`ADR-*`](architecture.md)), and the porting map ([Porting §2](porting.md)) into ten phases (P0–P9), and records where each one stands. Each phase lists its **objective, workstreams/tasks, dependencies, deliverables, exit criteria, test focus, and risks**.
 
-> **P7 Business features** (customers/vendors/employees, invoices/bills,
-> payments, aging, tax tables, business XML round-trip) are since **complete**
-> and GnuCash-verified. **P8** (extended import / bank sync) and **P9**
-> (planning & insights) remain. Everything built is recorded in
-> [implemented.md](implemented.md); everything still open — the P8/P9 work plus
-> cross-cutting infra and small completed-phase tails — is in
-> [deferred.md](deferred.md), with FR refs and a pick-up phase.
+### Phase status
 
-> **Post-1.0 (13 Jul 2026): Apple Intelligence.** A new `Intelligence` package
-> (on-device Foundation Models) adds six features — PDF statement import with
-> light reconciliation (FR-AI-01), auto-categorisation (FR-AI-02), invoice
-> splitting (FR-AI-03), dividend statements incl. franking credits (FR-AI-04),
-> budget suggestion (FR-AI-05), a forecast outlook (FR-AI-06), and Smart
-> Import (FR-AI-07): drop multiple PDFs, each is classified and routed —
-> statements reconcile, dividend statements are verified against the register
-> (franking credits checked/fixed), invoices match their transaction, split by
-> line items, and adopt the invoice date (the bank date is preserved for
-> matching). Applied invoice/dividend PDFs are stored in a configurable
-> document folder and linked to their transaction GnuCash-style (`assoc_uri`,
-> FR-AI-08). See [Architecture §11](architecture.md).
->
-> **Post-1.0 (14 Jul 2026): GnuCash fidelity.** Round-trip is now lossless
-> and verified against a real 8.5 MB book: exact rationals, verbatim KVP
-> slots on all five levels, commodity quote config, book GUID, template
-> sections excluded. **Check & Repair** (offered after import and in the
-> Book menu) removes empty transactions, houses orphan splits, and posts
-> imbalances — so exports are cleaner than the source. GnuCash **account
-> colours** render as Finder-tag-style dots in the sidebar and are editable
-> with a native colour picker.
+| Phase | Status | Notes |
+|---|---|---|
+| **P0 — Foundation** | ✅ Complete | |
+| **P1 — Native document & import** | ✅ Complete | |
+| **P2 — Core UX** | ✅ Complete | |
+| **P3 — Export & round-trip** | ✅ Complete | Lossless round-trip GnuCash-verified. |
+| **P4 — Everyday finance & bank import** | ✅ Complete | |
+| **P5 — Investments & multi-currency** | ✅ Complete | Investment reports GnuCash-verified to the cent. |
+| **P6 — Sync, dashboard, alerts & polish** | ✅ Complete | Plus the post-1.0 **Apple Intelligence** layer (FR-AI-01…08). |
+| **P7 — Business features** | ✅ Complete | Engine + persistence + XML round-trip + UI. |
+| **P8 — Extended import & bank sync** | ⬜ Not started | |
+| **P9 — Planning & insights** | ⬜ Not started | |
 
-This is the authoritative **delivery schedule**. It sequences the requirements from the [PRD](prd.md) (`FR-*`), the architecture decisions ([`ADR-*`](architecture.md)), and the porting map ([Porting §2](porting.md)) into ten releasable phases (P0–P9). Each phase lists its **objective, workstreams/tasks, dependencies, deliverables, exit criteria, test focus, and risks**.
+Phases **P0–P7 are delivered**; a set of low-priority tails deferred *within* those phases is tracked, ranked, in [deferred.md](deferred.md). **P8** and **P9** are planned but not started (detailed below). The narrative of what was built, with the audits and measurements behind it, is in [implemented.md](implemented.md).
 
 ---
 
@@ -107,7 +88,7 @@ Dependencies point downward only; `Engine` builds/tests with nothing above it (`
 **Deliverables.** `Engine` package; test suite; CI green.
 **Exit criteria.** Engine compiles alone; construct transactions in code and balances are enforced/correct (tolerant asserts); ≥90% coverage of core logic; unbalanced transactions cannot be committed.
 **Test focus.** `Money` ops with tolerance; balancing invariant; Scrub on malformed graphs.
-**Risks.** ADR-1 rounding choices (PR1) — settle per-commodity rounding mode (OD-4) here.
+**Risks.** ADR-1 rounding choices (PR1) — settle the per-commodity rounding mode here (see §17).
 
 ---
 
@@ -122,13 +103,13 @@ Dependencies point downward only; `Engine` builds/tests with nothing above it (`
 - **`FileLock`:** lock file + holder metadata + heartbeat + stale-lock detection; `NSFileCoordinator`; conflict detection on write-back. *(FR-DAT-06/07/08, ADR-8)*
 - **UTI/document type** registration for `.finvestlens` (`public.database`). *(FR-PLT-04)*
 - **GnuCash XML importer:** gzip detect (magic `1f 8b`) + zlib; `XMLParser` SAX mappers per object (commodities, accounts, transactions/splits, prices); **preserve slots + GUIDs**; import summary; run **Scrub**. *(FR-IMP-01..08, ADR-2/ADR-4)*
-- **Perf validation:** import a synthetic 100k-txn book; open/scroll/save on **local + real SMB/NFS**. *(NFR-02, OD-1/2/3)*
+- **Perf validation:** import a synthetic 100k-txn book; open/scroll/save on **local + real SMB/NFS**. *(NFR-02; §17)*
 
 **Dependencies.** P0.
 **Deliverables.** `Persistence` + `Interchange` (import half) packages; a document you can open/edit/save; GnuCash import.
 **Exit criteria.** Create/open/save a document on local **and** a network share with working single-writer locking; **discard a session** leaves the on-disk file byte-unchanged; import a real `.gnucash` file with structure/GUIDs/slots intact and Scrub clean; 100k-txn perf meets NFR-02.
 **Test focus.** Locking/write-back/discard (§14.4); import structural fidelity; migration.
-**Risks.** PR6 (NAS write-safety, scale) — the P1 network load test is the go/no-go for GRDB direct-mode vs always-working-copy (OD-2).
+**Risks.** PR6 (NAS write-safety, scale) — the P1 network load test is the go/no-go for GRDB direct-mode vs always-working-copy (§17).
 
 ---
 
@@ -264,6 +245,8 @@ Dependencies point downward only; `Engine` builds/tests with nothing above it (`
 
 ## 12. Phase P8 — Extended import & bank sync
 
+**Status.** ⬜ Not started. (Report PDF export, listed below as a P4 fallback, was delivered in P4.)
+
 **Objective.** Broader interoperability and modern online banking.
 
 **Workstreams & tasks**
@@ -279,6 +262,8 @@ Dependencies point downward only; `Engine` builds/tests with nothing above it (`
 ---
 
 ## 13. Phase P9 — Planning & insights
+
+**Status.** ⬜ Not started. (Tax-line *tagging* exists via Tax Report Options; the estimator, TXF export, planners, and insights do not.)
 
 **Objective.** The flagship planning layer.
 
@@ -341,16 +326,16 @@ Every task cites its PRD `FR-*` (or NFR/ADR). Requirement → phase mapping is t
 
 ## 17. Decision checkpoints
 
-Resolve these architecture open decisions at the phase that triggers them:
+The architecture's open decisions and their resolutions:
 
-| ADR/OD | Decision | Resolve in |
-|---|---|---|
-| OD-1 | GRDB direct vs always-working-copy at scale | P1 (100k NAS load test) |
-| OD-2 | Direct-mode on local volumes | P1 |
-| OD-3 | WAL vs DELETE journal for the working copy | P1 (crash tests) |
-| OD-4 | Per-commodity rounding mode | P0 |
-| OD-5 | Default quote providers shipped | P5 |
-| OD-6 | Target GnuCash XML schema version for export | P3 |
+| Decision | Resolution |
+|---|---|
+| Per-commodity rounding mode | ✅ Half-up per commodity fraction. |
+| WAL vs DELETE journal for the working copy | ✅ Rollback (DELETE) journal — the write-back artifact is always one self-contained file. |
+| Default quote providers shipped | ✅ Keyless Yahoo default; keyed EODHD / Alpha Vantage / Finnhub. |
+| Target GnuCash XML schema version | ✅ GnuCash v5-era (`gnc:book` 2.0.0), round-trip verified against GnuCash 5.16. |
+| Lock heartbeat interval & stale threshold | ✅ Periodic heartbeat + a stale threshold that offers Break-Lock; stable on provider drives. |
+| GRDB direct-mode vs always-working-copy at scale | ⬜ Open — always working-copy as built; the large-book validation on real SMB/NFS is the go/no-go. Tracked in [deferred.md](deferred.md). |
 
 ## 18. References
 

@@ -136,6 +136,6 @@ The GnuCash XML format is treated as an interchange specification. This is not a
 
 Exercised against a real GnuCash book — 46,553 transactions, 559 accounts, 102,706 prices, multi-currency — imported and compared side by side with GnuCash 5.16, which it matches to the cent (net worth, every account subtree, register running balances, the balance sheet, and the investment reports). Interoperability is round-trip verified: a re-export is byte-identical, and GnuCash reads FinvestLens's exported file back.
 
-Performance is measured against that book, not a synthetic one. Opening it takes ~6.3s and a register edit ~0.26s (an account edit 0.067s), down from ~26s and several seconds; the general ledger scrolls all 46k transactions with jumps to either end instant. The design behind those numbers — and what is still deliberately slow — is [architecture.md §12](docs/architecture.md#12-derived-state-and-performance).
+Performance is measured against that book, not a synthetic one. Opening it takes ~6.3s and a register edit ~0.26s (an account edit 0.067s), down from ~26s and several seconds; the general ledger scrolls all 46k transactions with jumps to either end instant. The design behind those numbers — and what is still deliberately slow — is [architecture.md §10](docs/architecture.md#10-derived-state-and-performance).
 
 Not yet released. iOS can open, create, and edit books but not import or export (a deliberate non-goal — see the PRD); there is no CI pipeline yet.

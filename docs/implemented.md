@@ -329,13 +329,13 @@ through XML export/import so dual-date duplicate detection survives a round-trip
 ## Performance work (15 Jul 2026)
 
 All measured against the reference book (46k txns / 102k prices). See
-[architecture.md §12](architecture.md#12-derived-state-and-performance) for the
+[architecture.md §10](architecture.md#10-derived-state-and-performance) for the
 design.
 
 | Was | Now | What |
 |---|---|---|
-| Opening a book blocked the main thread | isolated to a `DocumentLoader` global actor, returns `sending FinvestLensDocument` | Graph built off the main actor without making `Book` `Sendable` (§12.6). `open`/`openBook` are `async`; the root view shows "Opening <book>…"; a second click mid-load can't open a second document. |
-| `refreshAll` re-sorted every price | 0.158s → 0.041s (release) | `priceRows`/`rateRows` derived on demand behind a cache dropped in `refreshAll()`/`close()`, with a `derivedRevision` counter carrying the observation dependency (§12.5). |
+| Opening a book blocked the main thread | isolated to a `DocumentLoader` global actor, returns `sending FinvestLensDocument` | Graph built off the main actor without making `Book` `Sendable`. `open`/`openBook` are `async`; the root view shows "Opening <book>…"; a second click mid-load can't open a second document. |
+| `refreshAll` re-sorted every price | 0.158s → 0.041s (release) | `priceRows`/`rateRows` derived on demand behind a cache dropped in `refreshAll()`/`close()`, with a `derivedRevision` counter carrying the observation dependency. |
 | `netWorthSeries` = 1.7 billion split visits | 32.329s → 0.066s (~490×, debug) | Rewritten as one pass in date order carrying a running total per account. Still $3,964,362.15 to the cent. This *was* the "navigating to the Dashboard blocks" and "main-actor tail of an open" symptoms — an algorithm, not a threading problem. |
 | Whole-book undo snapshot per edit | pre-capture, transaction- and account-scoped | Each edit captures only what it changes before changing it; no baseline held between edits, so opening a book pays nothing. Register edit 5.79s → 0.26s; account edit 6.6s → 0.067s. |
 | Price lookup scanned 102k prices per call | binary-searched index, invalidated on `prices` change | Preserves the scan's exact tie-breaking (first price of the winning date). |

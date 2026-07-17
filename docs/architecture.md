@@ -2,14 +2,13 @@
 
 | | |
 |---|---|
-| **Document status** | As-built — P0–P7 complete (v1.0 was P0–P6) |
-| **Last updated** | 2026-07-18 |
-| **Companions** | [PRD](prd.md) · [Porting Strategy](porting.md) · [Implemented](implemented.md) · [Deferred](deferred.md) |
+| **Document status** | Design baseline v1.0 |
+| **Companions** | [PRD](prd.md) · [Porting Strategy](porting.md) |
 | **Scope** | Target architecture, technology choices, native file format, and how the hard problems are solved |
 
-This document evaluates implementation alternatives, recommends specific technologies and Swift packages, and defines the module layout and the **native document format**. Decisions are recorded ADR-style: **context → options → decision → rationale**.
+This document evaluates implementation alternatives, recommends specific technologies and Swift packages, and defines the module layout and the **native document format**. Decisions are recorded ADR-style: **context → options → decision → rationale**. It describes the intended design; the record of what has been built, and the measurements behind the performance choices, live in [implemented.md](implemented.md).
 
-> **v0.2 direction change.** FinvestLens is **native-first above all else**. Two consequences drive this revision: (1) money uses **Swift-native `Decimal`**, and we **do not** aim for bug-for-bug numeric parity with GnuCash — rounding discrepancies are acceptable and tests tolerate them; (2) the app is a **document-based app with its own native file format** (a single SQLite file) that can live on a NAS, with **application-level locking**. **SwiftData is dropped**; the in-memory engine model is the source of truth, persisted through GRDB/SQLite. GnuCash XML is demoted to an **import/export interchange format**, not the app's save format.
+FinvestLens is **native-first above all else**. Two consequences: (1) money uses **Swift-native `Decimal`**, and there is no goal of bug-for-bug numeric parity with GnuCash — rounding discrepancies are acceptable and tests tolerate them; (2) the app is a **document-based app with its own native file format** (a single SQLite file) that can live on a NAS, with **application-level locking**. The in-memory engine model is the source of truth, persisted through GRDB/SQLite; SwiftData is not used. GnuCash XML is an **import/export interchange format**, not the app's save format.
 
 ---
 
@@ -62,12 +61,7 @@ FinvestLens follows a **check-out → edit locally → explicit save** document 
 
 1. **Open** a `.finvestlens` document → acquire the lock (§6) → copy it to a **local working copy** (§6) → open the SQLite store on the *local* copy → materialize the observable in-memory **`Book`**. Retain a pristine snapshot of the opened state for Revert.
 2. **Edit** against the in-memory model + local working copy (the working session). The engine `Book` is a plain (non-observable) model; the UI binds via **Observation on `AppModel`** (FeatureUI), which snapshots derived state after each mutation. Edits accumulate **locally only** — the document on the share is untouched.
-3. **Write-back is explicit.** The local working copy is flushed back to the document location (atomically, under lock; §6.2) **only** on:
-   - **File ▸ Save** (⌘S),
-   - **Autosave** (as built: a fixed 5-minute interval while dirty; a user-configurable/disable setting is future work), or
-   - **automatic save on switch/close/quit** (switching books, Close Book, and ⌘Q save first — failures surface and abort the switch/quit).
-
-   There is **no continuous background sync** to the share.
+3. **Write-back is explicit.** The local working copy is flushed back to the document location (atomically, under lock; §6.2) **only** on **File ▸ Save** (⌘S), **autosave** (a periodic interval while dirty), or **automatic save on switch/close/quit** (switching books, Close Book, and ⌘Q save first — failures surface and abort the switch/quit). There is **no continuous background sync** to the share.
 4. **Discard / Revert.** Because the share only changes on an explicit save, the user can **abandon a working session**: **closing without saving** (or **File ▸ Revert**) discards unsaved changes and the on-share document reflects only the last save. The retained opened-state snapshot enables **Revert to the version that was opened**, even if autosave has run since.
 5. **Close** → (prompt to save if dirty) → release the lock → drop the working copy (kept briefly only for crash recovery).
 
@@ -101,46 +95,44 @@ This keeps the engine free of persistence concerns, gives SQLite's scalability f
 
 ### 5.1 Money arithmetic — Swift-native `Decimal`
 
-**Context.** Native-first (P1) and good-enough fidelity (P3) supersede the earlier goal of matching GnuCash's `gnc_numeric` exactly. We need a correct, native, decimal money type; small divergences from GnuCash's rounding are acceptable.
+**Context.** Native-first (P1) and good-enough fidelity (P3) supersede matching GnuCash's `gnc_numeric` exactly. We need a correct, native, decimal money type; small divergences from GnuCash's rounding are acceptable.
 
-**Options.** (1) **`Foundation.Decimal`** — native base-10, 38 significant digits, value type, `Codable`. (2) Hand-written `Int64`/`Int128` rational to mirror GnuCash — rejected: violates native-first, and we no longer need bit-parity. (3) `Double` — rejected: binary rounding error. (4) BigInt/rational packages — rejected: non-native dependency for precision we don't require.
+**Options.** (1) **`Foundation.Decimal`** — native base-10, 38 significant digits, value type, `Codable`. (2) Hand-written `Int64`/`Int128` rational to mirror GnuCash — rejected: violates native-first, and we do not need bit-parity. (3) `Double` — rejected: binary rounding error. (4) BigInt/rational packages — rejected: non-native dependency for precision we don't require.
 
-**Decision → `Foundation.Decimal`**, wrapped in a `struct Money { var amount: Decimal; var commodity: Commodity }`. Rounding uses `Decimal`'s `NSDecimalRound` with banker's/half-up rounding to the commodity's fraction (e.g. 2 dp for most currencies). Share quantities and prices are `Decimal`. Transaction balancing sums `Decimal`s and rounds to the transaction currency's scale; a residual within one minor unit is treated as balanced (an explicit imbalance beyond that is surfaced, not hidden).
+**Decision → `Foundation.Decimal`**, wrapped in a `struct Money { var amount: Decimal; var commodity: Commodity }`. Rounding uses `Decimal`'s `NSDecimalRound` with **half-up rounding** to the commodity's fraction (e.g. 2 dp for most currencies). Share quantities and prices are `Decimal`. Transaction balancing sums `Decimal`s and rounds to the transaction currency's scale; a residual within one minor unit is treated as balanced (an explicit imbalance beyond that is surfaced, not hidden).
 
-**Rationale.** `Decimal` is the idiomatic Apple money type, exact for decimal values within range, and free of binary-float error — sufficient for double-entry bookkeeping. We drop the `Int128`/vector-conformance machinery entirely. Where GnuCash used odd denominators (e.g. 1/3-share fractions), `Decimal` rounds to 38 digits; per P3 this is acceptable and tests are written with tolerances.
+**Rationale.** `Decimal` is the idiomatic Apple money type, exact for decimal values within range, and free of binary-float error — sufficient for double-entry bookkeeping. Where GnuCash used odd denominators (e.g. 1/3-share fractions), `Decimal` rounds to 38 digits; per P3 this is acceptable and tests are written with tolerances.
 
 > ADR-1: Money = `Decimal` wrapped in `Money`. No bit-exact GnuCash parity; tests tolerate rounding.
 
-### 5.2 Native file format & persistence — SQLite via GRDB, SwiftData dropped
+### 5.2 Native file format & persistence — SQLite via GRDB
 
-**Context.** The app must open and save its **own** file, that file may live on a **NAS**, and it must scale to 100k+ transactions (NFR-02). SwiftData's store is an app-container SQLite database not meant to be treated as a portable, user-placed, cross-machine-locked document, and SwiftData offers no story for network-share locking.
+**Context.** The app must open and save its **own** file, that file may live on a **NAS**, and it must scale to 100k+ transactions (NFR-02). SwiftData's store is an app-container SQLite database not meant to be treated as a portable, user-placed, cross-machine-locked document, and offers no story for network-share locking.
 
 **Options.**
-1. **GRDB (SQLite) single file** — a real, portable SQLite database as the document; fast, incremental, mature; full control over schema, migrations, journaling, and locking.
+1. **GRDB (SQLite) single file** — a real, portable SQLite database as the document; fast, mature; full control over schema, migrations, journaling, and locking.
 2. **SwiftData** — native and SwiftUI-friendly, but not designed for user-placed documents on network shares; multi-file store (`.sqlite`/`-wal`/`-shm`); no locking control. Rejected given P2/P6.
-3. **Flat compressed snapshot** (whole book in RAM, atomic whole-file save) — simplest and very NAS-safe, but full rewrite per save and whole book in memory; rejected for scale.
+3. **Flat compressed snapshot** (whole book in RAM, atomic whole-file save) — simplest and very NAS-safe, but full rewrite per save and whole book in memory.
 4. **File package/bundle** — multi-file semantics complicate atomic network writes; rejected.
 
-**Decision → a single SQLite file (`.finvestlens`) managed by [GRDB](https://github.com/groue/GRDB.swift)**. SwiftData is **not** used.
-
-> **As built:** the store uses **whole-book snapshot semantics** — `read()` materializes the full graph and `write()` rewrites all tables in one transaction (a hybrid of options 1 and 3: SQLite file format, snapshot IO). This is simple and NAS-safe; incremental per-row persistence remains an optimization for the deferred 100k-txn perf validation to justify.
+**Decision → a single SQLite file (`.finvestlens`) managed by [GRDB](https://github.com/groue/GRDB.swift)**, with **whole-book snapshot semantics** (a hybrid of options 1 and 3): `read()` materializes the full graph and `write()` rewrites all tables in one transaction — SQLite file format, snapshot IO. This is simple and NAS-safe; incremental per-row persistence is an available optimization if the perf validation (§10) justifies it.
 
 - **UTI / document type:** `com.hellotham.finvestlens.document` conforming to `public.database`; extension `.finvestlens`.
-- **Schema & migrations:** GRDB `DatabaseMigrator`, versioned; a `meta` table records the app/schema version and a monotonically increasing **change counter**. Conflict detection as built uses a **SHA-256 file fingerprint** of the shared document (the counter is informational).
-- **Journaling:** the working copy uses GRDB's default `DatabaseQueue` (rollback journal), so the artifact written back to the NAS is inherently a single self-contained file; a WAL + `wal_checkpoint(TRUNCATE)` pipeline remains an option if the deferred perf validation demands it (OD-3).
-- **Document lifecycle:** a custom document controller (not SwiftUI `FileDocument`/`ReferenceFileDocument`, which assume whole-file snapshots) manages open/lock/copy/save/close so we can work against a live database.
+- **Schema & migrations:** GRDB `DatabaseMigrator`, versioned; a `meta` table records the app/schema version and a change counter. Conflict detection uses a **SHA-256 file fingerprint** of the shared document.
+- **Journaling:** the working copy uses GRDB's default `DatabaseQueue` (rollback journal), so the artifact written back to the NAS is inherently a single self-contained file.
+- **Document lifecycle:** a custom document controller (not SwiftUI `FileDocument`/`ReferenceFileDocument`, which assume whole-file snapshots) manages open/lock/copy/save/close so the app works against a live database.
 
 **Rationale.** GRDB gives a genuine portable single-file database — ideal as a document — with the maturity and speed SwiftData lacks at scale, and the low-level control (journaling, checkpointing, coordinated IO) required to be safe on a NAS. The `Repository` abstraction (P4) keeps the engine and UI ignorant of GRDB.
 
-> ADR-2: The document is one SQLite file via GRDB; SwiftData dropped; repositories abstract the store.
+> ADR-2: The document is one SQLite file via GRDB; SwiftData is not used; repositories abstract the store.
 
 ### 5.3 GnuCash interoperability — interchange only
 
-**Context.** With our own native format, GnuCash's XML is no longer our store; it is an **import/export** path (PRD `FR-IMP-*`, `FR-EXP-*`).
+**Context.** With our own native format, GnuCash's XML is not our store; it is an **import/export** path (PRD `FR-IMP-*`, `FR-EXP-*`).
 
-**Decision.** Keep the XML codec in the `Interchange` layer: Foundation `XMLParser` (SAX, streaming) to read, a hand-written streaming writer to write. **As built, the gzip container is implemented natively** over Apple's Compression framework (a small header/trailer wrapper around raw DEFLATE) — no third-party gzip package is used. Round-trip fidelity is still a goal for supported objects, but **arithmetic differences from `Decimal` rounding are tolerated** (P3). Preserve GUIDs and KVP slots (§5.4) so re-export stays faithful.
+**Decision.** The XML codec lives in the `Interchange` layer: Foundation `XMLParser` (SAX, streaming) to read, a hand-written streaming writer to write. The gzip container is native, over Apple's Compression framework (a small header/trailer wrapper around raw DEFLATE) — no third-party gzip package. Round-trip fidelity is a goal for supported objects, but **arithmetic differences from `Decimal` rounding are tolerated** (P3). GUIDs and KVP slots (§5.4) are preserved so re-export stays faithful. Export targets the **GnuCash v5-era** schema (`gnc:book` 2.0.0).
 
-> ADR-3: GnuCash XML is interchange (import/export), read via `XMLParser`, gzip via a zlib wrapper.
+> ADR-3: GnuCash XML is interchange (import/export), read via `XMLParser`, gzip via Apple Compression.
 
 ### 5.4 Identity & extensible metadata (for imported GnuCash data)
 
@@ -182,75 +174,59 @@ Results are written into `PriceDB` (`FR-INV-03`, `FR-CUR-04`); users pick a defa
 
 **API-key management.** Keyed providers store their key in the **Keychain** (never in the document, never in plists). The user enters keys in Settings; per the safety rules the *user* enters credentials — the app never solicits them from observed content. Requests go **directly** from the device to the provider over HTTPS.
 
-**Providers shipped/adapters.**
-
-| Provider | Key? | Latest | Historical | Delisted | Notes |
-|---|---|---|---|---|---|
-| **Yahoo (yfinance-like)** | **No** | ✓ | ✓ | partial | Native client for Yahoo's public JSON endpoints (see below). Default keyless option. |
-| **EODHD** | Yes | ✓ | ✓ (30+ yr) | **✓** | [eodhd.com](https://eodhd.com/); historical EOD for **delisted** tickers (`delisted=1` on the Exchanges API + EOD endpoint) — the reason it's a first-class provider. Free tier: 20 calls/day, US, last year. |
-| **Alpha Vantage** | Yes | ✓ | ✓ | – | [alphavantage.co](https://www.alphavantage.co/); free JSON. |
-| **Finnhub** | Yes | ✓ | ✓ | – | JSON; generous free tier. |
-| **Twelve Data** | Yes | ✓ | ✓ | – | JSON. |
-| **Stooq** | No | – | ✓ (CSV) | partial | Keyless CSV EOD fallback. |
-
-The list is extensible; adding a provider is a new `QuoteProvider` conformance.
+**Providers.** The keyless **Yahoo (yfinance-like)** client is the default out-of-box source; keyed providers are **EODHD** (delisted / deep history), **Alpha Vantage**, **Finnhub**, and **Twelve Data**; **Stooq** is a keyless CSV EOD fallback. The list is extensible; adding a provider is a new `QuoteProvider` conformance.
 
 **The "yfinance-like" Yahoo provider.** A native reimplementation of the approach used by [ranaroussi/yfinance](https://github.com/ranaroussi/yfinance) — **no API key**, hitting Yahoo's unofficial public endpoints:
 
 - **History / OHLCV + dividends + splits:** `GET https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?period1=…&period2=…&interval=1d&events=div,splits` — the chart endpoint generally needs **no crumb**, so historical backfill is straightforward.
-- **Latest quote / fundamentals:** `v7/finance/quote` and `v10/finance/quoteSummary` — these now require a **cookie + crumb**. The client fetches a session cookie, then `GET /v1/test/getcrumb`, and appends `&crumb=…`. An EU-consent variant is handled if needed.
+- **Latest quote / fundamentals:** `v7/finance/quote` and `v10/finance/quoteSummary` — these require a **cookie + crumb**. The client fetches a session cookie, then `GET /v1/test/getcrumb`, and appends `&crumb=…`. An EU-consent variant is handled if needed.
 - **Symbol search:** `v1/finance/search?q=…`.
-- Parsed with `Codable`; ret/backoff and rate-limit friendliness built in.
+- Parsed with `Codable`; retry/backoff and rate-limit friendliness built in.
 
-> **Legal/ToS note.** The Yahoo endpoints are unofficial and **not affiliated with or endorsed by Yahoo**; this provider is for personal/research use, mirroring what Finance::Quote/yfinance already do. Keyed providers (EODHD, etc.) are the sanctioned path for redistribution or heavier use. The UI surfaces this and lets users choose their provider accordingly.
+> **Legal/ToS note.** The Yahoo endpoints are unofficial and **not affiliated with or endorsed by Yahoo**; this provider is for personal/research use, mirroring what Finance::Quote/yfinance do. Keyed providers (EODHD, etc.) are the sanctioned path for redistribution or heavier use. The UI surfaces this and lets users choose their provider accordingly.
 
 > ADR-7: Native pluggable `QuoteProvider`s over URLSession — a keyless **yfinance-like Yahoo** client plus keyed providers (**EODHD** for delisted/deep history, Alpha Vantage, Finnhub, Twelve Data), with **historical backfill**, keys in Keychain, and user-selectable default/fallback.
 
 ### 5.8a Bank/financial file import — CSV, QIF, OFX/QFX (native)
 
-**Context.** CSV, QIF, and OFX/QFX import are **core features** (PRD `FR-XIO-01/02/03`), not afterthoughts — they are how most users get bank/card/brokerage data in. They are **reimplemented natively in Swift**, not ported from GnuCash's GTK importers. Research finding: a good Swift **CSV** package exists, but there is **no Swift package for QIF or OFX/QFX** — mature parsers live in Python/JS/Ruby/.NET and serve as *format specifications*, not dependencies.
+**Context.** CSV, QIF, and OFX/QFX import are **core features** (PRD `FR-XIO-01/02/03`), not afterthoughts — they are how most users get bank/card/brokerage data in. They are **reimplemented natively in Swift**, not ported from GnuCash's GTK importers. There is a good Swift **CSV** package, but **no Swift package for QIF or OFX/QFX** — mature parsers live in Python/JS/Ruby/.NET and serve as *format specifications*, not dependencies.
 
 **Design.** A small `ImportParser` protocol yields a normalized `[StagedTransaction]` (date, amount, payee, memo, ref, optional splits/security/action), which flows into the shared **Import Matcher** (`FR-XIO-05`) for duplicate detection and destination-account assignment — one matcher, many front-end parsers.
 
 | Format | Approach | Package / basis |
 |---|---|---|
-| **CSV** | **Custom Swift parser** (as built): RFC-4180-style with a configurable column mapping in the import UI. Saved mapping profiles (`FR-XIO-08`) are future work. | Hand-written; CodableCSV remains an option if needs outgrow it. |
-| **QIF** | **Custom Swift parser.** QIF is a simple line-oriented format: single-letter tag per line (`D` date, `T`/`U` amount, `P` payee, `M` memo, `L` category/transfer, `N` number/action, `C` cleared, `S/E/$` splits), records terminated by `^`, section headers like `!Type:Bank`, `!Account`, `!Type:Invst`. No package needed. | Spec/oracles: [Wikipedia QIF](https://en.wikipedia.org/wiki/Quicken_Interchange_Format), [Quiffen (Py)](https://quiffen.readthedocs.io/), [hazzik/qif (.NET)](https://github.com/hazzik/qif). |
-| **OFX / QFX** | **Custom Swift parser** handling both flavors: strip the OFX header block, then **OFX v2 (XML)** → reuse our `XMLParser`; **OFX v1 (SGML)** → a tolerant tokenizer that auto-closes value-only leaf tags (OFX v1 omits closing tags) to normalize into the same element tree. Handles bank (`STMTRS`), credit-card (`CCSTMTRS`), and investment (`INVSTMTRS`) statements; QFX is OFX plus Quicken extensions. | Spec/oracles: [ofxtools (Py)](https://github.com/csingley/ofxtools), [ofx-js](https://github.com/bradenmacdonald/ofx-js), [salt-parser (Ruby)](https://github.com/saltedge/salt-parser). |
+| **CSV** | Custom Swift parser: RFC-4180-style with a configurable column mapping in the import UI. | Hand-written; CodableCSV remains an option if needs outgrow it. |
+| **QIF** | Custom Swift parser. QIF is line-oriented: single-letter tag per line (`D` date, `T`/`U` amount, `P` payee, `M` memo, `L` category/transfer, `N` number/action, `C` cleared, `S/E/$` splits), records terminated by `^`, section headers like `!Type:Bank`, `!Account`, `!Type:Invst`. | Spec/oracles: [Wikipedia QIF](https://en.wikipedia.org/wiki/Quicken_Interchange_Format), [Quiffen (Py)](https://quiffen.readthedocs.io/), [hazzik/qif (.NET)](https://github.com/hazzik/qif). |
+| **OFX / QFX** | Custom Swift parser handling both flavors: strip the OFX header block, then **OFX v2 (XML)** → reuse `XMLParser`; **OFX v1 (SGML)** → a tolerant tokenizer that auto-closes value-only leaf tags (OFX v1 omits closing tags) to normalize into the same element tree. Handles bank (`STMTRS`), credit-card (`CCSTMTRS`), and investment (`INVSTMTRS`) statements; QFX is OFX plus Quicken extensions. | Spec/oracles: [ofxtools (Py)](https://github.com/csingley/ofxtools), [ofx-js](https://github.com/bradenmacdonald/ofx-js), [salt-parser (Ruby)](https://github.com/saltedge/salt-parser). |
 
-**Why custom for QIF/OFX.** No maintained Swift implementations exist; both formats are small and well-documented; owning the parsers avoids a non-native/unmaintained dependency (Principle P1) and lets all three share one staging model and matcher. The battle-tested libraries in other languages are used as **conformance references and test-fixture generators**, not linked code.
+**Why custom for QIF/OFX.** No maintained Swift implementations exist; both formats are small and well-documented; owning the parsers avoids a non-native/unmaintained dependency (Principle P1) and lets all three share one staging model and matcher. The libraries in other languages are used as **conformance references and test-fixture generators**, not linked code.
 
-> ADR-7a: CSV/QIF/OFX are native, core importers over a shared `ImportParser` → Import Matcher pipeline. CSV uses CodableCSV; QIF and OFX/QFX are hand-written (no Swift package exists), specced against mature non-Swift parsers.
+> ADR-7a: CSV/QIF/OFX are native, core importers over a shared `ImportParser` → Import Matcher pipeline; QIF and OFX/QFX are hand-written (no Swift package exists), specced against mature non-Swift parsers.
 
 ---
 
 ## 6. Native file format on a NAS — locking & write safety
 
-Running SQLite **directly** over SMB/NFS is unsafe: network filesystems implement POSIX/byte-range locking incompletely, and WAL/shared-memory files misbehave. SQLite's own guidance is to avoid network filesystems. So we do **not** rely on SQLite/OS locking across the network. Instead:
+Running SQLite **directly** over SMB/NFS is unsafe: network filesystems implement POSIX/byte-range locking incompletely, and WAL/shared-memory files misbehave. SQLite's own guidance is to avoid network filesystems. So FinvestLens does **not** rely on SQLite/OS locking across the network. Instead:
 
 ### 6.1 Application-level lock (single-writer across machines)
 
 Modeled on GnuCash's `.LCK` approach, hardened:
 
-- Beside `Book.finvestlens` we create **`Book.lock`** (same base name, different extension — required for the macOS sandbox related-item grant, kept for a future sandboxed build) whose contents are JSON: `{ host, user, instanceID, pid, acquiredAt, heartbeatAt }`.
+- Beside `Book.finvestlens` we create **`Book.lock`** (same base name, different extension — required for the macOS sandbox related-item grant) whose contents are JSON: `{ host, user, instanceID, pid, acquiredAt, heartbeatAt }`.
 - **Acquire on open** using an **atomic create-if-absent** (`.withoutOverwriting`). All lock IO goes through **`NSFileCoordinator`** with a related-item presenter.
-- If the lock exists and its `heartbeatAt` is **fresh**, the document is in use elsewhere → the open fails showing the holder; if the heartbeat is **stale** (> 90 s), the UI offers **Break Lock and Open**. (An Open-Read-Only mode is not in 1.0.)
-- **Heartbeat:** while open, `heartbeatAt` is refreshed every 25 s (a background task in `AppModel`), and on every save. This distinguishes a live holder from a crashed one.
+- If the lock exists and its `heartbeatAt` is **fresh**, the document is in use elsewhere → the open fails showing the holder; if the heartbeat is **stale** (older than the staleness threshold), the UI offers **Break Lock and Open**.
+- **Heartbeat:** while open, `heartbeatAt` is refreshed periodically (a background task in `AppModel`) and on every save, distinguishing a live holder from a crashed one.
 - **Release on close;** crash recovery relies on stale-heartbeat detection.
-- **Lockless fallback (iOS providers).** Where the sibling `.lock` cannot be
-  created — an iOS file-provider grant (iCloud Drive, Box, Dropbox via the
-  Files picker) covers only the document, and the related-item mechanism is
-  macOS-only — the document still opens, with `advisoryLockHeld == false`;
-  saves remain guarded by the §6.2 fingerprint conflict check. A **live**
-  lock held by someone else still refuses the open.
+- **Lockless fallback (iOS providers).** Where the sibling `.lock` cannot be created — an iOS file-provider grant (iCloud Drive, Box, Dropbox via the Files picker) covers only the document, and the related-item mechanism is macOS-only — the document still opens, with `advisoryLockHeld == false`; saves remain guarded by the §6.2 fingerprint conflict check. A **live** lock held by someone else still refuses the open.
 
 ### 6.2 Local working copy + atomic write-back
 
 To get SQLite's speed/scale without trusting it over the network, and to make write-back an explicit, discardable act:
 
 1. **On open** (after acquiring the lock): copy `Book.finvestlens` from the share to a **local working copy** (a per-session file under the app's temporary directory); note the source's SHA-256 fingerprint, and keep a **pristine opened snapshot** for Revert.
-2. **Edit** against the local SQLite (WAL, fast, reliable local semantics). Nothing is written to the share during editing.
-3. **Write-back happens only on explicit Save, autosave, or save-on-switch/close/quit** (lock still held): the consolidated single file is written back to the share atomically (replace-item semantics) under `NSFileCoordinator`, and the `meta` change counter is bumped. Autosave runs on a fixed 5-minute interval while dirty (a configurable/disable setting is future work).
+2. **Edit** against the local SQLite (fast, reliable local semantics). Nothing is written to the share during editing.
+3. **Write-back happens only on explicit Save, autosave, or save-on-switch/close/quit** (lock still held): the consolidated single file is written back to the share atomically (replace-item semantics) under `NSFileCoordinator`, and the `meta` change counter is bumped.
 4. **Discard / Revert:** closing without saving (or File ▸ Revert) discards the working copy's unsaved changes; the share is left as it was at the last save. Reverting to the pristine opened snapshot restores the session's start state.
 5. **Conflict defense in depth:** before overwriting, re-read the document's SHA-256 fingerprint on the share; if it changed unexpectedly (someone bypassed the lock, or an out-of-band edit), **do not clobber** — the save throws a conflict which the UI surfaces.
 6. **On close:** if dirty, prompt to Save or Discard; then release the lock and drop the working copy (retained briefly only for crash recovery).
@@ -259,9 +235,7 @@ For **genuinely local volumes** (not a network share), the working-copy hop can 
 
 ### 6.3 iCloud / Files integration
 
-Because the document is a file, sync is **file-level**: place it in iCloud Documents or any Files-accessible location. We implement **`NSFilePresenter`** to react to external changes and use **`NSFileVersion`** for conflict resolution, consistent with the NAS write-back path. (This replaces the earlier SwiftData+CloudKit plan; `FR-PLT-02` becomes file-based sync.)
-
-Cloud specifics (verified 14 Jul 2026 on Box Drive and iCloud Drive, incl. an evicted/dataless file):
+Because the document is a file, sync is **file-level**: place it in iCloud Documents or any Files-accessible location. FinvestLens implements **`NSFilePresenter`** to react to external changes and uses **`NSFileVersion`** for conflict resolution, consistent with the NAS write-back path (`FR-PLT-02`).
 
 - **Dataless placeholders.** The open-time copy-in and every fingerprint go through a **coordinated read**, which downloads and materialises a not-yet-local file (iCloud eviction, File Provider online-only) before it is touched.
 - **iOS security scope.** Books picked on iOS are security-scoped; `AppModel` holds the grant for the whole session (saves write back to the shared file) and stores a **bookmark** per recent so Open Recent can regain the grant after a relaunch.
@@ -277,7 +251,7 @@ Cloud specifics (verified 14 Jul 2026 on Box Drive and iCloud Drive, incl. an ev
 2. **Round-trip interchange** — a corpus of `.gnucash` files under `Tests/Fixtures`; import→export→re-import compares **object graphs** with numeric tolerance and exact GUID/slot preservation (`FR-EXP-02` for structure; amounts within tolerance).
 3. **Invariants** — every persisted transaction balances within tolerance (`FR-ENG-06`); `Scrub` reports nothing on a clean import.
 4. **Locking, write-back & discard** — simulate concurrent openers (two lock acquirers), stale-lock breaking, mid-save crash (working copy intact, document untouched), conflicting external writes, and **discard/revert** (edit → close without saving → assert the on-disk document is byte-unchanged from the last save; Revert restores the opened snapshot). Assert the document is never corrupted or silently clobbered.
-5. **Performance** — a synthetic 100k-transaction document gates open/scroll/import/save against NFR-02.
+5. **Performance** — a large-book document gates open/scroll/import/save against NFR-02.
 
 Framework: **Swift Testing** for new tests; XCTest where needed for UI/perf harnesses.
 
@@ -285,10 +259,10 @@ Framework: **Swift Testing** for new tests; XCTest where needed for UI/perf harn
 
 ## 8. Concurrency, sync, and cross-platform
 
-- **Engine** is synchronous/deterministic. **IO is async at the edges** (open/copy, save/write-back, import/export, quotes) with progress reporting; the UI stays responsive.
+- **Engine** is synchronous/deterministic. **IO is async at the edges** (open/copy, save/write-back, import/export, quotes) with progress reporting; the UI stays responsive. Building the in-memory `Book` on open runs off the main actor and is transferred to it via `sending`, so `Book` need not be `Sendable`.
 - **GRDB** access uses its `DatabaseQueue`/`DatabasePool` (serialized writes); the UI reads via observations.
 - **Sync** is file-level (§6.3) — iCloud Documents, Files, or the NAS — not SwiftData/CloudKit.
-- **One shared codebase.** `Engine`/`Document`/`Interchange`/`Reports`/`Quotes` are platform-agnostic. `FeatureUI` adapts: `NavigationSplitView` on macOS/iPadOS, compact stacks on iOS. macOS maps GnuCash-style menus to a native menu bar.
+- **One shared codebase.** `Engine`/`Persistence`/`Interchange`/`Reports`/`Quotes` are platform-agnostic. `FeatureUI` adapts: `NavigationSplitView` on macOS/iPadOS, compact stacks on iOS. macOS maps GnuCash-style menus to a native menu bar.
 
 ---
 
@@ -296,173 +270,54 @@ Framework: **Swift Testing** for new tests; XCTest where needed for UI/perf harn
 
 | Package | Use | Phase | License | Notes |
 |---|---|---|---|---|
-| [groue/GRDB.swift](https://github.com/groue/GRDB.swift) | **Native document store** (SQLite) | P1 | MIT | The **only** external dependency in 1.0. |
+| [groue/GRDB.swift](https://github.com/groue/GRDB.swift) | **Native document store** (SQLite) | P1 | MIT | The single external dependency. |
 
-**As built, went native instead of a package:** the **gzip** container (small header/trailer over Apple Compression's raw DEFLATE) and the **CSV** parser (hand-written, mapping UI on top) — GzipSwift/swift-gzip and CodableCSV were evaluated but not needed.
-
-**Hand-written, no package (none exists for Swift):** **QIF** and **OFX/QFX** parsers (`FR-XIO-01/02`), specced against mature Python/JS/Ruby parsers (§5.8a). OFX v2 reuses `XMLParser`.
-
-**Native / no dependency:** money (`Decimal`), XML read (`XMLParser`), gzip (Compression), CSV/QIF/OFX parsers, charts (Swift Charts), coordinated file IO (`NSFileCoordinator`/`NSFilePresenter`/`NSFileVersion`), tests (Swift Testing), quotes (`URLSession`). **Removed vs v0.1:** SwiftData, the `Int128`/BigInt numeric machinery, GzipSwift, CodableCSV.
+**Native / no dependency:** money (`Decimal`), XML read (`XMLParser`), gzip (Apple Compression), CSV/QIF/OFX parsers (hand-written; no Swift package exists for QIF/OFX), charts (Swift Charts), coordinated file IO (`NSFileCoordinator`/`NSFilePresenter`/`NSFileVersion`), tests (Swift Testing), quotes (`URLSession`).
 
 ---
 
-## 10. Decisions — resolved
+## 10. Derived state and performance
 
-The ADR-style questions this document opened are now settled by what shipped.
-The one still genuinely open (OD-2) is gated on the deferred 100k-txn perf
-validation (see [deferred.md](deferred.md)); the rest are decided.
+The engine `Book` is the source of truth and is held **entirely in memory**, as GnuCash does; everything the UI shows is *derived* from it. On a large book the cost of re-deriving state dominates how the app feels, so the architecture follows one rule:
 
-| # | Question | Resolution |
-|---|---|---|
-| OD-1 | Heartbeat interval & stale-lock threshold | **Decided:** 25 s heartbeat (and on every save), 90 s stale threshold (§6.1). Stable in day-to-day use on Box/iCloud provider drives; the field-test on high-latency SMB/NFS is folded into the deferred perf validation. |
-| OD-2 | Direct-mode vs always-working-copy on local volumes | **Open** — always working-copy as built; direct mode is available for genuinely local volumes but not yet perf-justified. Decision deferred to the 100k-txn perf validation. |
-| OD-3 | WAL vs DELETE journal for the working copy | **Decided: rollback (DELETE) journal** — the working copy uses GRDB's default `DatabaseQueue`, so the file written back to the share is always a single self-contained file (§5.2). WAL + `wal_checkpoint(TRUNCATE)` remains an option only if perf validation demands it. |
-| OD-4 | `Decimal` rounding mode per commodity | **Decided: half-up (`.plain`)** per commodity fraction, applied through `Commodity.round`/`Money`. Matches common bank-statement rounding; verified to the cent against GnuCash across the reference book. |
-| OD-5 | Which quote providers ship by default | **Decided:** keyless **Yahoo** (yfinance-like) as the default out-of-box source; keyed **EODHD / Alpha Vantage / Finnhub** shipped. Twelve Data and Stooq are specced but not shipped (in [deferred.md](deferred.md), P8). |
-| OD-6 | Target GnuCash XML schema version for export | **Decided: GnuCash v5-era** (`gnc:book` 2.0.0). Round-trip byte-verified against a real 8.5 MB book written by GnuCash 5.16, which reopens our export without error. |
+> **Derive on demand, cache what is expensive, and invalidate on the same signal that drives the redraw.** A cache that outlives its data is a correctness bug, not a performance win — so every derived cache hangs off the refresh path that already runs after every mutation, never a second invalidation path that can drift.
+
+The concrete techniques this implies — an indexed price database rather than a per-call scan; single-pass balance derivation; uniform, `Table`-backed register rows; and **pre-capture undo** that snapshots only the objects an edit touches (transaction- or account-scoped) rather than the whole book — are design constraints on the engine and view-model. `Book` is deliberately **not `Sendable`** (a cyclic class graph); concurrency safety is achieved by isolating the load and transferring ownership (§8), not by locking the hot path.
+
+The measurements that justified each of these choices — on the reference book, in a stated build configuration — are recorded in [implemented.md](implemented.md).
+
+**One open decision.** Whether to skip the working-copy hop for genuinely local volumes (direct mode, §6.2) versus always using a working copy is a performance-vs-safety trade-off to settle against a large-book validation on real local and SMB/NFS storage. Until measured, the safe default (always working-copy) stands. Tracked in [deferred.md](deferred.md).
 
 ---
 
 ## 11. Apple Intelligence integration (Intelligence package)
 
-Added post-1.0. All features run on the **on-device** Foundation Models
-framework (macOS 26 / iOS 26) — no financial data ever leaves the device — and
-follow one contract:
+All Intelligence features run on the **on-device** Foundation Models framework (macOS 26 / iOS 26) — no financial data ever leaves the device — and follow one contract:
 
-1. **The model proposes; deterministic code disposes.** Model output is typed
-   (`@Generable` guided generation, greedy sampling for extraction), parsed
-   tolerantly (`IntelligenceParsing`), resolved against the real chart of
-   accounts (`AccountNameMatcher`), and cross-checked arithmetically (statement
-   signs re-derived from the running balance column; invoice line sums
-   reconciled against the printed total). Only reviewed results mutate the book.
-2. **Availability-gated.** `IntelligenceAvailability` probes
-   `SystemLanguageModel.default`; menus disable (with the reason as a tooltip)
-   when Apple Intelligence is off, and every entry point degrades gracefully.
-   Guardrail refusals (`.refusal`/`.guardrailViolation`) surface a friendly
-   message; the budget advisor retries with simplified phrasing and finally
-   falls back to a deterministic average-based plan.
-3. **Small context, chunked work.** PDF pages are extracted via PDFKit with a
-   geometric reflow (rows rebuilt from per-character bounds — content-stream
-   order scrambles tables) and a Vision-OCR fallback for scans; each page or
-   batch is one fresh session.
+1. **The model proposes; deterministic code disposes.** Model output is typed (`@Generable` guided generation, greedy sampling for extraction), parsed tolerantly (`IntelligenceParsing`), resolved against the real chart of accounts (`AccountNameMatcher`), and cross-checked arithmetically (statement signs re-derived from the running balance column; invoice line sums reconciled against the printed total). Only reviewed results mutate the book.
+2. **Availability-gated.** `IntelligenceAvailability` probes `SystemLanguageModel.default`; menus disable (with the reason as a tooltip) when Apple Intelligence is off, and every entry point degrades gracefully. Guardrail refusals surface a friendly message; the budget advisor retries with simplified phrasing and finally falls back to a deterministic average-based plan.
+3. **Small context, chunked work.** PDF pages are extracted via PDFKit with a geometric reflow (rows rebuilt from per-character bounds — content-stream order scrambles tables) and a Vision-OCR fallback for scans; each page or batch is one fresh session.
 
 | Feature | ID | Flow |
 |---|---|---|
-| PDF statement import | FR-AI-01 | `StatementExtractor` → `StagedTransaction` → existing ImportMatcher/review; duplicate rows can mark the matched register split cleared (light reconciliation) |
-| Auto-categorisation | FR-AI-02 | `TransactionCategorizer` fills gaps after rules → history → heuristics, in import review and the Auto-Categorise panel (Imbalance/Orphan splits) |
+| PDF statement import | FR-AI-01 | `StatementExtractor` → `StagedTransaction` → ImportMatcher/review; duplicate rows can mark the matched register split cleared (light reconciliation) |
+| Auto-categorisation | FR-AI-02 | `TransactionCategorizer` fills gaps after rules → history → heuristics, in import review and the Auto-Categorise panel |
 | Invoice splitting | FR-AI-03 | `InvoiceAnalyzer` line items → categorised splits in the transaction editor ("Split from Invoice…") |
-| Dividend statements | FR-AI-04 | `DividendExtractor` (franked/unfranked/franking credits) → reviewed booking incl. gross-up (Income:Dividends:Franking Credits ↔ Assets:Franking Credits Receivable) |
-| Budget suggestion | FR-AI-05 | Deterministic 6-month spending stats → `BudgetAdvisor` → reviewed per-line apply |
+| Dividend statements | FR-AI-04 | `DividendExtractor` (franked/unfranked/franking credits) → reviewed booking incl. gross-up |
+| Budget suggestion | FR-AI-05 | Deterministic spending stats → `BudgetAdvisor` → reviewed per-line apply |
 | Forecast outlook | FR-AI-06 | Computed `cashFlowForecast` facts → `ForecastNarrator` headline + insights in the Cash Flow report |
-| Smart Import (multi-PDF) | FR-AI-07 | `DocumentClassifier` triages each PDF (model + keyword fallback), then routes: statements → FR-AI-01 review; dividend statements → **verified against the register** (matching deposit found, franking credits checked, one-click fix rebuilds the gross-up in place, preserving the cash split's reconcile state); invoices → **matched to their transaction** (amount + date-window, banks post late) then split by line items and re-dated to the invoice date. Match results refresh as earlier documents in the batch are applied. |
-| Document links | FR-AI-08 | Applied dividend statements and invoices are copied into the document folder (Settings ▸ Documents; default: the book's folder — GnuCash's association "path head") and linked to their transaction via the `assoc_uri` KVP slot as a relative path (identical files reused, name collisions uniqued). Register context menu → "Open Linked Document". |
+| Smart Import (multi-PDF) | FR-AI-07 | `DocumentClassifier` triages each PDF, then routes: statements → FR-AI-01 review; dividend statements → verified against the register; invoices → matched to their transaction, split by line items, and re-dated to the invoice date |
+| Document links | FR-AI-08 | Applied dividend statements and invoices are copied into the document folder and linked to their transaction via the `assoc_uri` KVP slot as a relative path |
 
-**Dual dates (FR-AI-07).** When Smart Import adopts a document's true economic
-date, the bank's posted date moves to a preserved KVP slot
-(`Transaction.statementDate`, `finvestlens/statement-date`) — matching (the
-import matcher's duplicate detection and Smart Import's own windows) considers
-*both* dates, so re-importing the same bank statement never duplicates a
-re-dated transaction. The slot lives in the native document; GnuCash XML
-export simply carries the adjusted `datePosted` (no schema breakage — GnuCash
-sees the economic date).
+**Dual dates (FR-AI-07).** When Smart Import adopts a document's true economic date, the bank's posted date moves to a preserved KVP slot (`Transaction.statementDate`, `finvestlens/statement-date`) — matching considers *both* dates, so re-importing the same bank statement never duplicates a re-dated transaction. The slot lives in the native document; GnuCash XML export carries the adjusted `datePosted` (no schema breakage — GnuCash sees the economic date).
 
-**Document links (FR-AI-08).** `Transaction.documentLink` uses GnuCash's own
-slot key (`assoc_uri`), and the XML exporter/importer round-trips it in
-`trn:slots`, so links attached in FinvestLens open in GnuCash and vice versa.
-Resolution follows GnuCash semantics: absolute paths and `file://` URIs open
-as-is; anything else is relative to the configured document folder (or the
-book's folder when unset).
+**Document links (FR-AI-08).** `Transaction.documentLink` uses GnuCash's own slot key (`assoc_uri`), round-tripped in `trn:slots`, so links attached in FinvestLens open in GnuCash and vice versa. Resolution follows GnuCash semantics: absolute paths and `file://` URIs open as-is; anything else is relative to the configured document folder (or the book's folder when unset).
 
-Testing: deterministic parts are unit-tested; `LiveModelTests` exercises the
-real on-device model end-to-end (PDF fixtures rendered in-test) and self-skips
-where Apple Intelligence is unavailable, keeping CI deterministic.
+Testing: deterministic parts are unit-tested; a live on-device model test exercises the real model end-to-end and self-skips where Apple Intelligence is unavailable, keeping CI deterministic.
 
 ---
 
-## 12. Derived state and performance
-
-The engine `Book` is the source of truth and is held entirely in memory (§3), as GnuCash does. Everything the UI shows is *derived* from it. On a small book any derivation is affordable and none of this matters; the design below exists because a real book — the 46k-transaction / 102k-price reference file — made the cost of re-deriving state the dominant factor in how the app feels. Each decision was made against measurements on that file, and each is recorded with the number that justified it.
-
-The rule the section encodes: **derive on demand, cache what is expensive, invalidate on the same signal that drives the redraw.** A cache that outlives its data is a correctness bug, not a performance win — so every cache here hangs off `refreshAll()`/`close()`, which already run after every mutation, rather than inventing a second invalidation path that can drift.
-
-### 12.1 Index the price database, don't scan it
-
-`Book.latestPrice(of:in:on:)` scanned the whole price database per call — **26 ms** against 102,706 prices — and `securityUnitValue` can trigger four such scans per account. Prices are bucketed by (commodity, currency) and by commodity, each bucket sorted by date, and the answer found by binary search.
-
-The index is **dropped, not updated**, whenever `prices` changes (a `didSet` on the stored property, so no mutation can miss it). Invalidation is O(1), which keeps reading a book's 100k prices linear; the rebuild is paid once on the next lookup.
-
-The scan's tie-breaking is preserved exactly: when several prices share the winning date it returns the **first in `prices` order**. This is not incidental — a duplicate-dated import would otherwise silently move a balance. `PriceIndexEquivalenceTests` pins the index against the old scan as an oracle over pseudo-random books with deliberate duplicate dates.
-
-### 12.2 Ask for many balances at once
-
-`Book.balance(of:)` walks every transaction per call (**25 ms**). Valuing a tree of accounts one at a time is therefore quadratic — and the account tree compounded it, asking for each account's balance once per *ancestor*.
-
-`Book.balancesByAccount(filter:)` derives every account's balance in a single pass. `rebuildAccountTree` calls it once, converts each account once, and rolls subtree sums up from that. Accounts with no postings are absent from the result; a miss means zero.
-
-> `refreshAll()` 33.7s → **0.25s**. Book open 45s → 12.6s. Every figure — Net Worth, Assets, every subtree — unchanged, and still matching GnuCash to the cent.
-
-### 12.3 Uniform rows so a register can be a `Table`
-
-The basic register scrolls 46k rows instantly because SwiftUI's `Table` is `NSTableView`-backed: uniform row heights let AppKit position row *N* without laying out the rows before it.
-
-The journal styles were a `List` of variable-height `Section`s, which cannot do that — `scrollTo` forces every section ahead of the target to lay out. Scrolling the general ledger to its newest entry pinned a core and passed 1 GB resident without settling. Paging it to a window made it usable but left ⌘↑ meaning "oldest *loaded*", which is not what the shortcut means anywhere else.
-
-The journal is now a flat list of uniform `JournalRow`s — a heading per transaction followed by its legs, which is what a journal *is* (and how GnuCash presents one) — rendered in a `Table`. Windowing is gone: the whole book is affordable, and jumping to either end is bounded work whatever the distance, so ⌘↑ reaches the true oldest posting exactly as in the basic register.
-
-Journal rows and their sorted transactions are cached per focus account (`nil` = general ledger) and dropped in `refreshAll()`/`close()` alongside the observed collections that drive the redraw. Deriving them per body pass meant sorting and filtering the whole book on every redraw.
-
-### 12.4 Capture undo *before* the edit
-
-Undo was post-hoc: every mutation exported the whole book as GnuCash XML to maintain a baseline holding the state before the *next* edit. On the reference book that was **5.8 s and 115 MB per edit** — cycling a reconcile flag paid both — and 25 undo levels could retain ~2.9 GB. Opening a book paid the same 5.8 s to prime the baseline.
-
-Each edit now captures only what it is about to change, before changing it:
-
-```swift
-editing([id], named: "Edit Transaction") { … }   // copies just those transactions
-editingAccounts([id], named: "Move Account") { … } // copies those accounts + tree slot
-editingWholeBook(named: "Close Book") { … }       // exports first; genuinely book-wide
-```
-
-`editing` snapshots the named transactions; `editingAccounts` snapshots the named accounts' value fields (including the KVP frame carrying colour and tax slots) plus their tree placement (parent + sibling index, restored via `Account.addChild(_:at:)`), so an account rename or a tax-flag toggle costs a copy of one account rather than a whole-book serialisation (**~6.6s → 0.067s** on the reference book). `editingWholeBook` is kept only where a change genuinely spans the book (period-end close, business posting). A `nil` snapshot means "did not exist", which makes undo-of-add and redo-of-delete the same operation. Undo re-enters the wrapper and captures the state it replaces, so redo falls out of the same path. Naming each edit at its call site is also what lets the Edit menu read "Undo Delete Transaction" rather than "Undo Change".
-
-With no baseline to maintain, opening a book stops exporting entirely.
-
-> Edit 5.79s → **0.26s** (all of it the remaining `refreshAll`). Memory +115 MB → +7 MB per edit, flat over 10 edits. Open 12s → **6.6s**.
-
-This had to be **all-or-nothing**. With the baseline gone, any site left on the old path would apply its edit and silently register no undo — worse than slow undo, on financial data. So the bare `markDirtyAndRefresh` was removed outright, making every one of the 40 call sites a compile error until converted, and the compiler the checklist. A partial migration here is not a smaller version of this change; it is a broken one.
-
-### 12.5 Derive the price rows only when something looks at them
-
-`refreshAll()` sorted all 102,706 prices and built a row per price on **every** mutation — for the price and rate editors, two panels that are almost always closed. That was most of what an edit cost.
-
-`priceRows`/`rateRows` are now computed properties over a cache dropped in `refreshAll()`/`close()`, like the journal rows above. The subtlety is observation: the cache is `@ObservationIgnored` (writing it from a getter must not invalidate the body doing the reading), so the properties read a `derivedRevision` counter that `refreshAll()` bumps. That counter is the observation dependency — a panel showing the rows still redraws after an edit, while an edit with no panel open sorts nothing.
-
-> `refreshAll()` (release) 0.158s → **0.041s**; with a 9,018-split register selected 0.174s → **0.062s**. An edit is now dominated by `rebuildAccountTree`, not prices.
-
-### 12.6 Read the book off the main actor
-
-`store.read` is ~1.5s of CPU (release) on the reference book, and it ran on the main actor: the window could not repaint, so the click looked ignored.
-
-`Book` is a cyclic graph of classes and deliberately not `Sendable` — making it so would mean locking every access on the hot path, to solve a problem that only exists for the few seconds it is being built. Instead the *work* moves: `FinvestLensDocument.load` is isolated to a `DocumentLoader` global actor and returns `sending FinvestLensDocument`. The compiler checks the freshly-built graph is unreachable from the loader, so it transfers to the main actor with exactly one isolation domain able to see it at a time — no locks, no `Sendable`.
-
-Because the window now stays live, a second click can arrive *during* a load; `openBook` guards on `isOpening` (checked and set with no suspension between) so it cannot open a second document over the first and orphan the first one's lock. `openBook` is `async` for the same reason: it returns before the book is open, and a caller that assumed otherwise would silently act on the previous book.
-
-> Open (release) 1.97s wall, of which the main actor is blocked for ~0.1s instead of ~1.5s; the window shows "Opening <book>…" throughout. Debug is ~4× slower on the read (5.8s) — worth knowing when judging a measurement.
-
-### 12.7 Measure in the configuration you ship
-
-Debug and release differ by ~4× on this workload, and the difference is all in the `Decimal`/row-building loops. `store.read` is 5.79s debug / 1.49s release; `refreshAll` was 0.247s debug / 0.158s release. Xcode's Run action is Debug, so figures gathered by using the app are the debug ones — quote which configuration a number came from, or it will be read as the shipping cost.
-
-Both harnesses are re-runnable and skip unless pointed at a real book:
-
-```
-FL_PERF_FILE="…/Book.finvestlens" swift test -c release --filter LiveOpenPerfTests     # Persistence: open phases
-FL_PERF_FILE="…/Book.finvestlens" swift test -c release --filter LiveRefreshPerfTests  # FeatureUI: cost of an edit
-```
-
----
-
-## 13. References
+## 12. References
 
 **Persistence / SQLite**
 - [groue/GRDB.swift](https://github.com/groue/GRDB.swift) · [Core Data vs SwiftData 2025](https://distantjob.com/blog/core-data-vs-swiftdata/) · [SwiftData slow with large data (Apple Forums)](https://developer.apple.com/forums/thread/740517) · [SwiftData vs Realm perf](https://www.emergetools.com/blog/posts/swiftdata-vs-realm-performance-comparison)
@@ -472,13 +327,13 @@ FL_PERF_FILE="…/Book.finvestlens" swift test -c release --filter LiveRefreshPe
 - `Foundation.Decimal` — https://developer.apple.com/documentation/foundation/decimal
 
 **XML / compression**
-- Foundation `XMLParser` (native SAX) · [1024jp/GzipSwift](https://github.com/1024jp/GzipSwift) · [mihai8804858/swift-gzip](https://github.com/mihai8804858/swift-gzip)
+- Foundation `XMLParser` (native SAX) · Apple Compression framework
 
 **Quotes / market data**
 - Keyless (yfinance-like) — [ranaroussi/yfinance](https://github.com/ranaroussi/yfinance) (approach reference); Yahoo endpoints `query1/query2.finance.yahoo.com`
-- Keyed — [EODHD](https://eodhd.com/) ([delisted data](https://eodhd.com/financial-apis/delisted-stock-companies-data) · [historical for delisted](https://eodhd.com/financial-academy/financial-faq/historical-stock-prices-for-delisted-companies)) · [Alpha Vantage](https://www.alphavantage.co/) · [Finnhub / free APIs overview](https://dev.to/williamsmithh/top-5-free-financial-data-apis-for-building-a-powerful-stock-portfolio-tracker-4dhj)
+- Keyed — [EODHD](https://eodhd.com/) ([delisted data](https://eodhd.com/financial-apis/delisted-stock-companies-data)) · [Alpha Vantage](https://www.alphavantage.co/) · Finnhub · Twelve Data
 
-**Import formats (P4)**
+**Import formats**
 - CSV — [dehesa/CodableCSV](https://github.com/dehesa/CodableCSV) · [yaslab/CSV.swift](https://github.com/yaslab/CSV.swift)
 - QIF (custom; specs) — [Wikipedia QIF](https://en.wikipedia.org/wiki/Quicken_Interchange_Format) · [Quiffen](https://quiffen.readthedocs.io/) · [hazzik/qif](https://github.com/hazzik/qif)
 - OFX/QFX (custom; specs) — [csingley/ofxtools](https://github.com/csingley/ofxtools) · [bradenmacdonald/ofx-js](https://github.com/bradenmacdonald/ofx-js) · [saltedge/salt-parser](https://github.com/saltedge/salt-parser)
