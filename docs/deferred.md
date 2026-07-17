@@ -219,6 +219,11 @@ Rules / Intelligence / Quotes; app builds).
 - **XML round-trip**: `split:reconcile-date`; list-typed KVP bare-value format.
 - **Register order**: `xaccTransOrder_num_action` canonical order (numeric
   num/action, then entered/description/guid).
+- **Import dedupe**: match on the OFX FITID via the split `online_id` slot
+  (GnuCash's definitive match), not just the transaction number.
+
+Stock-transaction shapes (buy/sell/dividend/reinvest/return-of-capital/split)
+were also audited and already match GnuCash's split structure — no change.
 
 **Absent features implemented** (model + XML round-trip + native store + UI):
 - **Amount expression parser** (`gnc-exp-parser`) — `5*3`, `10.50+2`, `(1+2)/3`.
