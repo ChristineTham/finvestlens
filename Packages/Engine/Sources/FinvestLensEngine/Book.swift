@@ -40,6 +40,18 @@ public final class Book {
     /// Preserved book-level key-value slots.
     public var kvp: KvpFrame
 
+    // MARK: Business objects (`FR-BUS-*`)
+
+    public internal(set) var customers: [Customer]
+    public internal(set) var vendors: [Vendor]
+    public internal(set) var employees: [Employee]
+    public internal(set) var jobs: [Job]
+    public internal(set) var invoices: [Invoice]
+    public internal(set) var billTerms: [BillTerm]
+    public internal(set) var taxTables: [TaxTable]
+    /// Business lots (A/R / A/P), keyed nowhere special — walked by account.
+    public internal(set) var lots: [Lot]
+
     /// Designated initialiser adopting an existing root account (used when
     /// importing, so the root's GnuCash GUID is preserved).
     public init(
@@ -53,6 +65,14 @@ public final class Book {
         self.commodities = []
         self.prices = []
         self.kvp = kvp
+        self.customers = []
+        self.vendors = []
+        self.employees = []
+        self.jobs = []
+        self.invoices = []
+        self.billTerms = []
+        self.taxTables = []
+        self.lots = []
     }
 
     /// Creates an empty book with a fresh root account denominated in
