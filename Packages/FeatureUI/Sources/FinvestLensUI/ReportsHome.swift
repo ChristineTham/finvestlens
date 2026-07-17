@@ -40,6 +40,8 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
     case investmentLots = "Investment Lots"
     case priceScatter = "Price Scatter"
     case capitalGains = "Capital Gains"
+    case receivableAging = "Receivable Aging"
+    case payableAging = "Payable Aging"
 
     var id: String { rawValue }
 
@@ -47,6 +49,7 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
         case statements = "Statements"
         case activity = "Activity"
         case investments = "Investments"
+        case business = "Business"
     }
 
     var group: Group {
@@ -58,18 +61,22 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
             .activity
         case .portfolio, .investmentLots, .priceScatter, .capitalGains:
             .investments
+        case .receivableAging, .payableAging:
+            .business
         }
     }
 
     /// The kinds rendered as documents through ``ReportDocumentView``. The
     /// rest keep their existing interactive views inside the new navigation.
-    var usesScaffold: Bool { group == .statements || self == .averageBalance }
+    var usesScaffold: Bool {
+        group == .statements || self == .averageBalance || group == .business
+    }
 
     /// Point-in-time reports read the period's *end* as their as-of date, so
     /// one period selector serves both shapes.
     var isAsOf: Bool {
         switch self {
-        case .balanceSheet, .trialBalance, .accountSummary: true
+        case .balanceSheet, .trialBalance, .accountSummary, .receivableAging, .payableAging: true
         default: false
         }
     }
@@ -99,6 +106,8 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
         case .investmentLots: "shippingbox"
         case .priceScatter: "chart.dots.scatter"
         case .capitalGains: "percent"
+        case .receivableAging: "person.crop.circle.badge.clock"
+        case .payableAging: "building.2.crop.circle.badge.clock"
         }
     }
 
@@ -120,6 +129,8 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
         case .investmentLots: "Purchase lots and cost basis"
         case .priceScatter: "Price history for a security"
         case .capitalGains: "Realised gains by disposal"
+        case .receivableAging: "What customers owe, by how overdue"
+        case .payableAging: "What you owe vendors, by how overdue"
         }
     }
 
@@ -142,13 +153,22 @@ struct ReportsHome: View {
     @State private var openConfiguration: ReportConfiguration?
 
     var body: some View {
-        if let configuration = openConfiguration {
-            ReportScreen(model: model, configuration: configuration) {
-                openConfiguration = nil
+        Group {
+            if let configuration = openConfiguration {
+                ReportScreen(model: model, configuration: configuration) {
+                    openConfiguration = nil
+                }
+            } else {
+                ReportGallery(model: model) { configuration in
+                    openConfiguration = configuration
+                }
             }
-        } else {
-            ReportGallery(model: model) { configuration in
-                openConfiguration = configuration
+        }
+        .onAppear {
+            // A menu item may ask to jump straight to one report.
+            if let kind = model.pendingReportKind {
+                model.pendingReportKind = nil
+                openConfiguration = kind.defaultConfiguration(for: model)
             }
         }
     }

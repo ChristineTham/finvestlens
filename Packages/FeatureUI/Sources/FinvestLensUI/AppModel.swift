@@ -117,6 +117,7 @@ public enum RootPanel: String, Identifiable, Sendable {
     case autoCategorize
     case find
     case findAccount
+    case business
     public var id: String { rawValue }
 }
 
@@ -436,6 +437,19 @@ public final class AppModel {
     /// sheet to this; menu commands and toolbar buttons set it, so every panel
     /// is reachable from the menu bar as well as the toolbar.
     public var presentedPanel: RootPanel?
+
+    /// A report to open immediately when the Reports panel appears — set by a
+    /// menu item that jumps straight to one report (e.g. the aging reports).
+    var pendingReportKind: ReportKind?
+
+    /// Opens the Reports panel straight onto the receivable-aging report.
+    public func openReceivableAging() {
+        pendingReportKind = .receivableAging; presentedPanel = .reports
+    }
+    /// Opens the Reports panel straight onto the payable-aging report.
+    public func openPayableAging() {
+        pendingReportKind = .payableAging; presentedPanel = .reports
+    }
 
     /// The register row the user has selected.
     ///

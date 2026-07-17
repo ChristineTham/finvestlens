@@ -89,6 +89,12 @@ public struct AgingBuckets: Sendable, Equatable {
     public var days61to90: Decimal = 0
     public var over90: Decimal = 0
 
+    public init(current: Decimal = 0, days31to60: Decimal = 0,
+                days61to90: Decimal = 0, over90: Decimal = 0) {
+        self.current = current; self.days31to60 = days31to60
+        self.days61to90 = days61to90; self.over90 = over90
+    }
+
     public var total: Decimal { current + days31to60 + days61to90 + over90 }
 
     /// Adds `amount` into the bucket for `daysOverdue`.

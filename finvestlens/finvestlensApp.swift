@@ -200,6 +200,16 @@ struct finvestlensApp: App {
                     .keyboardShortcut("d", modifiers: .command)
                     .disabled(!model.isOpen)
             }
+            CommandMenu("Business") {
+                Button("Customers, Vendors & Invoices…") { model.presentedPanel = .business }
+                    .keyboardShortcut("b", modifiers: [.command, .shift])
+                    .disabled(!model.isOpen)
+                Divider()
+                Button("Receivable Aging Report…") { model.openReceivableAging() }
+                    .disabled(!model.isOpen)
+                Button("Payable Aging Report…") { model.openPayableAging() }
+                    .disabled(!model.isOpen)
+            }
             CommandMenu("Security") {
                 Button(model.requireAuthentication
                        ? "Don’t Require Authentication"

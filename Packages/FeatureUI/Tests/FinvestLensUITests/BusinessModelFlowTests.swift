@@ -87,6 +87,33 @@ struct BusinessModelFlowTests {
         #expect(restored.outstanding(restored.invoices.first!) == dec("100"))
     }
 
+    @Test("The receivable-aging report builds a bucketed table")
+    func agingReportDocument() throws {
+        let url = tempURL()
+        let model = AppModel()
+        try model.newDocument(at: url)
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        let ar = try #require(model.addAccount(name: "A/R", type: .receivable))
+        let sales = try #require(model.addAccount(name: "Sales", type: .income))
+        let customer = try #require(model.addCustomer(id: "C1", name: "Acme"))
+        let invoice = try #require(model.createInvoice(
+            id: "INV-1", kind: .invoice, ownerType: .customer, ownerID: customer,
+            lines: [.init(accountID: sales, price: dec("500"))]))
+        #expect(model.postInvoice(invoice, to: ar))
+
+        let config = ReportConfiguration(kind: ReportKind.receivableAging.rawValue,
+                                         period: .allTime)
+        let document = try #require(model.reportDocument(for: config))
+        #expect(document.title == "Receivable Aging")
+        let section = try #require(document.sections.first)
+        #expect(section.columns == ["Current", "31–60", "61–90", "91+", "Total"])
+        #expect(section.rows.first?.label == "Acme")
+        // Acme's $500 shows in the total column and sums in columnTotals.
+        #expect(section.rows.first?.amounts?.last == dec("500"))
+        #expect(section.columnTotals?.amounts.last == dec("500"))
+    }
+
     @Test("A created invoice persists on save and reloads")
     func savesAndReloads() async throws {
         let url = tempURL()

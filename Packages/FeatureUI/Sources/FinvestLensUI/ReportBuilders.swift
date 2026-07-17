@@ -338,6 +338,44 @@ extension AppModel {
                                ("Total out", report.totalLoss)],
                     lines: report.intervals.map { (intervalLabel($0), $0.average) }))
 
+        case .receivableAging, .payableAging:
+            let receivable = kind == .receivableAging
+            guard let book else { return nil }
+            let rows = book.agingByOwner(receivable: receivable, asOf: to)
+            let code = reportCurrency.mnemonic
+            let columns = ["Current", "31–60", "61–90", "91+", "Total"]
+            func amounts(_ b: AgingBuckets) -> [Decimal?] {
+                [b.current, b.days31to60, b.days61to90, b.over90, b.total]
+            }
+            let totals = rows.reduce(into: AgingBuckets()) { acc, row in
+                acc.current += row.buckets.current
+                acc.days31to60 += row.buckets.days31to60
+                acc.days61to90 += row.buckets.days61to90
+                acc.over90 += row.buckets.over90
+            }
+            return ReportDocument(
+                title: receivable ? "Receivable Aging" : "Payable Aging",
+                periodLabel: asOfLabel,
+                currencyCode: code,
+                kpis: [
+                    ReportKPI(label: receivable ? "Owed to you" : "You owe", amount: totals.total),
+                    ReportKPI(label: "Current", amount: totals.current),
+                    ReportKPI(label: "Over 90 days", amount: totals.over90, signed: true),
+                ],
+                chart: nil,
+                sections: [ReportDocumentSection(
+                    title: receivable ? "Customers" : "Vendors",
+                    rows: rows.map { ReportDocumentRow(label: $0.name, amounts: amounts($0.buckets)) },
+                    columns: columns,
+                    columnTotals: ("Total", amounts(totals)))],
+                notes: ["Open invoices are aged by their due date as of "
+                        + to.formatted(date: .abbreviated, time: .omitted)
+                        + " into 0–30 (current), 31–60, 61–90 and 91+ day buckets."],
+                facts: ReportFactsSource(
+                    headline: [("Total", totals.total), ("Current", totals.current),
+                               ("Over 90 days", totals.over90)],
+                    lines: rows.map { ($0.name, $0.buckets.total) }))
+
         default:
             return nil
         }

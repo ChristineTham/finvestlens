@@ -344,6 +344,7 @@ public struct FinvestLensRootView: View {
             case .autoCategorize: AutoCategorizeSheet(model: model)
             case .find: FindSheet(model: model)
             case .findAccount: FindAccountSheet(model: model)
+            case .business: BusinessHub(model: model)
             }
         }
         #if os(macOS)
