@@ -39,9 +39,12 @@ Common workflows partly built; each is a bounded piece of work.
 | OFX investment statements | FR-XIO-02 / P4 | Only `<STMTTRN>` cash rows parsed; `<INVBUY>`/`<INVSELL>` ignored (use the Stock Assistant). |
 | Re-open a finished reconciliation | FR-REC-03 / P4 | Begin/toggle/finish/cancel only. |
 | Manual attach a file to a transaction | FR-REG-10 / P6 | Smart Import links applied PDFs (`assoc_uri`) and the register opens them; a manual "attach a file" action from the editor is not offered. |
-| Twelve Data quote provider | FR-INV-03b / P5 | Yahoo / EODHD / Alpha Vantage / Finnhub shipped; Twelve Data / Stooq not. |
+| Twelve Data quote provider | FR-INV-03b / P5 | Yahoo / EODHD / Alpha Vantage / Finnhub shipped (`QuoteProviderKind` has 4 cases); Twelve Data / Stooq not. |
+| Import scheduled transactions from a GnuCash file | FR-IMP-03 / P4 | FinvestLens's own scheduled transactions work, but `<gnc:schedxaction>` in an imported GnuCash file is silently dropped (`GnuCashXMLImporter` `default: break`) — not even counted as a warning. |
+| Import budgets from a GnuCash file | FR-IMP-04 / P4 | `<gnc:budget>` in an imported GnuCash file is silently dropped, as above. In-app budgets work. |
+| Rule actions beyond category + notes | FR-RULE-01 / P4 | Rule actions are limited to set-account and set-notes; FR-RULE-01's set-tags, set-description, convert-type, link-to-bill and allocate-to-goal are not built, and triggers test only description / memo / amount. |
 | Open Read-Only on a live lock | FR-DAT-06 / P1 | Open fails with holder info + Break-Lock; no read-only mode. |
-| Autosave interval setting | FR-DAT-10 / P2 | Fixed periodic interval; not user-configurable/disableable yet. |
+| Autosave interval setting | FR-DAT-10 / P2 | Fixed 5-minute interval (`AppModel` hardcoded 300 s); not user-configurable/disableable, no Settings control. |
 
 ## 3 — Platform enablement (needs a target / entitlement)
 
@@ -67,11 +70,10 @@ Lower-priority pieces of features that are otherwise complete.
 | Loan amortization assistant | FR-SCH-04 / P5 | The Loan **Calculator** exists (payment + schedule); the *assistant* that generates the scheduled loan transactions does not. |
 | Advanced Portfolio extra columns | FR-RPT-02 / P5 | Money In/Out, Income, Rate-of-Return columns. |
 | Managed-fund money-flow realised model | FR-RPT-02 / P5 | Our per-parcel engine subtracts non-fee expense splits booked inside managed-fund transactions where GnuCash's money-in/out model washes them out (~$34k realised across ~6 accounts). Matching would mean adopting GnuCash's money-flow model — arguably not more correct. |
-| Business: Bills Due Reminder surface | FR-BUS-05 / P7 | `aging`/`agingByOwner` give the data; the reminder UI is todo. |
-| Business: vendor / employee / job detail reports | FR-BUS / P7 | Customer Summary + aging built; the per-owner detail reports are todo. |
-| Business: Australian-Tax invoice layout | FR-BUS-03 / P7 | Printable/Tax invoice PDF built; the AU-specific layout is todo. |
-| Business: time & mileage tracking | FR-PLAN-14 / P7 | Not implemented. |
-| Business/budget/scheduled in native GnuCash XML slots | FR-IMP-03/05 / P3, P7 | Persisted as KVP-JSON in our own slots and round-tripped; not written as GnuCash's own `sx:`/budget/business XML slots (GnuCash import counts them as warnings). |
+| Business: vendor / employee / job detail reports | FR-BUS / P7 | Customer Summary + Receivable/Payable Aging built; the per-vendor/employee/job detail reports are todo. |
+| Business: Australian-Tax invoice layout | FR-BUS-03 / P7 | Printable INVOICE/BILL/VOUCHER PDF built (with an ABN/Tax-ID field on company info); a "Tax Invoice"-titled AU GST layout is todo. |
+| Business: time & mileage tracking | FR-PLAN-14 / P7 | Not implemented (no billable-time / mileage model). |
+| Free-text search operator coverage | FR-FIND-01 / P4 | The free-text box supports `tag:`/`account:`/`memo:`/`desc:`/`amount:` (with `>`/`<`) and saved searches; the documented `from:`/`to:`/`type:`, relative `d/w/m/y` date offsets, and `-` negation are only in the structured Find (⌘F) dialog, not the token grammar. |
 | `rebuildAccountTree` subtree-only rebuild | NFR-02 / P2 | The remaining ~0.04s of a refresh is a full-tree rebuild + search; fast enough to feel instant. Rebuild only the affected subtree if ever needed. |
 
 ## 5 — Apple Intelligence import caveats (monitor)

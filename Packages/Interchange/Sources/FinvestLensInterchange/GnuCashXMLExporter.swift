@@ -14,8 +14,11 @@ import FinvestLensEngine
 /// The output mirrors what ``GnuCashXMLImporter`` reads — commodities, the
 /// account hierarchy, and transactions/splits — preserving GUIDs and the
 /// account placeholder/hidden flags (`FR-EXP-03`). Amounts are emitted as
-/// exact GnuCash rationals (`num/denom`), so no precision is lost. Prices,
-/// budgets, scheduled and business objects are not yet written (P5+).
+/// exact GnuCash rationals (`num/denom`), so no precision is lost. Prices and
+/// **business objects** (customers/vendors/employees/jobs/invoices/entries,
+/// with `<act:lots>`/`<split:lot>`) are written too. GnuCash-native budgets
+/// and scheduled transactions are not written (FinvestLens keeps its own in
+/// KVP slots).
 public enum GnuCashXMLExporter {
 
     /// Serialises `book` to GnuCash XML, optionally gzip-compressed
