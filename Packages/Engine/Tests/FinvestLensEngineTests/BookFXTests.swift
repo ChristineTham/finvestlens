@@ -73,4 +73,29 @@ struct BookFXTests {
         // 10 shares × (200 USD × 1.50) = 3000 AUD.
         #expect(book.convertedBalance(of: holding, in: .aud, on: day(10)) == dec("3000"))
     }
+
+    @Test("Nearest-in-time can pick a later price (GnuCash pricedb-nearest)")
+    func nearestInTime() {
+        let book = Book(baseCurrency: .aud)
+        book.setExchangeRate(from: .usd, to: .aud, rate: dec("1.40"), date: day(0))
+        book.setExchangeRate(from: .usd, to: .aud, rate: dec("1.60"), date: day(100))
+        // day 70: the day-100 price is 30 days away, day-0 is 70 — the later
+        // price is nearer, so GnuCash's default source uses it.
+        #expect(book.exchangeRate(from: .usd, to: .aud, on: day(70)) == dec("1.60"))
+        // day 40: day-0 is nearer (40 vs 60).
+        #expect(book.exchangeRate(from: .usd, to: .aud, on: day(40)) == dec("1.40"))
+        // Equal distance (day 50) → the earlier price, matching GnuCash's tie rule.
+        #expect(book.exchangeRate(from: .usd, to: .aud, on: day(50)) == dec("1.40"))
+    }
+
+    @Test("Indirect conversion chains through a common currency")
+    func indirectChaining() {
+        let book = Book(baseCurrency: .aud)
+        // AUD→EUR and USD→EUR exist; AUD↔USD does not.
+        book.setExchangeRate(from: .aud, to: .eur, rate: dec("0.60"), date: day(0))
+        book.setExchangeRate(from: .usd, to: .eur, rate: dec("0.90"), date: day(0))
+        // AUD→USD via EUR: 0.60 × (1 / 0.90).
+        let rate = try! #require(book.exchangeRate(from: .aud, to: .usd))
+        #expect(rate == dec("0.60") / dec("0.90"))
+    }
 }

@@ -69,7 +69,7 @@ struct ReconcileReportTests {
         let (book, bank) = makeBook()
         let r = try report(book, bank)
         #expect(r.reconciledBalance == book.balance(of: bank, filter: .reconciled).amount)
-        #expect(r.reconciledBalance == 750)
+        #expect(r.reconciledBalance == 741)   // 1000 − 250 − 9 (frozen folds in)
     }
 
     @Test("The ending balance is the account's balance")
@@ -86,9 +86,9 @@ struct ReconcileReportTests {
         let (book, bank) = makeBook()
         let r = try report(book, bank)
         #expect(r.fundsIn.map(\.amount) == [1000])
-        #expect(r.fundsOut.map(\.amount) == [-250])
+        #expect(r.fundsOut.map(\.amount) == [-250, -9])   // frozen −9 folds in
         #expect(r.totalIn == 1000)
-        #expect(r.totalOut == -250)
+        #expect(r.totalOut == -259)
         #expect(r.totalIn + r.totalOut == r.reconciledBalance)
     }
 
@@ -97,19 +97,22 @@ struct ReconcileReportTests {
         let (book, bank) = makeBook()
         let r = try report(book, bank)
         #expect(r.cleared.map(\.amount) == [500])
-        #expect(r.clearedBalance == 1250)      // 750 reconciled + 500 cleared
+        #expect(r.clearedBalance == 1241)      // 741 reconciled + 500 cleared
         #expect(r.clearedBalance == book.balance(of: bank, filter: .cleared).amount)
     }
 
-    /// Frozen is a hold on a posting, not the bank having cleared it — it has
-    /// not been agreed to, so it cannot sit with the money that has been.
-    @Test("Frozen counts as outstanding, not cleared")
-    func frozenIsOutstanding() throws {
+    /// Frozen (f) is a locked-reconciled state — GnuCash folds it into the
+    /// reconciled balance, not outstanding. Only genuinely unreconciled (n)
+    /// postings are outstanding.
+    @Test("Frozen counts as reconciled, not outstanding")
+    func frozenIsReconciled() throws {
         let (book, bank) = makeBook()
         let r = try report(book, bank)
-        #expect(r.outstanding.map(\.amount).sorted() == [-40, -9])
-        #expect(r.outstandingTotal == -49)
+        #expect(r.outstanding.map(\.amount) == [-40])
+        #expect(r.outstandingTotal == -40)
         #expect(!r.cleared.contains { $0.state == .frozen })
+        // The frozen −9 is a reconciled funds-out row.
+        #expect(r.fundsOut.contains { $0.state == .frozen && $0.amount == -9 })
     }
 
     /// Voided postings are excluded from every balance in the book, and must be

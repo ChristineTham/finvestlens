@@ -230,6 +230,54 @@ public final class Book {
         return Self.latest(in: bucket, on: date)
     }
 
+    /// The price of `commodity` in `currency` *nearest in time* to `date` — the
+    /// closer of the newest at-or-before and the oldest after, ties going to the
+    /// earlier price. This is GnuCash's default report price source
+    /// (`pricedb-nearest`, `gnc_pricedb_lookup_nearest_in_time`); valuations use
+    /// it so a report as-of a date can pick a slightly-later quote.
+    public func nearestPrice(of commodity: Commodity, in currency: Commodity,
+                             on date: Date? = nil) -> Price? {
+        buildIndexIfNeeded()
+        guard let bucket = pairIndex?[PricePair(commodity: commodity, currency: currency)] else {
+            return nil
+        }
+        return Self.nearest(in: bucket, on: date)
+    }
+
+    /// The nearest-in-time counterpart of ``latest(in:on:)``.
+    private static func nearest(in bucket: [Price], on date: Date?) -> Price? {
+        guard let date else { return latest(in: bucket, on: nil) }
+        let before = latest(in: bucket, on: date)          // newest at-or-before
+        // The oldest price strictly after `date`.
+        var low = 0, high = bucket.count
+        while low < high {
+            let mid = (low + high) / 2
+            if bucket[mid].date > date { high = mid } else { low = mid + 1 }
+        }
+        let after: Price? = low < bucket.count ? bucket[low] : nil
+        switch (before, after) {
+        case let (b?, a?):
+            // Tie (equal distance) → the earlier price, matching GnuCash.
+            return a.date.timeIntervalSince(date) < date.timeIntervalSince(b.date) ? a : b
+        case let (b?, nil): return b
+        case let (nil, a?): return a
+        default: return nil
+        }
+    }
+
+    /// Every commodity `commodity` has at least one price against, in either
+    /// direction — the candidate intermediates for indirect FX conversion
+    /// (GnuCash's `indirect_price_conversion` common-currency search).
+    func pricedAgainst(_ commodity: Commodity) -> Set<Commodity> {
+        buildIndexIfNeeded()
+        var result: Set<Commodity> = []
+        for pair in pairIndex?.keys ?? Dictionary<PricePair, [Price]>().keys {
+            if pair.commodity == commodity { result.insert(pair.currency) }
+            else if pair.currency == commodity { result.insert(pair.commodity) }
+        }
+        return result
+    }
+
     /// Values `quantity` units of `commodity` in `currency` using the price
     /// database. Returns `quantity` unchanged when the commodities match, or
     /// `nil` when no price is available.
@@ -341,9 +389,13 @@ public final class Book {
         case .all:
             return true
         case .cleared:
-            return split.reconcileState == .cleared || split.reconcileState == .reconciled
+            // GnuCash's cleared balance counts everything not unreconciled
+            // (`NREC != reconciled`): cleared, reconciled, and frozen.
+            return split.reconcileState != .notReconciled
         case .reconciled:
-            return split.reconcileState == .reconciled
+            // GnuCash's reconciled balance counts reconciled AND frozen
+            // (`YREC == reconciled || FREC == reconciled`).
+            return split.reconcileState == .reconciled || split.reconcileState == .frozen
         }
     }
 

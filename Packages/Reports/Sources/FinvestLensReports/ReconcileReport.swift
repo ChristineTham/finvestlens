@@ -101,9 +101,11 @@ public extension FinancialReports {
         }
         rows.sort { $0.date < $1.date }
 
-        let reconciled = rows.filter { $0.state == .reconciled }
+        // Frozen (f) is a locked-reconciled state — GnuCash folds it into the
+        // reconciled balance, so it belongs with reconciled, not outstanding.
+        let reconciled = rows.filter { $0.state == .reconciled || $0.state == .frozen }
         let cleared = rows.filter { $0.state == .cleared }
-        let outstanding = rows.filter { $0.state == .notReconciled || $0.state == .frozen }
+        let outstanding = rows.filter { $0.state == .notReconciled }
 
         // Zero goes with funds in rather than being dropped: a posting that
         // exists has to appear somewhere, or the rows stop accounting for the

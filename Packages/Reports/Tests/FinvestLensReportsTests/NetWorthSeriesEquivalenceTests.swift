@@ -157,15 +157,27 @@ struct NetWorthSeriesEquivalenceTests {
     }
 
     /// A rate moving with no balance moving still moves net worth — the reason
-    /// conversion stays per date instead of being hoisted out of the loop.
+    /// conversion stays per date instead of being hoisted out of the loop. The
+    /// two query dates each sit nearer a different price so, under GnuCash's
+    /// nearest-in-time source, they resolve to different rates.
     @Test("A moving rate moves net worth even when balances do not")
     func movingRateMovesNetWorth() {
-        let book = awkwardBook()
-        let series = FinancialReports.netWorthSeries(book, dates: [day(16), day(25)], currency: .aud)
-        // Nothing is posted between day 16 and day 25, but the USD rate goes
-        // 1.50 → 1.60 and BHP goes 40.00 → 45.50 on day 20.
+        let book = Book(baseCurrency: .aud)
+        let usd = book.addAccount(Account(name: "USD", type: .bank, commodity: .usd))
+        let equity = book.addAccount(Account(name: "Equity", type: .equity, commodity: .aud))
+        book.setExchangeRate(from: .usd, to: .aud, rate: dec("1.50"), date: day(10))
+        book.setExchangeRate(from: .usd, to: .aud, rate: dec("1.60"), date: day(30))
+        // The only posting is on day 1 — balances are constant thereafter.
+        let t = Transaction(currency: .usd, datePosted: day(1), description: "Open")
+        t.addSplit(account: usd, value: dec("100"))
+        t.addSplit(account: equity, value: dec("-100"))
+        book.addTransaction(t)
+
+        // day 15 is nearer the day-10 rate (1.50); day 35 is nearer day-30 (1.60).
+        let series = FinancialReports.netWorthSeries(book, dates: [day(15), day(35)], currency: .aud)
+        #expect(series[0].netWorth == dec("150"))
+        #expect(series[1].netWorth == dec("160"))
         #expect(series[0].netWorth != series[1].netWorth)
-        #expect(series[1].netWorth == reference(book, dates: [day(25)], currency: .aud)[0].netWorth)
     }
 
     @Test("An empty date list gives an empty series")

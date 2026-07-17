@@ -78,4 +78,23 @@ struct BalancesByAccountTests {
         #expect(map[ObjectIdentifier(food)] == 100)
         #expect(map[ObjectIdentifier(bank)] == -100)
     }
+
+    @Test("Frozen splits count in both cleared and reconciled balances (GnuCash)")
+    func frozenCountsAsClearedAndReconciled() {
+        // GnuCash folds frozen (f) into cleared (NREC != state) and reconciled
+        // (YREC || FREC) totals.
+        let book = Book(baseCurrency: .aud)
+        let bank = book.addAccount(Account(name: "Bank", type: .bank, commodity: .aud))
+        let salary = book.addAccount(Account(name: "Salary", type: .income, commodity: .aud))
+        let txn = Transaction(currency: .aud, datePosted: day(0), description: "Pay")
+        let split = Split(account: bank, value: 100)
+        split.reconcileState = .frozen
+        txn.addSplit(split)
+        txn.addSplit(account: salary, value: -100)
+        book.addTransaction(txn)
+
+        #expect(book.balance(of: bank, filter: .all).amount == 100)
+        #expect(book.balance(of: bank, filter: .cleared).amount == 100)
+        #expect(book.balance(of: bank, filter: .reconciled).amount == 100)
+    }
 }
