@@ -47,6 +47,66 @@ struct RecurrenceTests {
         #expect(r.next(after: date(2026, 1, 15)) == date(2026, 2, 15))
         #expect(r.next(after: date(2026, 1, 10)) == date(2026, 1, 15))
     }
+
+    @Test("Monthly on the 31st re-anchors instead of drifting (GnuCash parity)")
+    func monthEndNoDrift() {
+        let r = Recurrence(period: .monthly, startDate: date(2025, 1, 31))
+        let dates = r.occurrences(since: nil, through: date(2025, 6, 30))
+        #expect(dates == [date(2025, 1, 31), date(2025, 2, 28), date(2025, 3, 31),
+                          date(2025, 4, 30), date(2025, 5, 31), date(2025, 6, 30)])
+    }
+
+    @Test("Yearly from Feb 29 restores the leap day (GnuCash parity)")
+    func leapYearAnchor() {
+        let r = Recurrence(period: .yearly, startDate: date(2020, 2, 29))
+        let dates = r.occurrences(since: nil, through: date(2024, 3, 1))
+        #expect(dates == [date(2020, 2, 29), date(2021, 2, 28), date(2022, 2, 28),
+                          date(2023, 2, 28), date(2024, 2, 29)])
+    }
+
+    @Test("End-of-month snaps the start and tracks each month's last day")
+    func endOfMonth() {
+        let r = Recurrence(period: .endOfMonth, startDate: date(2025, 1, 30))
+        #expect(r.startDate == date(2025, 1, 31))     // aligned to last day
+        let dates = r.occurrences(since: nil, through: date(2025, 4, 30))
+        #expect(dates == [date(2025, 1, 31), date(2025, 2, 28),
+                          date(2025, 3, 31), date(2025, 4, 30)])
+    }
+
+    @Test("Nth-weekday keeps the 3rd Tuesday each month")
+    func nthWeekday() {
+        // 2025-01-21 is the 3rd Tuesday of January.
+        let r = Recurrence(period: .nthWeekday, startDate: date(2025, 1, 21))
+        let dates = r.occurrences(since: nil, through: date(2025, 4, 30))
+        #expect(dates == [date(2025, 1, 21), date(2025, 2, 18),
+                          date(2025, 3, 18), date(2025, 4, 15)])
+    }
+
+    @Test("Last-weekday keeps the last Friday each month")
+    func lastWeekday() {
+        // 2025-01-31 is the last Friday of January.
+        let r = Recurrence(period: .lastWeekday, startDate: date(2025, 1, 31))
+        let dates = r.occurrences(since: nil, through: date(2025, 4, 30))
+        #expect(dates == [date(2025, 1, 31), date(2025, 2, 28),
+                          date(2025, 3, 28), date(2025, 4, 25)])
+    }
+
+    @Test("Once fires exactly once")
+    func once() {
+        let r = Recurrence(period: .once, startDate: date(2026, 1, 15))
+        #expect(r.occurrences(since: nil, through: date(2027, 1, 1)) == [date(2026, 1, 15)])
+        #expect(r.next(after: date(2026, 1, 15)) == nil)
+        #expect(r.next(after: date(2026, 1, 10)) == date(2026, 1, 15))
+    }
+
+    @Test("Weekend-adjust moves a weekend occurrence off the weekend")
+    func weekendAdjust() {
+        // The 15th of March 2025 is a Saturday.
+        let back = Recurrence(period: .monthly, startDate: date(2025, 3, 15), weekendAdjust: .back)
+        #expect(back.next(after: date(2025, 2, 20)) == date(2025, 3, 14))   // → Friday
+        let fwd = Recurrence(period: .monthly, startDate: date(2025, 3, 15), weekendAdjust: .forward)
+        #expect(fwd.next(after: date(2025, 2, 20)) == date(2025, 3, 17))    // → Monday
+    }
 }
 
 @Suite("Scheduled transaction")

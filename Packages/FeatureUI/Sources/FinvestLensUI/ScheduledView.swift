@@ -93,15 +93,18 @@ struct ScheduledView: View {
     }
 
     private func recurrenceSummary(_ recurrence: Recurrence) -> String {
-        let unit: String
-        switch recurrence.period {
-        case .daily: unit = "day"
-        case .weekly: unit = "week"
-        case .monthly: unit = "month"
-        case .yearly: unit = "year"
-        }
+        let from = recurrence.startDate.formatted(.dateTime.year().month().day())
+        if recurrence.period == .once { return "Once, on \(from)" }
+        let unit = recurrence.period.unitNoun
         let every = recurrence.interval == 1 ? "Every \(unit)" : "Every \(recurrence.interval) \(unit)s"
-        return "\(every), from \(recurrence.startDate.formatted(.dateTime.year().month().day()))"
+        let qualifier: String
+        switch recurrence.period {
+        case .endOfMonth: qualifier = " (last day)"
+        case .nthWeekday: qualifier = " (same weekday)"
+        case .lastWeekday: qualifier = " (last weekday)"
+        default: qualifier = ""
+        }
+        return "\(every)\(qualifier), from \(from)"
     }
 
     @ViewBuilder
@@ -148,7 +151,7 @@ struct AddScheduledSheet: View {
                 }
                 Section("Schedule") {
                     Picker("Repeats", selection: $period) {
-                        ForEach(RecurrencePeriod.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                        ForEach(RecurrencePeriod.allCases, id: \.self) { Text($0.displayName).tag($0) }
                     }
                     Stepper("Every \(interval)", value: $interval, in: 1...52)
                     DatePicker("Starting", selection: $startDate, displayedComponents: .date)

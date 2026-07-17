@@ -1635,7 +1635,7 @@ struct ScheduleTransactionSheet: View {
                 Section("Repeat") {
                     Picker("Every", selection: $period) {
                         ForEach(RecurrencePeriod.allCases, id: \.self) {
-                            Text($0.rawValue.capitalized).tag($0)
+                            Text($0.displayName).tag($0)
                         }
                     }
                     Stepper("Every \(interval) \(unitName)", value: $interval, in: 1...52)
@@ -1674,12 +1674,7 @@ struct ScheduleTransactionSheet: View {
     }
 
     private var unitName: String {
-        let singular = switch period {
-        case .daily: "day"
-        case .weekly: "week"
-        case .monthly: "month"
-        case .yearly: "year"
-        }
+        let singular = period.unitNoun
         return interval == 1 ? singular : singular + "s"
     }
 
