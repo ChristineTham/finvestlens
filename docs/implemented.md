@@ -52,6 +52,8 @@ GnuCash-source reference where relevant:
   to the token grammar.
 - **Window/state restoration** — reopen the last book on launch (General
   setting).
+- **Help menu** — a FinvestLens Help item (⌘?) opening an in-app
+  getting-started + search-grammar + keyboard-shortcut reference.
 - **CSV import mapping profiles** (FR-XIO-08) — named column-mapping profiles
   (Load / Save as Profile… / Delete) persisted app-wide for repeat imports.
 - **Rules: `account` trigger + set-tags / set-description actions**
