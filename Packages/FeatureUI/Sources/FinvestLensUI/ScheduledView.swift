@@ -16,6 +16,8 @@ struct ScheduledView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var showingAdd = false
+    @State private var promptingVariables = false
+    @State private var variableInputs: [String: String] = [:]
 
     private var scheduled: [ScheduledTransaction] { model.scheduledTransactions }
     private var due: [ScheduledTransactionService.PendingInstance] { model.pendingScheduled() }
@@ -51,7 +53,13 @@ struct ScheduledView: View {
                             }
                         }
                         Button("Enter \(due.count) Due Transaction\(due.count == 1 ? "" : "s")") {
-                            _ = model.postDueScheduled()
+                            if model.dueVariableNames().isEmpty {
+                                _ = model.postDueScheduled()
+                            } else {
+                                variableInputs = Dictionary(uniqueKeysWithValues:
+                                    model.dueVariableNames().map { ($0, "") })
+                                promptingVariables = true
+                            }
                         }
                     }
                 }
@@ -88,6 +96,43 @@ struct ScheduledView: View {
                 }
             }
             .sheet(isPresented: $showingAdd) { AddScheduledSheet(model: model) }
+            .sheet(isPresented: $promptingVariables) {
+                NavigationStack {
+                    Form {
+                        Section("Values for this run") {
+                            ForEach(variableInputs.keys.sorted(), id: \.self) { name in
+                                LabeledContent(name) {
+                                    TextField(name, text: Binding(
+                                        get: { variableInputs[name] ?? "" },
+                                        set: { variableInputs[name] = $0 }))
+                                        .multilineTextAlignment(.trailing)
+                                        .frame(maxWidth: 160)
+                                }
+                            }
+                        }
+                        Text("These scheduled transactions use formulas (FR-SCH-02). Enter the amounts for each variable; they apply to every instance posted now.")
+                            .scaledFont(.caption).foregroundStyle(.secondary)
+                    }
+                    .navigationTitle("Formula Values")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { promptingVariables = false }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Post") {
+                                var vars: [String: Decimal] = [:]
+                                for (name, text) in variableInputs {
+                                    vars[name] = AmountExpression.evaluate(text) ?? 0
+                                }
+                                _ = model.postDueScheduled(variables: vars)
+                                promptingVariables = false
+                            }
+                            .disabled(variableInputs.values.contains { AmountExpression.evaluate($0) == nil })
+                        }
+                    }
+                }
+                .frame(minWidth: 360, minHeight: 240)
+            }
         }
         .frame(minWidth: 500, minHeight: 420)
     }
@@ -139,7 +184,14 @@ struct AddScheduledSheet: View {
             Form {
                 Section("Details") {
                     TextField("Name", text: $name)
-                    TextField("Amount", text: $amountText)
+                    TextField("Amount or formula", text: $amountText)
+                    if !formulaVariables.isEmpty {
+                        Text("Formula — you'll be asked for \(formulaVariables.joined(separator: ", ")) each time it's due.")
+                            .scaledFont(.caption).foregroundStyle(.secondary)
+                    } else if let value = evaluatedAmount, value != Decimal(string: amountText) {
+                        Text("= \(AmountFormat.string(value, code: model.reportCurrency.mnemonic))")
+                            .scaledFont(.caption).foregroundStyle(.secondary)
+                    }
                     Picker("From", selection: $fromID) {
                         Text("—").tag(GncGUID?.none)
                         ForEach(model.postableAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
@@ -171,23 +223,38 @@ struct AddScheduledSheet: View {
         }
     }
 
+    /// The amount field evaluated as an arithmetic expression (`FR-SCH-02`);
+    /// `nil` when it isn't a valid expression or references variables.
+    private var evaluatedAmount: Decimal? { AmountExpression.evaluate(amountText) }
+    /// Variable names in the amount field (non-empty makes it a formula).
+    private var formulaVariables: [String] { AmountExpression.variables(in: amountText).sorted() }
+
     private var isValid: Bool {
         guard let fromID, let toID, fromID != toID else { return false }
-        guard let amount = Decimal(string: amountText), amount != 0 else { return false }
-        return !name.trimmingCharacters(in: .whitespaces).isEmpty
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        if !formulaVariables.isEmpty { return true }                 // a variable formula
+        return evaluatedAmount != nil && evaluatedAmount != 0        // a number or arithmetic
     }
 
     private func add() {
-        guard let fromID, let toID, let amount = Decimal(string: amountText) else { return }
+        guard let fromID, let toID else { return }
+        let toSplit: ScheduledSplit
+        let fromSplit: ScheduledSplit
+        if formulaVariables.isEmpty {
+            guard let amount = evaluatedAmount else { return }
+            toSplit = ScheduledSplit(accountGUID: toID, value: amount)
+            fromSplit = ScheduledSplit(accountGUID: fromID, value: -amount)
+        } else {
+            let f = amountText.trimmingCharacters(in: .whitespaces)
+            toSplit = ScheduledSplit(accountGUID: toID, value: 0, formula: f)
+            fromSplit = ScheduledSplit(accountGUID: fromID, value: 0, formula: "-(\(f))")
+        }
         let sx = ScheduledTransaction(
             name: name,
             currency: model.reportCurrency,
             description: name,
             recurrence: Recurrence(period: period, interval: interval, startDate: startDate),
-            splits: [
-                ScheduledSplit(accountGUID: toID, value: amount),
-                ScheduledSplit(accountGUID: fromID, value: -amount),
-            ]
+            splits: [toSplit, fromSplit]
         )
         model.addScheduledTransaction(sx)
         dismiss()

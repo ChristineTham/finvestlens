@@ -76,16 +76,28 @@ extension AppModel {
         ScheduledTransactionService.pending(scheduledTransactions, through: through)
     }
 
+    /// Formula-variable names any *due* schedule needs values for before it can
+    /// be posted (`FR-SCH-02`), sorted. Empty when no due template uses a
+    /// variable formula — the common case.
+    public func dueVariableNames(through: Date = Date()) -> [String] {
+        var names = Set<String>()
+        for sx in scheduledTransactions where !sx.dueDates(through: through).isEmpty {
+            names.formUnion(sx.variableNames)
+        }
+        return names.sorted()
+    }
+
     /// Posts every due instance up to `through`, advancing each schedule's
-    /// `lastPosted`. Returns the number of transactions created (`FR-SCH-03`).
+    /// `lastPosted`. `variables` binds any formula variables (`FR-SCH-02`).
+    /// Returns the number of transactions created (`FR-SCH-03`).
     @discardableResult
-    public func postDueScheduled(through: Date = Date()) -> Int {
+    public func postDueScheduled(through: Date = Date(), variables: [String: Decimal] = [:]) -> Int {
         guard let book else { return 0 }
         var list = scheduledTransactions
         var created = 0
         for index in list.indices {
             let dueDates = list[index].dueDates(through: through)
-            for date in dueDates where ScheduledTransactionService.post(list[index], date: date, into: book) != nil {
+            for date in dueDates where ScheduledTransactionService.post(list[index], date: date, into: book, variables: variables) != nil {
                 created += 1
             }
             if let last = dueDates.last, (list[index].lastPosted ?? .distantPast) < last {

@@ -13,11 +13,36 @@ public struct ScheduledSplit: Codable, Hashable, Sendable {
     public var accountGUID: GncGUID
     public var value: Decimal
     public var memo: String
+    /// An optional amount **formula** (GnuCash's SX credit/debit-formula,
+    /// `FR-SCH-02`): an arithmetic expression that may reference named variables
+    /// (e.g. `principal + interest`, `rate * balance`). When set, it is
+    /// evaluated at instantiation and overrides ``value``; when `nil`, the fixed
+    /// ``value`` is used.
+    public var formula: String?
 
-    public init(accountGUID: GncGUID, value: Decimal, memo: String = "") {
+    public init(accountGUID: GncGUID, value: Decimal, memo: String = "", formula: String? = nil) {
         self.accountGUID = accountGUID
         self.value = value
         self.memo = memo
+        self.formula = formula
+    }
+
+    // Books saved before per-split formulas existed carry no such key.
+    private enum CodingKeys: String, CodingKey { case accountGUID, value, memo, formula }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        accountGUID = try c.decode(GncGUID.self, forKey: .accountGUID)
+        value = try c.decode(Decimal.self, forKey: .value)
+        memo = try c.decodeIfPresent(String.self, forKey: .memo) ?? ""
+        formula = try c.decodeIfPresent(String.self, forKey: .formula)
+    }
+
+    /// The concrete value for one occurrence: the formula evaluated with
+    /// `variables` when present (falling back to ``value`` if the formula can't
+    /// be evaluated — e.g. an unbound variable), else the fixed ``value``.
+    public func resolvedValue(variables: [String: Decimal] = [:]) -> Decimal {
+        guard let formula, !formula.isEmpty else { return value }
+        return AmountExpression.evaluate(formula, variables: variables) ?? value
     }
 }
 
@@ -109,6 +134,17 @@ public struct ScheduledTransaction: Identifiable, Codable, Hashable, Sendable {
         guard remindHorizon > createHorizon else { return [] }
         return recurrence.occurrences(since: createHorizon, through: remindHorizon)
     }
+
+    /// All formula-variable names this template needs values for before it can
+    /// be instantiated (`FR-SCH-02`), sorted. Empty when every split is a fixed
+    /// amount or a variable-free formula.
+    public var variableNames: [String] {
+        var names = Set<String>()
+        for split in splits where !(split.formula ?? "").isEmpty {
+            names.formUnion(AmountExpression.variables(in: split.formula!))
+        }
+        return names.sorted()
+    }
 }
 
 /// Instantiates scheduled transactions into the book ("since last run",
@@ -135,14 +171,18 @@ public enum ScheduledTransactionService {
 
     /// Creates a real ``Transaction`` for `scheduled` dated `date` and adds it
     /// to `book`. Returns the created transaction, or `nil` if a split account
-    /// is missing.
+    /// is missing. `variables` binds any formula variables (`FR-SCH-02`); a
+    /// split with a formula uses its evaluated value, others use their fixed
+    /// amount.
     @discardableResult
-    public static func post(_ scheduled: ScheduledTransaction, date: Date, into book: Book) -> Transaction? {
+    public static func post(_ scheduled: ScheduledTransaction, date: Date, into book: Book,
+                            variables: [String: Decimal] = [:]) -> Transaction? {
         let transaction = Transaction(currency: scheduled.currency, datePosted: date,
                                       description: scheduled.transactionDescription)
         for templateSplit in scheduled.splits {
             guard let account = book.account(with: templateSplit.accountGUID) else { return nil }
-            transaction.addSplit(account: account, value: templateSplit.value, memo: templateSplit.memo)
+            let value = scheduled.currency.round(templateSplit.resolvedValue(variables: variables))
+            transaction.addSplit(account: account, value: value, memo: templateSplit.memo)
         }
         book.addTransaction(transaction)
         return transaction

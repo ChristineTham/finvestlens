@@ -24,17 +24,40 @@ public enum AmountExpression {
     ///
     /// The decimal separator is `.`; grouping separators (`,`, spaces) between
     /// digits are ignored, matching how people paste amounts.
-    public static func evaluate(_ input: String) -> Decimal? {
-        var parser = Parser(input)
+    ///
+    /// `variables` binds named identifiers to values (GnuCash's scheduled-
+    /// transaction formula variables, `FR-SCH-02`). A formula that references an
+    /// identifier not present here fails to evaluate (returns `nil`); use
+    /// ``variables(in:)`` to discover which names a formula needs.
+    public static func evaluate(_ input: String, variables: [String: Decimal] = [:]) -> Decimal? {
+        var parser = Parser(input, variables: variables)
         guard let value = parser.parseExpression(), parser.consumedAll() else { return nil }
         return value
+    }
+
+    /// The set of variable names referenced by `input` (identifiers that are not
+    /// numbers/operators). Empty for a plain arithmetic expression. Used to
+    /// prompt for scheduled-transaction formula variables before instantiating.
+    public static func variables(in input: String) -> Set<String> {
+        var parser = Parser(input, variables: [:], collecting: true)
+        _ = parser.parseExpression()
+        return parser.collectedVariables
     }
 
     private struct Parser {
         private let scalars: [Character]
         private var index = 0
+        private let variables: [String: Decimal]
+        /// When true, unknown identifiers evaluate to 0 and are recorded rather
+        /// than failing — so ``variables(in:)`` can walk the whole expression.
+        private let collecting: Bool
+        var collectedVariables: Set<String> = []
 
-        init(_ input: String) { scalars = Array(input) }
+        init(_ input: String, variables: [String: Decimal], collecting: Bool = false) {
+            scalars = Array(input)
+            self.variables = variables
+            self.collecting = collecting
+        }
 
         mutating func consumedAll() -> Bool {
             skipSpaces()
@@ -83,7 +106,21 @@ public enum AmountExpression {
                 advance()
                 return value
             }
+            if c.isLetter || c == "_" { return parseIdentifier() }
             return parseNumber()
+        }
+
+        /// A variable: a letter/underscore followed by letters/digits/underscores
+        /// (GnuCash's formula variable names). Resolves against `variables`.
+        private mutating func parseIdentifier() -> Decimal? {
+            var name = ""
+            while index < scalars.count {
+                let c = scalars[index]
+                if c.isLetter || c.isNumber || c == "_" { name.append(c); advance() } else { break }
+            }
+            guard !name.isEmpty else { return nil }
+            if collecting { collectedVariables.insert(name); return 0 }
+            return variables[name]     // nil (fails) when the variable is unbound
         }
 
         private mutating func parseNumber() -> Decimal? {

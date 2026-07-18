@@ -303,8 +303,8 @@ enum GnuCashScheduledBudgetImport {
                     for ts in template.splits {
                         guard let accountGUID = GncGUID(hex: ts.realAccountGUID),
                               book.account(with: accountGUID) != nil else { continue }
-                        let value = Self.amount(ts)
-                        splits.append(ScheduledSplit(accountGUID: accountGUID, value: value, memo: ts.memo))
+                        splits.append(ScheduledSplit(accountGUID: accountGUID, value: Self.amount(ts),
+                                                     memo: ts.memo, formula: Self.formula(ts)))
                     }
                 }
 
@@ -340,6 +340,21 @@ enum GnuCashScheduledBudgetImport {
         /// A template split's signed value from the SX account's perspective:
         /// debit − credit (numerics; a plain-number formula is used if the
         /// numeric is zero but the formula parses).
+        /// A GnuCash SX credit/debit-formula that references variables (not a
+        /// plain number) becomes the split's ``ScheduledSplit/formula``
+        /// (`FR-SCH-02`); value = debit − credit from the account's perspective.
+        /// Returns `nil` for fixed-amount splits (the numeric already carries it).
+        static func formula(_ split: TemplateSplit) -> String? {
+            let debit = split.debitFormula.trimmingCharacters(in: .whitespaces)
+            let credit = split.creditFormula.trimmingCharacters(in: .whitespaces)
+            let debitVar = !debit.isEmpty && !AmountExpression.variables(in: debit).isEmpty
+            let creditVar = !credit.isEmpty && !AmountExpression.variables(in: credit).isEmpty
+            guard debitVar || creditVar else { return nil }
+            if debitVar && credit.isEmpty { return debit }
+            if creditVar && debit.isEmpty { return "-(\(credit))" }
+            return "(\(debit.isEmpty ? "0" : debit)) - (\(credit.isEmpty ? "0" : credit))"
+        }
+
         static func amount(_ split: TemplateSplit) -> Decimal {
             let debit = split.debitNumeric != 0 ? split.debitNumeric : (Decimal(string: split.debitFormula) ?? 0)
             let credit = split.creditNumeric != 0 ? split.creditNumeric : (Decimal(string: split.creditFormula) ?? 0)

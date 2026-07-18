@@ -50,7 +50,23 @@ struct AmountExpressionTests {
         #expect(AmountExpression.evaluate("5 +") == nil)
         #expect(AmountExpression.evaluate("(1 + 2") == nil)
         #expect(AmountExpression.evaluate("1 2") == nil)
-        #expect(AmountExpression.evaluate("abc") == nil)
+        #expect(AmountExpression.evaluate("abc") == nil)   // unbound variable
         #expect(AmountExpression.evaluate("5 / 0") == nil)
+    }
+
+    @Test("Variables resolve from the binding (FR-SCH-02)")
+    func variables() {
+        let vars = ["principal": dec("800"), "interest": dec("200")]
+        #expect(AmountExpression.evaluate("principal + interest", variables: vars) == dec("1000"))
+        #expect(AmountExpression.evaluate("principal * 1.1", variables: ["principal": dec("100")]) == dec("110"))
+        // An unbound variable still fails.
+        #expect(AmountExpression.evaluate("principal + interest", variables: ["principal": dec("800")]) == nil)
+    }
+
+    @Test("variables(in:) collects the identifiers a formula needs")
+    func collectVariables() {
+        #expect(AmountExpression.variables(in: "principal + interest") == ["principal", "interest"])
+        #expect(AmountExpression.variables(in: "rate * balance / 12") == ["rate", "balance"])
+        #expect(AmountExpression.variables(in: "10.50 + 2").isEmpty)
     }
 }

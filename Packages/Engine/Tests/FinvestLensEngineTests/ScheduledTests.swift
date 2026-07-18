@@ -138,6 +138,29 @@ struct ScheduledTransactionTests {
         #expect(sx.dueDates(through: date(2026, 3, 1)).count == 3)   // Jan, Feb, Mar
     }
 
+    @Test("Scheduled-split formulas resolve variables at instantiation (FR-SCH-02)")
+    func splitFormulas() {
+        let (book, expense, bank) = makeBook()
+        // A loan payment split by formula: principal + interest to the bank,
+        // matched by the expense legs — variables supplied at post time.
+        let sx = ScheduledTransaction(
+            name: "Loan payment", currency: .aud,
+            recurrence: Recurrence(period: .monthly, startDate: date(2026, 1, 1)),
+            splits: [
+                ScheduledSplit(accountGUID: expense, value: 0, formula: "principal + interest"),
+                ScheduledSplit(accountGUID: bank, value: 0, formula: "-(principal + interest)"),
+            ])
+
+        #expect(sx.variableNames == ["interest", "principal"])
+
+        let vars = ["principal": Decimal(800), "interest": Decimal(200)]
+        let txn = try! #require(ScheduledTransactionService.post(
+            sx, date: date(2026, 1, 1), into: book, variables: vars))
+        let toExpense = txn.splits.first { $0.account?.guid == expense }
+        #expect(toExpense?.value == Decimal(1000))
+        #expect(txn.isBalanced)
+    }
+
     @Test("Advance-create days create instances ahead of their due date")
     func advanceCreate() {
         var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
