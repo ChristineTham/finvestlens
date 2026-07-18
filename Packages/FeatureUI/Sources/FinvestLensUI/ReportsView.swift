@@ -161,7 +161,8 @@ private struct HoldingRow: View {
                 }
             }
             HStack {
-                Text("In \(AmountFormat.string(holding.moneyIn, code: code)) · Out \(AmountFormat.string(holding.moneyOut, code: code))")
+                Text("In \(AmountFormat.string(holding.moneyIn, code: code)) · Out \(AmountFormat.string(holding.moneyOut, code: code))"
+                     + (holding.income != 0 ? " · Income \(AmountFormat.string(holding.income, code: code))" : ""))
                     .scaledFont(.caption2).foregroundStyle(.secondary)
                 Spacer()
                 if let roi = holding.returnFraction {

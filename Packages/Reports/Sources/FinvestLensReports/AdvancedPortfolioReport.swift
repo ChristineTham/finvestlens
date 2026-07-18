@@ -36,9 +36,11 @@ public struct AdvancedHolding: Identifiable, Hashable, Sendable {
     public var moneyIn: Decimal
     /// Total proceeds from disposals — GnuCash's "Money Out".
     public var moneyOut: Decimal
-    /// Return on investment: (unrealized + realized gain) ÷ money in, if money
-    /// in ≠ 0 (GnuCash's "Total Return"). Excludes cash income (dividends),
-    /// which the lot engine does not see.
+    /// Cash income (dividends/interest) — GnuCash's "Income": the sum of
+    /// income-account splits in transactions that touch this security account.
+    public var income: Decimal
+    /// Return on investment: (unrealized + realized gain + income) ÷ money in,
+    /// if money in ≠ 0 (GnuCash's "Total Return").
     public var returnFraction: Double?
     /// Share of the total portfolio market value, if priced.
     public var allocation: Double?
@@ -59,13 +61,15 @@ public struct AdvancedPortfolio: Sendable {
     public var totalMoneyIn: Decimal
     /// Total disposal proceeds across all holdings (GnuCash "Money Out").
     public var totalMoneyOut: Decimal
+    /// Total cash income across all holdings (GnuCash "Income").
+    public var totalIncome: Decimal
 
-    /// Simple total return: (unrealized + realized) ÷ cost basis of holdings
-    /// (`nil` when there is no cost basis).
+    /// Total return: (unrealized + realized + income) ÷ money in (`nil` when
+    /// there is no money in). Matches GnuCash's advanced-portfolio total return.
     public var totalReturnFraction: Double? {
-        guard totalCost != 0 else { return nil }
-        let gain = totalUnrealized + totalRealized
-        return NSDecimalNumber(decimal: gain).doubleValue / NSDecimalNumber(decimal: totalCost).doubleValue
+        guard totalMoneyIn != 0 else { return nil }
+        let gain = totalUnrealized + totalRealized + totalIncome
+        return NSDecimalNumber(decimal: gain).doubleValue / NSDecimalNumber(decimal: totalMoneyIn).doubleValue
     }
 }
 
@@ -87,8 +91,30 @@ public extension FinancialReports {
             let realized: Decimal
             let moneyIn: Decimal
             let moneyOut: Decimal
+            let income: Decimal
             let price: Decimal?
             let marketValue: Decimal?
+        }
+
+        // Cash income (dividends/interest) attributed to a security: GnuCash's
+        // advanced-portfolio sums income-account splits in transactions that
+        // touch the security account (a pure cash dividend that never touches
+        // the holding is, as in GnuCash, not counted here).
+        func income(of account: Account) -> Decimal {
+            var total = Decimal(0)
+            var counted = Set<GncGUID>()
+            for split in book.splits(for: account) {
+                guard let txn = split.transaction, counted.insert(txn.guid).inserted else { continue }
+                for other in txn.splits where other.account?.type == .income {
+                    let amount = -other.value                 // income splits are credits
+                    if txn.currency == currency {
+                        total += amount
+                    } else {
+                        total += book.convert(amount, from: txn.currency, to: currency, on: txn.datePosted) ?? amount
+                    }
+                }
+            }
+            return currency.round(total)
         }
 
         var raws: [Raw] = []
@@ -111,7 +137,7 @@ public extension FinancialReports {
 
             raws.append(Raw(account: account, shares: shares, costBasis: cost,
                             realized: currency.round(basis.totalRealizedGain),
-                            moneyIn: moneyIn, moneyOut: moneyOut,
+                            moneyIn: moneyIn, moneyOut: moneyOut, income: income(of: account),
                             price: price, marketValue: marketValue))
         }
 
@@ -121,6 +147,7 @@ public extension FinancialReports {
         var totalRealized = Decimal(0)
         var totalMoneyIn = Decimal(0)
         var totalMoneyOut = Decimal(0)
+        var totalIncome = Decimal(0)
 
         for raw in raws {
             let unrealized = raw.marketValue.map { $0 - raw.costBasis }
@@ -131,7 +158,7 @@ public extension FinancialReports {
             let allocation: Double? = (raw.marketValue != nil && totalValue != 0)
                 ? NSDecimalNumber(decimal: raw.marketValue!).doubleValue / NSDecimalNumber(decimal: totalValue).doubleValue
                 : nil
-            let totalGain = (unrealized ?? 0) + raw.realized
+            let totalGain = (unrealized ?? 0) + raw.realized + raw.income
             let returnFraction: Double? = raw.moneyIn != 0
                 ? NSDecimalNumber(decimal: totalGain).doubleValue / NSDecimalNumber(decimal: raw.moneyIn).doubleValue
                 : nil
@@ -143,13 +170,14 @@ public extension FinancialReports {
                 price: raw.price, marketValue: raw.marketValue,
                 unrealizedGain: unrealized, unrealizedFraction: unrealizedFraction,
                 realizedGain: raw.realized, moneyIn: raw.moneyIn, moneyOut: raw.moneyOut,
-                returnFraction: returnFraction, allocation: allocation))
+                income: raw.income, returnFraction: returnFraction, allocation: allocation))
 
             totalCost += raw.costBasis
             if let unrealized { totalUnrealized += unrealized }
             totalRealized += raw.realized
             totalMoneyIn += raw.moneyIn
             totalMoneyOut += raw.moneyOut
+            totalIncome += raw.income
         }
 
         return AdvancedPortfolio(
@@ -160,6 +188,7 @@ public extension FinancialReports {
             totalUnrealized: currency.round(totalUnrealized),
             totalRealized: currency.round(totalRealized),
             totalMoneyIn: currency.round(totalMoneyIn),
-            totalMoneyOut: currency.round(totalMoneyOut))
+            totalMoneyOut: currency.round(totalMoneyOut),
+            totalIncome: currency.round(totalIncome))
     }
 }

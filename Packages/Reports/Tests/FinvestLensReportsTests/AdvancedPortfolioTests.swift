@@ -53,6 +53,33 @@ struct AdvancedPortfolioTests {
         #expect(h.realizedGain == dec("20"))      // from the sale
     }
 
+    @Test("Income column sums income-account splits touching the security (FR-RPT-02)")
+    func income() {
+        let cba = security("CBA")
+        let book = Book(baseCurrency: .aud)
+        let stock = book.addAccount(Account(name: "CBA", type: .stock, commodity: cba))
+        let bank = book.addAccount(Account(name: "Bank", type: .bank, commodity: .aud))
+        let dividends = book.addAccount(Account(name: "Dividends", type: .income, commodity: .aud))
+        let buy = Transaction(currency: .aud, datePosted: day(0), description: "Buy")
+        buy.addSplit(account: stock, value: dec("100"), quantity: dec("10"))
+        buy.addSplit(account: bank, value: dec("-100"))
+        book.addTransaction(buy)
+        // Cash dividend $50, booked touching the security account (GnuCash convention).
+        let div = Transaction(currency: .aud, datePosted: day(30), description: "Dividend")
+        div.addSplit(account: stock, value: dec("0"), quantity: dec("0"))
+        div.addSplit(account: dividends, value: dec("-50"))
+        div.addSplit(account: bank, value: dec("50"))
+        book.addTransaction(div)
+        book.addPrice(Price(commodity: cba, currency: .aud, date: day(40), value: dec("12")))
+
+        let report = FinancialReports.advancedPortfolio(book, currency: .aud, asOf: day(50))
+        let h = report.holdings.first!
+        #expect(h.income == dec("50"))
+        #expect(report.totalIncome == dec("50"))
+        // total return = (unrealized 20 + realized 0 + income 50) / money-in 100 = 0.70
+        #expect(abs((h.returnFraction ?? 0) - 0.70) < 1e-9)
+    }
+
     @Test("Money In / Money Out / rate of return (FR-RPT-02)")
     func moneyFlows() {
         let (book, _) = book()
