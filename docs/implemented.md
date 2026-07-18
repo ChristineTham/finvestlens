@@ -77,15 +77,25 @@ hardware, a physical iOS device, human translators) — see deferred.md.
 
 ## Platform enablement — extension targets & capabilities (18 Jul 2026)
 
-Closed most of the deferred.md §3 "needs a target / entitlement" gaps by adding
-the targets, entitlements, and feeding code (the remaining step for each is the
-one-time capability provisioning in Xcode's Signing & Capabilities, which is a
-developer-portal round-trip).
+Closed the deferred.md §3 "needs a target / entitlement" gaps: the targets,
+entitlements, and feeding code, then **provisioned, signed and verified working**
+end-to-end (iCloud, App Group, both extensions) under team *Hello Tham Pty. Ltd.*
+(`RPL5R637DS`).
+
+**Bundle-ID change.** `com.hellotham.finvestlens` turned out to be held by an
+inaccessible Apple team, so its explicit App ID (which capabilities require)
+couldn't be registered — signing failed the moment entitlements were added. The
+app's identity moved to `com.hellotham.finvestlensapp` (extensions become
+`…finvestlensapp.FinvestLensWidgets` / `.FinvestLensQuickLook`, App Group
+`group.com.hellotham.finvestlensapp`, iCloud `iCloud.com.hellotham.finvestlensapp`);
+the **`.finvestlens` file extension / document UTI is unchanged**. Provisioning
+was staged (app capabilities first, then the two extension targets) to isolate
+signing risk. Steps captured in [provisioning.md](provisioning.md).
 
 - **App entitlements** — new `finvestlens.entitlements` (wired via
   `CODE_SIGN_ENTITLEMENTS` on both app configs): the App Group
-  `group.com.hellotham.finvestlens.shared` and the iCloud CloudDocuments container
-  `iCloud.com.hellotham.finvestlens` (FR-PLT-02). `Info.plist` gained
+  `group.com.hellotham.finvestlensapp` and the iCloud CloudDocuments container
+  `iCloud.com.hellotham.finvestlensapp` (FR-PLT-02). `Info.plist` gained
   `NSUbiquitousContainers` so the book surfaces as a "FinvestLens" folder in
   iCloud Drive. App Sandbox stays off (the sibling `.lock` needs it off).
 - **FinvestLensShared** — a Foundation-only leaf package: the App Group helper

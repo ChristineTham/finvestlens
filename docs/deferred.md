@@ -38,19 +38,24 @@ Common workflows partly built; each is a bounded piece of work.
 
 *Closed this pass (now in [implemented.md](implemented.md)): CSV export (FR-XIO-06); CSV price import (FR-XIO-03); import GnuCash scheduled transactions + budgets (FR-IMP-03/04); Twelve Data + Stooq quote providers (FR-INV-03b); re-open a finished reconciliation (FR-REC-03); manual attach-a-file (FR-REG-10); Open Read-Only on a live lock (FR-DAT-06); autosave-interval setting (FR-DAT-10); CSV import mapping profiles (FR-XIO-08); free-text search operators (FR-FIND-01); rules `account` trigger + set-tags/set-description (FR-RULE-01, partial); window/state restoration.*
 
-## 3 — Platform enablement (targets/entitlements built — provisioning remains)
+## 3 — Platform enablement ✅ done
 
-The extension targets, entitlements, and feeding code are now in the project;
-what remains for each is the one-time **capability provisioning** in Xcode's
-Signing & Capabilities (a developer-portal round-trip that can't be scripted)
-plus on-device verification — step-by-step in [provisioning.md](provisioning.md).
+The extension targets, entitlements, iCloud container, and App Group are built,
+**provisioned, signed, and verified working** on the `com.hellotham.finvestlensapp`
+bundle-ID base under team *Hello Tham Pty. Ltd.* (`RPL5R637DS`) — see
+[implemented.md](implemented.md) and the [provisioning runbook](provisioning.md):
 
-| Item | FR / Phase | Notes |
-|---|---|---|
-| iCloud Documents container | FR-PLT-02 / P6 | Entitlement (`iCloud.com.hellotham.finvestlens`, CloudDocuments) + `NSUbiquitousContainers` declared and wired via `CODE_SIGN_ENTITLEMENTS`; the sync machinery was already done. Remaining: enable the iCloud capability against the dev team. |
-| Widgets | FR-PLT-03 / P6 | `FinvestLensWidgets` WidgetKit extension target built (Net Worth + Alerts), fed by the App Group snapshot the app publishes on save/open (`AppModel.publishWidgetData` → `FinvestLensShared.WidgetSnapshot`); app scheme builds and embeds the `.appex`. Remaining: provision the App Group capability; verify on device. |
-| Quick Look preview | FR-PLT-03 / P6 | `FinvestLensQuickLook` preview-extension target built — a `QLPreviewingController` reading the previewed file via read-only SQLite3 (accounts/transactions/commodities/prices). Remaining: verify Finder registers the preview once signed. |
-| App Group provisioning | FR-PLT-03 / P6 | `group.com.hellotham.finvestlens.shared` is declared in the app's and widget's entitlements (`REGISTER_APP_GROUPS` was already on); it must be provisioned for the snapshot hand-off to work at runtime. |
+- **iCloud Documents container** (FR-PLT-02) — `iCloud.com.hellotham.finvestlensapp`,
+  CloudDocuments; the book surfaces in iCloud Drive.
+- **Widgets** (FR-PLT-03) — `FinvestLensWidgets` signs, embeds, and reads the
+  App Group snapshot (`group.com.hellotham.finvestlensapp`).
+- **Quick Look preview** (FR-PLT-03) — `FinvestLensQuickLook` signs and previews.
+- **App Group** — provisioned; the app↔extension snapshot hand-off works.
+
+> The bundle-ID base moved from `com.hellotham.finvestlens` (held by an
+> inaccessible team, so its explicit App ID couldn't be registered) to
+> `com.hellotham.finvestlensapp`. The `.finvestlens` **file extension / UTI is
+> unchanged** — only the app's identity moved.
 
 ## 4 — Feature tails within delivered phases
 
