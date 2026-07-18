@@ -19,7 +19,7 @@
 	     publishes a small JSON snapshot here (see WidgetSnapshot). -->
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.hellotham.finvestlens</string>
+		<string>group.com.hellotham.finvestlens.shared</string>
 	</array>
 
 	<!-- iCloud Documents (FR-PLT-02): places the app's Documents in iCloud

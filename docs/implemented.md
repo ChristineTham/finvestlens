@@ -84,7 +84,7 @@ developer-portal round-trip).
 
 - **App entitlements** — new `finvestlens.entitlements` (wired via
   `CODE_SIGN_ENTITLEMENTS` on both app configs): the App Group
-  `group.com.hellotham.finvestlens` and the iCloud CloudDocuments container
+  `group.com.hellotham.finvestlens.shared` and the iCloud CloudDocuments container
   `iCloud.com.hellotham.finvestlens` (FR-PLT-02). `Info.plist` gained
   `NSUbiquitousContainers` so the book surfaces as a "FinvestLens" folder in
   iCloud Drive. App Sandbox stays off (the sibling `.lock` needs it off).

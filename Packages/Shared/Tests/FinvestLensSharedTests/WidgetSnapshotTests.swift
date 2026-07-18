@@ -26,7 +26,7 @@ struct WidgetSnapshotTests {
     }
 
     @Test func appGroupIdentifierMatchesEntitlement() {
-        #expect(SharedAppGroup.identifier == "group.com.hellotham.finvestlens")
+        #expect(SharedAppGroup.identifier == "group.com.hellotham.finvestlens.shared")
     }
 
     @Test func placeholderIsStable() {

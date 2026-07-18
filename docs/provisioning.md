@@ -23,7 +23,7 @@ or change them in both the portal and the files.
 | App bundle ID | `com.hellotham.finvestlens` | app target |
 | Widget bundle ID | `com.hellotham.finvestlens.FinvestLensWidgets` | widget target |
 | Quick Look bundle ID | `com.hellotham.finvestlens.FinvestLensQuickLook` | Quick Look target |
-| App Group | `group.com.hellotham.finvestlens` | `finvestlens.entitlements`, `FinvestLensWidgets.entitlements`, `FinvestLensShared.SharedAppGroup` |
+| App Group | `group.com.hellotham.finvestlens.shared` | `finvestlens.entitlements`, `FinvestLensWidgets.entitlements`, `FinvestLensShared.SharedAppGroup` |
 | iCloud container | `iCloud.com.hellotham.finvestlens` | `finvestlens.entitlements`, `finvestlens/Info.plist` |
 
 **Capability matrix** (which target needs what):
@@ -53,14 +53,14 @@ Group, the iCloud container, the three App IDs, and the profiles for you.
      from the entitlements file). If a capability shows a "register"/"repair"
      button or a red error, click it — Xcode registers the identifier with the
      portal and refreshes the profile.
-   - Under **App Groups**, make sure `group.com.hellotham.finvestlens` is
+   - Under **App Groups**, make sure `group.com.hellotham.finvestlens.shared` is
      checked.
    - Under **iCloud**, make sure **iCloud Documents** is ticked and the
      container `iCloud.com.hellotham.finvestlens` is checked. (Leave CloudKit
      unticked — this app uses iCloud *Documents*, not CloudKit.)
 3. Select the **FinvestLensWidgets** target ▸ **Signing & Capabilities**.
    - Same Team, automatic signing.
-   - Confirm **App Groups** contains `group.com.hellotham.finvestlens` (same
+   - Confirm **App Groups** contains `group.com.hellotham.finvestlens.shared` (same
      group as the app — that's how the widget reads the snapshot).
 4. Select the **FinvestLensQuickLook** target ▸ **Signing & Capabilities**.
    - Same Team, automatic signing. No capabilities to add; Xcode just needs to
@@ -82,7 +82,7 @@ Do this at <https://developer.apple.com/account> ▸ **Certificates, Identifiers
 ### B1. Create the App Group
 
 1. **Identifiers** ▸ the **+** button ▸ **App Groups** ▸ Continue.
-2. Description: `FinvestLens App Group`. Identifier: `group.com.hellotham.finvestlens`.
+2. Description: `FinvestLens App Group`. Identifier: `group.com.hellotham.finvestlens.shared`.
 3. Register.
 
 ### B2. Create the iCloud Container
@@ -99,8 +99,8 @@ capabilities noted, and Register.
 
 | Bundle ID | Enable capabilities |
 |---|---|
-| `com.hellotham.finvestlens` | **App Groups** (assign `group.com.hellotham.finvestlens`) and **iCloud** (select "Include CloudKit support"? **no** — just iCloud; assign container `iCloud.com.hellotham.finvestlens`) |
-| `com.hellotham.finvestlens.FinvestLensWidgets` | **App Groups** (assign `group.com.hellotham.finvestlens`) |
+| `com.hellotham.finvestlens` | **App Groups** (assign `group.com.hellotham.finvestlens.shared`) and **iCloud** (select "Include CloudKit support"? **no** — just iCloud; assign container `iCloud.com.hellotham.finvestlens`) |
+| `com.hellotham.finvestlens.FinvestLensWidgets` | **App Groups** (assign `group.com.hellotham.finvestlens.shared`) |
 | `com.hellotham.finvestlens.FinvestLensQuickLook` | none |
 
 Notes:
@@ -130,7 +130,7 @@ With automatic signing, skip this — Xcode manages profiles.
    signing.)
 2. **App Group hand-off** — open a book, make an edit, Save. Then confirm the
    snapshot file exists:
-   `~/Library/Group Containers/group.com.hellotham.finvestlens/widget-snapshot.json`
+   `~/Library/Group Containers/group.com.hellotham.finvestlens.shared/widget-snapshot.json`
    (macOS). If it's there, widgets will read it.
 3. **Widgets** — add the **Net Worth** / **Alerts** widgets from the widget
    gallery; they should show the values from the last-opened book.

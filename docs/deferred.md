@@ -50,7 +50,7 @@ plus on-device verification — step-by-step in [provisioning.md](provisioning.m
 | iCloud Documents container | FR-PLT-02 / P6 | Entitlement (`iCloud.com.hellotham.finvestlens`, CloudDocuments) + `NSUbiquitousContainers` declared and wired via `CODE_SIGN_ENTITLEMENTS`; the sync machinery was already done. Remaining: enable the iCloud capability against the dev team. |
 | Widgets | FR-PLT-03 / P6 | `FinvestLensWidgets` WidgetKit extension target built (Net Worth + Alerts), fed by the App Group snapshot the app publishes on save/open (`AppModel.publishWidgetData` → `FinvestLensShared.WidgetSnapshot`); app scheme builds and embeds the `.appex`. Remaining: provision the App Group capability; verify on device. |
 | Quick Look preview | FR-PLT-03 / P6 | `FinvestLensQuickLook` preview-extension target built — a `QLPreviewingController` reading the previewed file via read-only SQLite3 (accounts/transactions/commodities/prices). Remaining: verify Finder registers the preview once signed. |
-| App Group provisioning | FR-PLT-03 / P6 | `group.com.hellotham.finvestlens` is declared in the app's and widget's entitlements (`REGISTER_APP_GROUPS` was already on); it must be provisioned for the snapshot hand-off to work at runtime. |
+| App Group provisioning | FR-PLT-03 / P6 | `group.com.hellotham.finvestlens.shared` is declared in the app's and widget's entitlements (`REGISTER_APP_GROUPS` was already on); it must be provisioned for the snapshot hand-off to work at runtime. |
 
 ## 4 — Feature tails within delivered phases
 
