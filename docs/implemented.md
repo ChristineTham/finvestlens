@@ -70,6 +70,11 @@ GnuCash-source reference where relevant:
   instead of a fixed amount; `AmountExpression` evaluates it against named
   variables prompted at post time. Imported from GnuCash's SX formula slots and
   surfaced in the Add-Scheduled sheet + the Enter-Due-Transactions prompt.
+- **Check printing** (FR-REG-11) — Transaction ▸ Print Check… draws a check
+  for the selected transaction: the outflow from a bank/cash/asset account sets
+  the amount and the account, the description is the payee, and the amount is
+  spelled out on the legal line (`AmountInWords`, GnuCash's `numeric_to_words`).
+  Rendered in the conventional US personal-check layout and saved as a PDF.
 - **Business: Australian Tax Invoice layout** (FR-BUS-03) — a second printable
   layout on the invoice PDF (GnuCash `taxinvoice.scm`): the ATO-required "Tax
   Invoice" title, the seller's **ABN** in the header, a per-line **GST Rate**
@@ -96,7 +101,7 @@ Every code item above ships with unit tests (or, for the GnuCash SX/budget
 import, a real-book verification); each package suite and the full app build
 (`CODE_SIGNING_ALLOWED=NO`) are green. The remaining deferred items are either
 larger features (QIF/OFX investment import, savings goals, report→PDF
-scaffold, check printing) or
+scaffold) or
 externally blocked (Apple developer-portal provisioning, real NAS/SMB
 hardware, a physical iOS device, human translators) — see deferred.md.
 

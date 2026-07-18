@@ -467,6 +467,9 @@ public struct FinvestLensRootView: View {
             csvDocument = nil
         }
         .sheet(isPresented: $model.showingHelp) { HelpView() }
+        .sheet(item: $model.printCheckRequestTxnID) { txnID in
+            CheckPrintSheet(model: model, txnID: txnID)
+        }
         .fileImporter(isPresented: Binding(
             get: { model.attachDocumentRequestTxnID != nil },
             set: { if !$0 { model.attachDocumentRequestTxnID = nil } }
@@ -1424,6 +1427,10 @@ public struct TransactionActions: View {
             .disabled(needsRow)
             Button("Attach File…", systemImage: "paperclip") {
                 if let txnID { model.attachDocumentRequestTxnID = txnID }
+            }
+            .disabled(needsRow)
+            Button("Print Check…", systemImage: "printer") {
+                if let txnID { model.printCheckRequestTxnID = txnID }
             }
             .disabled(needsRow)
             if let txnID, model.hasLinkedDocument(txnID) {

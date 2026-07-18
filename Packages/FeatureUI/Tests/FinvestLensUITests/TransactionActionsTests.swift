@@ -38,6 +38,18 @@ struct TransactionActionsTests {
         return (model, url, bank, food, txn)
     }
 
+    @Test("A check is drawn on the outflow account, spelled out for the payee (FR-REG-11)")
+    func checkPrinting() throws {
+        let (model, url, _, _, txn) = try makeModel()
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        let check = try #require(model.checkData(forTransaction: txn))
+        #expect(check.payee == "Shop")           // the transaction description
+        #expect(check.amount == 10)              // the −10 bank outflow, as a positive
+        #expect(check.drawnOn == "Bank")
+        #expect(check.amountInWords == "Ten and 00/100")
+    }
+
     /// The link the menu bar needs: from a selected row to the transaction the
     /// commands act on.
     @Test("A selected row resolves to its transaction")
