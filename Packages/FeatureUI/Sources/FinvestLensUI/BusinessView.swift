@@ -438,7 +438,10 @@ struct InvoiceDetailSheet: View {
                         Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
                     }
                     ToolbarItem(placement: .secondaryAction) {
-                        Button("Save PDF…", systemImage: "square.and.arrow.down") { exportPDF(invoice) }
+                        Menu("Save PDF…", systemImage: "square.and.arrow.down") {
+                            Button("Standard Invoice") { exportPDF(invoice, layout: .standard) }
+                            Button("Australian Tax Invoice") { exportPDF(invoice, layout: .taxInvoice) }
+                        }
                     }
                     ToolbarItem(placement: .primaryAction) {
                         if !invoice.isPosted {
@@ -463,10 +466,10 @@ struct InvoiceDetailSheet: View {
         }
     }
 
-    private func exportPDF(_ invoice: Invoice) {
+    private func exportPDF(_ invoice: Invoice, layout: InvoiceLayout = .standard) {
         let view = PrintableInvoice(invoice: invoice, company: model.companyInfo,
                                     outstanding: invoice.isPosted ? model.outstanding(invoiceID) : nil,
-                                    code: code)
+                                    code: code, layout: layout)
         guard let data = ReportExport.pdf(view) else { return }
         pdfDocument = PDFReportDocument(data: data)
         exporting = true
@@ -475,6 +478,11 @@ struct InvoiceDetailSheet: View {
 
 // MARK: - Printable invoice
 
+/// Which invoice layout to render (`FR-BUS-03`). The Australian *Tax Invoice*
+/// mirrors GnuCash's `taxinvoice.scm`: the ATO-required "Tax Invoice" wording,
+/// the seller's ABN, a per-line GST rate column, and GST-labelled totals.
+enum InvoiceLayout: Sendable { case standard, taxInvoice }
+
 /// A static, print-ready rendering of an invoice — a company header, bill-to,
 /// line items, and totals — for `ImageRenderer` (VStack, not List).
 struct PrintableInvoice: View {
@@ -482,10 +490,20 @@ struct PrintableInvoice: View {
     let company: CompanyInfo
     let outstanding: Decimal?
     let code: String
+    var layout: InvoiceLayout = .standard
 
+    private var isTax: Bool { layout == .taxInvoice }
     private func money(_ d: Decimal) -> String { AmountFormat.string(d, code: code) }
     private var title: String {
-        invoice.kind == .invoice ? "INVOICE" : invoice.kind == .bill ? "BILL" : "VOUCHER"
+        if isTax { return "TAX INVOICE" }
+        return invoice.kind == .invoice ? "INVOICE" : invoice.kind == .bill ? "BILL" : "VOUCHER"
+    }
+
+    /// The line's GST rate for the tax-invoice column: the tax table's combined
+    /// percentage, or "—" when the line is not taxable.
+    private func gstRate(_ entry: InvoiceEntry) -> String {
+        guard entry.taxable, let table = entry.taxTable, table.totalPercentage != 0 else { return "—" }
+        return "\(table.totalPercentage.formatted())%"
     }
 
     var body: some View {
@@ -497,7 +515,8 @@ struct PrintableInvoice: View {
                     }
                     forEachLine([company.addressLine1, company.addressLine2,
                                  company.phone, company.email, company.website,
-                                 company.taxID.isEmpty ? "" : "Tax ID: \(company.taxID)"])
+                                 company.taxID.isEmpty ? ""
+                                    : "\(isTax ? "ABN" : "Tax ID"): \(company.taxID)"])
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
@@ -534,6 +553,9 @@ struct PrintableInvoice: View {
                     Spacer()
                     Text("Qty").fontWeight(.semibold).frame(width: 60, alignment: .trailing)
                     Text("Price").fontWeight(.semibold).frame(width: 90, alignment: .trailing)
+                    if isTax {
+                        Text("GST Rate").fontWeight(.semibold).frame(width: 70, alignment: .trailing)
+                    }
                     Text("Amount").fontWeight(.semibold).frame(width: 90, alignment: .trailing)
                 }
                 .padding(.vertical, 4)
@@ -545,6 +567,9 @@ struct PrintableInvoice: View {
                         Spacer()
                         Text(entry.quantity.formatted()).frame(width: 60, alignment: .trailing)
                         Text(money(entry.price)).frame(width: 90, alignment: .trailing)
+                        if isTax {
+                            Text(gstRate(entry)).frame(width: 70, alignment: .trailing)
+                        }
                         Text(money(entry.total)).frame(width: 90, alignment: .trailing)
                     }
                     .padding(.vertical, 3)
@@ -556,14 +581,19 @@ struct PrintableInvoice: View {
             HStack {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {
-                    totalRow("Subtotal", invoice.subtotal)
-                    totalRow("Tax", invoice.taxTotal)
-                    totalRow("Total", invoice.total, bold: true)
+                    totalRow(isTax ? "Subtotal (excl GST)" : "Subtotal", invoice.subtotal)
+                    totalRow(isTax ? "GST" : "Tax", invoice.taxTotal)
+                    totalRow(isTax ? "Total (inc GST)" : "Total", invoice.total, bold: true)
                     if let outstanding {
                         totalRow("Outstanding", outstanding, bold: true)
                     }
                 }
                 .frame(width: 240)
+            }
+
+            if isTax {
+                Text("Total price includes GST of \(money(invoice.taxTotal)).")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .foregroundStyle(.black)

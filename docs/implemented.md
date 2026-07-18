@@ -70,6 +70,12 @@ GnuCash-source reference where relevant:
   instead of a fixed amount; `AmountExpression` evaluates it against named
   variables prompted at post time. Imported from GnuCash's SX formula slots and
   surfaced in the Add-Scheduled sheet + the Enter-Due-Transactions prompt.
+- **Business: Australian Tax Invoice layout** (FR-BUS-03) — a second printable
+  layout on the invoice PDF (GnuCash `taxinvoice.scm`): the ATO-required "Tax
+  Invoice" title, the seller's **ABN** in the header, a per-line **GST Rate**
+  column, GST-labelled totals (Subtotal excl GST / GST / Total inc GST), and the
+  "Total price includes GST of $X" statement. Chosen from the invoice's
+  Save PDF… menu alongside the standard layout.
 - **Business: Vendor / Employee / Job summary reports** (FR-BUS) — three new
   business reports joining Customer Summary + Receivable/Payable Aging, one row
   per party (charged / paid / outstanding over its posted documents, most-charged
