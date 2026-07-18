@@ -62,8 +62,14 @@ private func slotKeyCounts(in text: String) -> [String: Int] {
             .replacingOccurrences(of: "&lt;", with: "<")
             .replacingOccurrences(of: "&gt;", with: ">")
             .replacingOccurrences(of: "&amp;", with: "&")
-        counts[key, default: 0] += 1
         cursor = close.upperBound
+        // The FinvestLens KVP slots that hold the imported scheduled
+        // transactions / budgets (FR-IMP-03/04) are this app's representation
+        // of the very sx/budget sections `stripped()` removes from the
+        // original — so they are excluded here too, keeping the comparison
+        // about GnuCash-graph fidelity.
+        if key == "finvestlens/scheduledTransactions" || key == "finvestlens/budgets" { continue }
+        counts[key, default: 0] += 1
     }
     return counts
 }

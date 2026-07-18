@@ -45,7 +45,18 @@ public enum GnuCashXMLImporter {
             throw ImportError.malformedXML(message)
         }
 
-        return try delegate.assemble()
+        var result = try delegate.assemble()
+
+        // Second pass: scheduled transactions (FR-IMP-03) and budgets
+        // (FR-IMP-04), written into the FinvestLens KVP slots the app reads.
+        let counts = GnuCashScheduledBudgetImport.apply(xml: xml, to: result.book)
+        if counts.scheduled > 0 || counts.budgets > 0 {
+            var summary = result.summary
+            if counts.scheduled > 0 { summary.warnings.append("Imported \(counts.scheduled) scheduled transaction(s).") }
+            if counts.budgets > 0 { summary.warnings.append("Imported \(counts.budgets) budget(s).") }
+            result = ImportResult(book: result.book, summary: summary)
+        }
+        return result
     }
 
     /// Imports from a file URL.
