@@ -1002,7 +1002,8 @@ extension AppModel {
     /// The known `key:` operators, for both matching and telling the user what
     /// exists when they reach for one that doesn't.
     static let searchKeys: Set<String> = [
-        "tag", "account", "acct", "memo", "desc", "description", "amount",
+        "tag", "account", "acct", "category", "cat", "memo", "desc", "description",
+        "amount", "from", "to", "type", "has",
     ]
 
     /// A token like `date:2026` looks like an operator and is not one, so it is
@@ -1013,7 +1014,8 @@ extension AppModel {
     func notices(for query: String) -> [SearchNotice] {
         let tokens = query.split(separator: " ").map(String.init)
         var seen: [String] = []
-        for token in tokens {
+        for rawToken in tokens {
+            let token = rawToken.hasPrefix("-") ? String(rawToken.dropFirst()) : rawToken
             guard let colon = token.firstIndex(of: ":") else { continue }
             let key = String(token[..<colon]).lowercased()
             guard !key.isEmpty, key.allSatisfy(\.isLetter) else { continue }
@@ -1024,10 +1026,12 @@ extension AppModel {
     }
 
     /// Transactions matching an operator query. Whitespace-separated tokens are
-    /// ANDed. A `key:value` token filters a field (`tag:`, `account:`, `memo:`,
-    /// `desc:`, `amount:>N` / `amount:<N` / `amount:N`); any other token is
-    /// free text matched against description / number / memo / account name
-    /// (`FR-FIND-01`).
+    /// ANDed; a leading `-` negates a token. A `key:value` token filters a field:
+    /// `tag:`, `account:`/`category:`, `memo:`, `desc:`, `amount:>N`/`<N`/`N`,
+    /// `from:`/`to:` (a `yyyy-MM-dd` date, `today`/`yesterday`, or a relative
+    /// `-7d`/`-2w`/`-3m`/`-1y` offset), `type:` (account type), and `has:`
+    /// (`attachment`/`tag`/`notes`). Any other token is free text matched against
+    /// description / number / memo / account name (`FR-FIND-01`).
     func transactionsMatching(_ query: String, in book: Book) -> [Transaction] {
         let tokens = query.split(separator: " ").map(String.init).filter { !$0.isEmpty }
         return book.transactions.filter { txn in
@@ -1035,14 +1039,26 @@ extension AppModel {
         }
     }
 
-    private func matchesToken(_ token: String, _ txn: Transaction) -> Bool {
+    private func matchesToken(_ rawToken: String, _ txn: Transaction) -> Bool {
+        // Leading '-' negates the token (`-tag:foo`, `-lunch`) — FR-FIND-01.
+        var token = rawToken
+        var negate = false
+        if token.hasPrefix("-"), token.count > 1 {
+            negate = true
+            token.removeFirst()
+        }
+        let result = matchesPositiveToken(token, txn)
+        return negate ? !result : result
+    }
+
+    private func matchesPositiveToken(_ token: String, _ txn: Transaction) -> Bool {
         if let colon = token.firstIndex(of: ":") {
             let key = token[..<colon].lowercased()
             let value = String(token[token.index(after: colon)...]).lowercased()
             switch key {
             case "tag":
                 return txn.tags.contains { $0.lowercased().contains(value) }
-            case "account", "acct":
+            case "account", "acct", "category", "cat":
                 return txn.splits.contains { $0.account?.name.lowercased().contains(value) ?? false }
             case "memo":
                 return txn.splits.contains { $0.memo.lowercased().contains(value) }
@@ -1050,11 +1066,70 @@ extension AppModel {
                 return txn.transactionDescription.lowercased().contains(value)
             case "amount":
                 return matchesAmount(value, txn)
+            case "from":
+                guard let date = Self.parseSearchDate(value) else { return false }
+                return txn.datePosted >= date
+            case "to":
+                guard let date = Self.parseSearchDate(value) else { return false }
+                return txn.datePosted <= date
+            case "type":
+                return matchesAccountType(value, txn)
+            case "has":
+                return matchesHas(value, txn)
             default:
                 break
             }
         }
         return matchesFreeText(token.lowercased(), txn)
+    }
+
+    private func matchesAccountType(_ value: String, _ txn: Transaction) -> Bool {
+        txn.splits.contains { split in
+            guard let type = split.account?.type else { return false }
+            return type.rawValue.lowercased() == value
+                || type.rawValue.lowercased().hasPrefix(value)
+        }
+    }
+
+    private func matchesHas(_ value: String, _ txn: Transaction) -> Bool {
+        switch value {
+        case "attachment", "link", "document", "doc":
+            return txn.documentLink != nil
+        case "tag", "tags":
+            return !txn.tags.isEmpty
+        case "notes", "note":
+            return !txn.notes.isEmpty
+        default:
+            return false
+        }
+    }
+
+    /// Parses a search date: an absolute `yyyy-MM-dd`, `today`/`yesterday`, or a
+    /// relative offset like `-7d`, `-2w`, `-3m`, `-1y` (from today). Returns the
+    /// start of that day (`FR-FIND-01`).
+    static func parseSearchDate(_ raw: String, now: Date = Date(), calendar: Calendar = .current) -> Date? {
+        let text = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        if text == "today" { return calendar.startOfDay(for: now) }
+        if text == "yesterday" { return calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: now)) }
+
+        // Relative offset: optional sign, digits, then a d/w/m/y unit.
+        if let unit = text.last, "dwmy".contains(unit),
+           let magnitude = Int(text.dropLast()) {
+            let component: Calendar.Component
+            switch unit {
+            case "d": component = .day
+            case "w": component = .weekOfYear
+            case "m": component = .month
+            default:  component = .year
+            }
+            return calendar.date(byAdding: component, value: magnitude, to: calendar.startOfDay(for: now))
+        }
+
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = calendar.timeZone
+        f.dateFormat = "yyyy-MM-dd"
+        return f.date(from: text)
     }
 
     private func matchesAmount(_ spec: String, _ txn: Transaction) -> Bool {

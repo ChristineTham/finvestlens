@@ -68,4 +68,44 @@ struct SearchTagsTests {
         #expect(model.searchResults.count == 1)
         #expect(model.searchResults.first?.description == "Woolworths big shop")
     }
+
+    @Test("Negation, type:, and has: operators (FR-FIND-01)")
+    func negationTypeHas() throws {
+        let (model, bank, food, url) = try model()
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+        try model.addTransaction(date: Date(timeIntervalSince1970: 0), description: "Woolworths",
+                                 currency: .aud, splits: [
+            SplitInput(accountID: food, value: dec("50")),
+            SplitInput(accountID: bank, value: dec("-50")),
+        ], tags: ["work"])
+        try model.addTransaction(date: Date(timeIntervalSince1970: 1), description: "Salary",
+                                 currency: .aud, splits: [
+            SplitInput(accountID: bank, value: dec("100")),
+            SplitInput(accountID: food, value: dec("-100")),
+        ])
+
+        // Negation: everything that is NOT Woolworths.
+        model.searchQuery = "-Woolworths"
+        #expect(model.searchResults.map(\.description) == ["Salary"])
+
+        // type: matches a split's account type.
+        model.searchQuery = "type:expense"
+        #expect(model.searchResults.count == 2)   // both touch Groceries
+
+        // has:tag finds the tagged transaction only.
+        model.searchQuery = "has:tag"
+        #expect(model.searchResults.map(\.description) == ["Woolworths"])
+    }
+
+    @Test("Relative and absolute date parsing (FR-FIND-01)")
+    func dateParsing() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)   // 2023-11-14 UTC
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let sevenDaysAgo = AppModel.parseSearchDate("-7d", now: now, calendar: cal)
+        #expect(sevenDaysAgo == cal.date(byAdding: .day, value: -7, to: cal.startOfDay(for: now)))
+        #expect(AppModel.parseSearchDate("today", now: now, calendar: cal) == cal.startOfDay(for: now))
+        #expect(AppModel.parseSearchDate("2023-01-15", now: now, calendar: cal) != nil)
+        #expect(AppModel.parseSearchDate("garbage", now: now, calendar: cal) == nil)
+    }
 }
