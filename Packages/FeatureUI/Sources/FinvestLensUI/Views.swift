@@ -466,6 +466,7 @@ public struct FinvestLensRootView: View {
                       contentType: .commaSeparatedText, defaultFilename: csvFilename) { _ in
             csvDocument = nil
         }
+        .sheet(isPresented: $model.showingHelp) { HelpView() }
         .fileImporter(isPresented: Binding(
             get: { model.attachDocumentRequestTxnID != nil },
             set: { if !$0 { model.attachDocumentRequestTxnID = nil } }

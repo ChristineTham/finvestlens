@@ -234,6 +234,10 @@ struct finvestlensApp: App {
                 Button("Payable Aging Report…") { model.openPayableAging() }
                     .disabled(!model.isOpen)
             }
+            CommandGroup(replacing: .help) {
+                Button("FinvestLens Help") { model.showingHelp = true }
+                    .keyboardShortcut("?", modifiers: .command)
+            }
             CommandMenu("Security") {
                 Button(model.requireAuthentication
                        ? "Don’t Require Authentication"

@@ -506,6 +506,8 @@ public final class AppModel {
     /// Set by the Transaction menu to attach a file to this transaction
     /// (`FR-REG-10`); the root view presents a file picker.
     public var attachDocumentRequestTxnID: GncGUID?
+    /// Set by the Help menu to present the in-app help / shortcut reference.
+    public var showingHelp = false
 
     /// A user-facing document error (open/new/import failed). When
     /// ``DocumentError/lockedURL`` is set the UI offers "Break Lock" recovery.
