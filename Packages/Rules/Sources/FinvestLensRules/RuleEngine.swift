@@ -14,11 +14,15 @@ public struct RuleContext: Sendable {
     public var description: String
     public var memo: String
     public var amount: Decimal
+    /// Names of the accounts this transaction touches (for `account` triggers).
+    public var accountNames: [String]
 
-    public init(description: String, memo: String = "", amount: Decimal = 0) {
+    public init(description: String, memo: String = "", amount: Decimal = 0,
+                accountNames: [String] = []) {
         self.description = description
         self.memo = memo
         self.amount = amount
+        self.accountNames = accountNames
     }
 }
 
@@ -28,12 +32,19 @@ public struct RuleOutcome: Equatable, Sendable {
     public var accountID: GncGUID?
     /// Notes to attach.
     public var notes: String?
+    /// Tags to add (accumulated across matching rules).
+    public var tags: [String]
+    /// Replacement description, if a rule set one.
+    public var descriptionText: String?
     /// `true` if a matched rule requested stop-processing.
     public var stopped: Bool
 
-    public init(accountID: GncGUID? = nil, notes: String? = nil, stopped: Bool = false) {
+    public init(accountID: GncGUID? = nil, notes: String? = nil, tags: [String] = [],
+                descriptionText: String? = nil, stopped: Bool = false) {
         self.accountID = accountID
         self.notes = notes
+        self.tags = tags
+        self.descriptionText = descriptionText
         self.stopped = stopped
     }
 }
@@ -75,6 +86,7 @@ public enum RuleEngine {
         case .description: return matchesText(context.description, trigger)
         case .memo: return matchesText(context.memo, trigger)
         case .amount: return matchesAmount(context.amount, trigger)
+        case .account: return context.accountNames.contains { matchesText($0, trigger) }
         }
     }
 
@@ -107,6 +119,9 @@ public enum RuleEngine {
             switch action {
             case .setAccount(let guid): outcome.accountID = guid
             case .setNotes(let notes): outcome.notes = notes
+            case .setTags(let tags):
+                for tag in tags where !outcome.tags.contains(tag) { outcome.tags.append(tag) }
+            case .setDescription(let text): outcome.descriptionText = text
             }
         }
     }

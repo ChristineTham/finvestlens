@@ -156,6 +156,8 @@ struct RulesView: View {
             switch action {
             case .setAccount(let id): "→ \(accountName(id))"
             case .setNotes(let notes): "notes “\(notes)”"
+            case .setTags(let tags): "tag \(tags.joined(separator: ", "))"
+            case .setDescription(let text): "rename “\(text)”"
             }
         }.joined(separator: ", ")
         let tail = rule.stopProcessing ? ", then stop" : ""
@@ -251,12 +253,19 @@ struct RuleEditorSheet: View {
     @State private var accountID: GncGUID?
     @State private var setsNotes = false
     @State private var notes = ""
+    @State private var setsTags = false
+    @State private var tagsText = ""
+    @State private var setsDescription = false
+    @State private var descriptionText = ""
     @State private var stopProcessing = false
 
     private var isEditing: Bool { if case .existing = target { true } else { false } }
     private var validTriggers: [RuleTrigger] { triggers.filter { !$0.value.isEmpty } }
     private var isValid: Bool {
-        !validTriggers.isEmpty && (accountID != nil || (setsNotes && !notes.isEmpty))
+        !validTriggers.isEmpty && (accountID != nil
+            || (setsNotes && !notes.isEmpty)
+            || (setsTags && !tagsText.trimmingCharacters(in: .whitespaces).isEmpty)
+            || (setsDescription && !descriptionText.isEmpty))
     }
 
     var body: some View {
@@ -317,6 +326,16 @@ struct RuleEditorSheet: View {
                         TextField("Notes", text: $notes, prompt: Text("Notes"))
                             .labelsHidden()
                     }
+                    Toggle("Add tags", isOn: $setsTags)
+                    if setsTags {
+                        TextField("Tags", text: $tagsText, prompt: Text("comma-separated"))
+                            .labelsHidden()
+                    }
+                    Toggle("Rename description", isOn: $setsDescription)
+                    if setsDescription {
+                        TextField("Description", text: $descriptionText, prompt: Text("New description"))
+                            .labelsHidden()
+                    }
                     Toggle("Stop processing further rules", isOn: $stopProcessing)
                 }
 
@@ -354,6 +373,8 @@ struct RuleEditorSheet: View {
             switch action {
             case .setAccount(let id): accountID = id
             case .setNotes(let text): setsNotes = true; notes = text
+            case .setTags(let tags): setsTags = true; tagsText = tags.joined(separator: ", ")
+            case .setDescription(let text): setsDescription = true; descriptionText = text
             }
         }
     }
@@ -362,6 +383,12 @@ struct RuleEditorSheet: View {
         var actions: [RuleAction] = []
         if let accountID { actions.append(.setAccount(accountID)) }
         if setsNotes, !notes.isEmpty { actions.append(.setNotes(notes)) }
+        if setsTags {
+            let tags = tagsText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            if !tags.isEmpty { actions.append(.setTags(tags)) }
+        }
+        if setsDescription, !descriptionText.isEmpty { actions.append(.setDescription(descriptionText)) }
 
         let fallback = validTriggers
             .map { "\($0.field.rawValue) \($0.op.rawValue) “\($0.value)”" }

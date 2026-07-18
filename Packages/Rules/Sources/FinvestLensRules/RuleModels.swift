@@ -14,6 +14,8 @@ public enum RuleField: String, Codable, Sendable, CaseIterable {
     case description
     case memo
     case amount
+    /// The name of an account the transaction touches.
+    case account
 }
 
 /// How a trigger compares a field to its value.
@@ -47,6 +49,10 @@ public enum RuleAction: Codable, Hashable, Sendable {
     case setAccount(GncGUID)
     /// Append a note.
     case setNotes(String)
+    /// Add cross-cutting tags to the transaction (`FR-RULE-01`).
+    case setTags([String])
+    /// Replace the transaction description (payee cleanup, `FR-RULE-01`).
+    case setDescription(String)
 }
 
 /// A rule: match some triggers (all or any), then apply actions.

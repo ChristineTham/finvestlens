@@ -117,8 +117,10 @@ extension AppModel {
             let amount = txn.splits.map(\.value).max { abs($0) < abs($1) } ?? 0
             let outcome = RuleEngine.evaluate(ruleGroups, context: RuleContext(
                 description: txn.transactionDescription,
-                memo: txn.splits.first?.memo ?? "", amount: amount))
-            guard outcome.accountID != nil || outcome.notes != nil else { continue }
+                memo: txn.splits.first?.memo ?? "", amount: amount,
+                accountNames: txn.splits.compactMap { $0.account?.name }))
+            guard outcome.accountID != nil || outcome.notes != nil
+                    || !outcome.tags.isEmpty || outcome.descriptionText != nil else { continue }
 
             let categoryLeg = txn.splits.first { isCategory($0.account?.type) }
             var proposedID: GncGUID?
@@ -129,13 +131,18 @@ extension AppModel {
                 proposedName = target.name
             }
             let proposedNotes = (outcome.notes != nil && outcome.notes != txn.notes) ? outcome.notes : nil
-            guard proposedID != nil || proposedNotes != nil else { continue }
+            let newTags = outcome.tags.filter { !txn.tags.contains($0) }
+            let proposedDescription = (outcome.descriptionText != nil
+                && outcome.descriptionText != txn.transactionDescription) ? outcome.descriptionText : nil
+            guard proposedID != nil || proposedNotes != nil
+                    || !newTags.isEmpty || proposedDescription != nil else { continue }
 
             items.append(RuleApplication(
                 id: txn.guid, description: txn.transactionDescription,
                 currentCategory: categoryLeg?.account?.name,
                 proposedCategory: proposedName, proposedCategoryID: proposedID,
-                proposedNotes: proposedNotes))
+                proposedNotes: proposedNotes,
+                proposedTags: newTags, proposedDescription: proposedDescription))
         }
         return items
     }
@@ -152,6 +159,10 @@ extension AppModel {
                     leg.account = target
                 }
                 if let notes = item.proposedNotes { txn.notes = notes }
+                if !item.proposedTags.isEmpty {
+                    txn.tags = (txn.tags + item.proposedTags.filter { !txn.tags.contains($0) })
+                }
+                if let description = item.proposedDescription { txn.transactionDescription = description }
             }
         }
     }
@@ -169,4 +180,8 @@ public struct RuleApplication: Identifiable, Hashable, Sendable {
     public var proposedCategory: String?
     public var proposedCategoryID: GncGUID?
     public var proposedNotes: String?
+    /// Tags a rule would add (only those not already present).
+    public var proposedTags: [String] = []
+    /// A description a rule would set (payee cleanup), if different.
+    public var proposedDescription: String?
 }
