@@ -32,19 +32,12 @@ Common workflows partly built; each is a bounded piece of work.
 
 | Item | FR / Phase | Notes |
 |---|---|---|
-| CSV export (accounts / transactions / prices) | FR-XIO-06 / P4 | No CSV export yet (GnuCash XML export covers interchange). |
-| CSV price import | FR-XIO-03 / P4 | CSV imports transactions only. |
 | CSV mapping profiles | FR-XIO-08 / P4 | Column mapping is per-import; no saved profiles. |
 | QIF splits + investment actions | FR-XIO-01 / P4 | Parser handles flat D/T/U/P/M/N/L cash rows; `S/E/$` splits and `!Type:Invst` actions dropped. |
 | OFX investment statements | FR-XIO-02 / P4 | Only `<STMTTRN>` cash rows parsed; `<INVBUY>`/`<INVSELL>` ignored (use the Stock Assistant). |
-| Re-open a finished reconciliation | FR-REC-03 / P4 | Begin/toggle/finish/cancel only. |
-| Manual attach a file to a transaction | FR-REG-10 / P6 | Smart Import links applied PDFs (`assoc_uri`) and the register opens them; a manual "attach a file" action from the editor is not offered. |
-| Twelve Data quote provider | FR-INV-03b / P5 | Yahoo / EODHD / Alpha Vantage / Finnhub shipped (`QuoteProviderKind` has 4 cases); Twelve Data / Stooq not. |
-| Import scheduled transactions from a GnuCash file | FR-IMP-03 / P4 | FinvestLens's own scheduled transactions work, but `<gnc:schedxaction>` in an imported GnuCash file is silently dropped (`GnuCashXMLImporter` `default: break`) — not even counted as a warning. |
-| Import budgets from a GnuCash file | FR-IMP-04 / P4 | `<gnc:budget>` in an imported GnuCash file is silently dropped, as above. In-app budgets work. |
 | Rule actions beyond category + notes | FR-RULE-01 / P4 | Rule actions are limited to set-account and set-notes; FR-RULE-01's set-tags, set-description, convert-type, link-to-bill and allocate-to-goal are not built, and triggers test only description / memo / amount. |
-| Open Read-Only on a live lock | FR-DAT-06 / P1 | Open fails with holder info + Break-Lock; no read-only mode. |
-| Autosave interval setting | FR-DAT-10 / P2 | Fixed 5-minute interval (`AppModel` hardcoded 300 s); not user-configurable/disableable, no Settings control. |
+
+*Closed this pass (now in [implemented.md](implemented.md)): CSV export (FR-XIO-06); CSV price import (FR-XIO-03); import GnuCash scheduled transactions + budgets (FR-IMP-03/04); Twelve Data + Stooq quote providers (FR-INV-03b); re-open a finished reconciliation (FR-REC-03); manual attach-a-file (FR-REG-10); Open Read-Only on a live lock (FR-DAT-06); autosave-interval setting (FR-DAT-10).*
 
 ## 3 — Platform enablement (targets/entitlements built — provisioning remains)
 
@@ -76,7 +69,6 @@ Lower-priority pieces of features that are otherwise complete.
 | Business: vendor / employee / job detail reports | FR-BUS / P7 | Customer Summary + Receivable/Payable Aging built; the per-vendor/employee/job detail reports are todo. |
 | Business: Australian-Tax invoice layout | FR-BUS-03 / P7 | Printable INVOICE/BILL/VOUCHER PDF built (with an ABN/Tax-ID field on company info); a "Tax Invoice"-titled AU GST layout is todo. |
 | Business: time & mileage tracking | FR-PLAN-14 / P7 | Not implemented (no billable-time / mileage model). |
-| Free-text search operator coverage | FR-FIND-01 / P4 | The free-text box supports `tag:`/`account:`/`memo:`/`desc:`/`amount:` (with `>`/`<`) and saved searches; the documented `from:`/`to:`/`type:`, relative `d/w/m/y` date offsets, and `-` negation are only in the structured Find (⌘F) dialog, not the token grammar. |
 | `rebuildAccountTree` subtree-only rebuild | NFR-02 / P2 | The remaining ~0.04s of a refresh is a full-tree rebuild + search; fast enough to feel instant. Rebuild only the affected subtree if ever needed. |
 
 ## 5 — Apple Intelligence import caveats (monitor)
@@ -97,7 +89,6 @@ Quality limits of the on-device import layer (PRD §5.18), caught by the review 
 | App Sandbox | Disabled by decision: sibling `.lock` files at user-selected locations are denied by the sandbox; related-item declaration + coordinated I/O are in place but macOS still refused. Direct (notarized) distribution doesn't need it. Revisit before any Mac App Store submission. |
 | iOS move/rename flow for new books | New books land in the app's Documents directory with safe naming; an in-app move/rename flow is todo. |
 | Esc inside a focused text field | AppKit's field editor consumes the raw Escape (completion); ⌘. always cancels, Esc works otherwise. SwiftUI offers no clean override. |
-| Window / state restoration | The app launches to the splash; it does not reopen the last book automatically. |
 | Help menu | No help book / anchors. |
 
 ---

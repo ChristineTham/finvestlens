@@ -19,6 +19,40 @@ Companions: [PRD](prd.md) · [Architecture](architecture.md) · [Plan](plan.md) 
 
 ---
 
+## Deferred-backlog closeout (18 Jul 2026)
+
+Resolved a batch of open P0–P7 items from deferred.md, each with tests and a
+GnuCash-source reference where relevant:
+
+- **CSV export** (FR-XIO-06) — `CSVExporter` for the account tree, transactions
+  (one row per split, GnuCash's "full" layout) and prices; columns mirror
+  GnuCash's `csv-tree-export` / `csv-transactions-export`. File ▸ Export CSV.
+- **CSV price import** (FR-XIO-03) — `CSVPriceImporter` (explicit mapping or
+  header autodetection); `AppModel.importPrices` resolves symbols against the
+  book's commodities. Import CSV in the Prices panel.
+- **Import GnuCash scheduled transactions + budgets** (FR-IMP-03/04) — a
+  second-pass parser (`GnuCashScheduledBudgetImport`) maps `<gnc:schedxaction>`
+  (recurrence, template splits via the sched-xaction slot) and `<gnc:budget>`
+  (per-period amounts) into the `finvestlens/*` KVP slots the app reads.
+  Verified against the real Ashley Bears book (2 SX + 1 budget); live
+  round-trip stays byte-clean.
+- **Twelve Data + Stooq quote providers** (FR-INV-03b) — one keyed JSON, one
+  keyless CSV fallback; surfaced via `QuoteProviderKind.allCases`.
+- **Re-open a finished reconciliation** (FR-REC-03) — reverts the last
+  statement's reconciled splits to cleared.
+- **Manual attach-a-file** (FR-REG-10) — Transaction ▸ Attach File… over the
+  existing `assoc_uri` document-link machinery.
+- **Open Read-Only on a live lock** (FR-DAT-06) — `openReadOnly` reads without
+  taking the lock; edits refused at the `editing`/`editingWholeBook`
+  chokepoints; save throws. Offered on the locked-open alert.
+- **Autosave-interval setting** (FR-DAT-10) — Off/1/5/10/15 min in a new General
+  settings tab; the loop re-reads it live.
+- **Free-text search operators** (FR-FIND-01) — `from:`/`to:` (incl. relative
+  `-7d`/`-2w`/`-3m`/`-1y`), `type:`, `category:`, `has:`, and `-` negation added
+  to the token grammar.
+- **Window/state restoration** — reopen the last book on launch (General
+  setting).
+
 ## Platform enablement — extension targets & capabilities (18 Jul 2026)
 
 Closed most of the deferred.md §3 "needs a target / entitlement" gaps by adding
