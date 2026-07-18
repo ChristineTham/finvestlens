@@ -176,6 +176,7 @@
 				878083753002E200001776CE /* finvestlensTests */,
 				8780837F3002E200001776CE /* finvestlensUITests */,
 				878083633002E1FF001776CE /* Products */,
+				87E6BE16300AF3E4009F44C3 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -189,6 +190,15 @@
 				FEAB0000000000000000B101 /* FinvestLensQuickLook.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		87E6BE16300AF3E4009F44C3 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				FEAA0000000000000000A102 /* FinvestLensWidgets */,
+				FEAB0000000000000000B102 /* FinvestLensQuickLook */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -324,12 +334,6 @@
 					878083613002E1FF001776CE = {
 						CreatedOnToolsVersion = 26.6;
 					};
-					FEAA0000000000000000A104 = {
-						CreatedOnToolsVersion = 26.6;
-					};
-					FEAB0000000000000000B104 = {
-						CreatedOnToolsVersion = 26.6;
-					};
 					878083713002E200001776CE = {
 						CreatedOnToolsVersion = 26.6;
 						TestTargetID = 878083613002E1FF001776CE;
@@ -337,6 +341,12 @@
 					8780837B3002E200001776CE = {
 						CreatedOnToolsVersion = 26.6;
 						TestTargetID = 878083613002E1FF001776CE;
+					};
+					FEAA0000000000000000A104 = {
+						CreatedOnToolsVersion = 26.6;
+					};
+					FEAB0000000000000000B104 = {
+						CreatedOnToolsVersion = 26.6;
 					};
 				};
 			};
@@ -349,14 +359,14 @@
 			);
 			mainGroup = 878083593002E1FF001776CE;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
-			productRefGroup = 878083633002E1FF001776CE /* Products */;
-			projectDirPath = "";
-			projectRoot = "";
 			packageReferences = (
 				FE00000000000000000000C1 /* XCLocalSwiftPackageReference "Packages/FeatureUI" */,
 				FEAA0000000000000000A10B /* XCLocalSwiftPackageReference "Packages/Shared" */,
 			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 878083633002E1FF001776CE /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
 			targets = (
 				878083613002E1FF001776CE /* finvestlens */,
 				878083713002E200001776CE /* finvestlensTests */,
@@ -800,8 +810,14 @@
 				INFOPLIST_KEY_CFBundleDisplayName = FinvestLens;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
-				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks @executable_path/../../Frameworks";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks @executable_path/../../../../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hellotham.finvestlens.FinvestLensWidgets;
@@ -812,11 +828,11 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
 				XROS_DEPLOYMENT_TARGET = 26.5;
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
 		};
@@ -833,8 +849,14 @@
 				INFOPLIST_KEY_CFBundleDisplayName = FinvestLens;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
-				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks @executable_path/../../Frameworks";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks @executable_path/../../../../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hellotham.finvestlens.FinvestLensWidgets;
@@ -843,13 +865,13 @@
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
 				XROS_DEPLOYMENT_TARGET = 26.5;
-				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;
 		};
@@ -865,8 +887,14 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "FinvestLens Quick Look";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
-				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks @executable_path/../../Frameworks";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks @executable_path/../../../../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hellotham.finvestlens.FinvestLensQuickLook;
@@ -877,11 +905,11 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
 				XROS_DEPLOYMENT_TARGET = 26.5;
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
 		};
@@ -897,8 +925,14 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "FinvestLens Quick Look";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
-				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks @executable_path/../../Frameworks";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks @executable_path/../../../../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hellotham.finvestlens.FinvestLensQuickLook;
@@ -907,13 +941,13 @@
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
 				XROS_DEPLOYMENT_TARGET = 26.5;
-				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;
 		};
