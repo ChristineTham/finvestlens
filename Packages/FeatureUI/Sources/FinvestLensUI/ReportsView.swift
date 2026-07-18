@@ -160,6 +160,16 @@ private struct HoldingRow: View {
                         .foregroundStyle(holding.realizedGain < 0 ? .red : .green)
                 }
             }
+            HStack {
+                Text("In \(AmountFormat.string(holding.moneyIn, code: code)) · Out \(AmountFormat.string(holding.moneyOut, code: code))")
+                    .scaledFont(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                if let roi = holding.returnFraction {
+                    Text("ROI \(roi.formatted(.percent.precision(.fractionLength(1))))")
+                        .scaledFont(.caption2).monospacedDigit()
+                        .foregroundStyle(roi < 0 ? .red : .green)
+                }
+            }
         }
         .padding(.vertical, 2)
     }

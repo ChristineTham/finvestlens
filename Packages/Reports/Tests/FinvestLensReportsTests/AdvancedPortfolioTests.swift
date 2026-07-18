@@ -53,6 +53,20 @@ struct AdvancedPortfolioTests {
         #expect(h.realizedGain == dec("20"))      // from the sale
     }
 
+    @Test("Money In / Money Out / rate of return (FR-RPT-02)")
+    func moneyFlows() {
+        let (book, _) = book()
+        let report = FinancialReports.advancedPortfolio(book, currency: .aud, asOf: day(420))
+        let h = report.holdings.first!
+        #expect(h.moneyIn == dec("100"))          // 10 shares acquired @ $10
+        #expect(h.moneyOut == dec("60"))          // 4 sold @ $15
+        // (unrealized 12 + realized 20) / money-in 100 = 0.32.
+        #expect(h.returnFraction != nil)
+        #expect(abs((h.returnFraction ?? 0) - 0.32) < 1e-9)
+        #expect(report.totalMoneyIn == dec("100"))
+        #expect(report.totalMoneyOut == dec("60"))
+    }
+
     @Test("Allocation sums to ~1 across priced holdings")
     func allocation() {
         let (book, _) = book()
