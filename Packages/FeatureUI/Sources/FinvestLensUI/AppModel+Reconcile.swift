@@ -121,6 +121,40 @@ extension AppModel {
         reconcileSession = nil
     }
 
+    // MARK: Re-open a finished reconciliation (FR-REC-03)
+
+    /// The date of the most recent finished reconciliation on `accountID`, if
+    /// any — i.e. the latest reconcile date among the account's reconciled
+    /// splits. Drives whether "Re-open Last Reconciliation" is offered.
+    public func lastReconciliationDate(accountID: GncGUID) -> Date? {
+        guard let book, let account = book.account(with: accountID) else { return nil }
+        return book.splits(for: account)
+            .filter { $0.reconcileState == .reconciled }
+            .compactMap(\.reconcileDate)
+            .max()
+    }
+
+    /// Re-opens the most recent reconciliation: reverts the splits reconciled on
+    /// that statement date back to **cleared** so they can be reconciled again
+    /// (GnuCash's "undo last reconcile"). Returns how many splits were reverted.
+    @discardableResult
+    public func reopenLastReconciliation(accountID: GncGUID) -> Int {
+        guard let book, let account = book.account(with: accountID),
+              let date = lastReconciliationDate(accountID: accountID) else { return 0 }
+        let splits = book.splits(for: account).filter {
+            $0.reconcileState == .reconciled && $0.reconcileDate == date
+        }
+        guard !splits.isEmpty else { return 0 }
+        let touched = Set(splits.compactMap { $0.transaction?.guid })
+        editing(Array(touched), named: "Re-open Reconciliation") {
+            for split in splits {
+                split.reconcileState = .cleared
+                split.reconcileDate = nil
+            }
+        }
+        return splits.count
+    }
+
     // MARK: Auto-clear (FR-REC-03)
 
     /// Ticks the items that add up to the statement balance (GnuCash's

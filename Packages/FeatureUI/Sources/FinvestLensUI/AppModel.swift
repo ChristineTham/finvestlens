@@ -503,6 +503,9 @@ public final class AppModel {
     public var csvExportRequest: CSVExportKind?
     /// Set by menu commands to trigger the Smart Import multi-PDF picker.
     public var smartImportRequested = false
+    /// Set by the Transaction menu to attach a file to this transaction
+    /// (`FR-REG-10`); the root view presents a file picker.
+    public var attachDocumentRequestTxnID: GncGUID?
 
     /// A user-facing document error (open/new/import failed). When
     /// ``DocumentError/lockedURL`` is set the UI offers "Break Lock" recovery.
@@ -747,6 +750,26 @@ public final class AppModel {
         return try? URL(resolvingBookmarkData: data, bookmarkDataIsStale: &stale)
     }
 
+    /// Defaults key for "reopen the last book on launch" (window/state
+    /// restoration). Defaults to on when absent.
+    public static let reopenLastBookDefaultsKey = "finvestlens.reopenLastBook"
+
+    /// Reopens the most recent book on launch when enabled and nothing is open
+    /// yet (idempotent — `openBook` guards double-opens). Call once from the
+    /// root view's `.task`.
+    public func reopenLastBookIfEnabled() async {
+        let enabled = (UserDefaults.standard.object(forKey: Self.reopenLastBookDefaultsKey) as? Bool) ?? true
+        guard enabled, !isOpen, !isOpening, let url = recentBooks.first else { return }
+        await openBook(at: url)
+    }
+
+    /// User-configurable autosave interval in seconds; 0 disables autosave
+    /// (`FR-DAT-10`). Defaults to 5 minutes. App-wide (not per-book).
+    public var autosaveIntervalSeconds: Int {
+        get { (UserDefaults.standard.object(forKey: "finvestlens.autosaveIntervalSeconds") as? Int) ?? 300 }
+        set { UserDefaults.standard.set(newValue, forKey: "finvestlens.autosaveIntervalSeconds") }
+    }
+
     /// Keeps the advisory lock alive and autosaves while a book is open.
     /// Without the heartbeat, an idle book's lock ages past the staleness
     /// window and another instance could legitimately break it — two writers.
@@ -762,7 +785,14 @@ public final class AppModel {
         autosaveTask?.cancel()
         autosaveTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(300))
+                // Re-read each loop so a Settings change takes effect without a
+                // reopen. 0 (or negative) disables autosave — the task idles and
+                // ⌘S / save-on-close still protect data (FR-DAT-10).
+                let interval = self?.autosaveIntervalSeconds ?? 300
+                guard interval > 0 else {
+                    try? await Task.sleep(for: .seconds(30)); continue
+                }
+                try? await Task.sleep(for: .seconds(interval))
                 guard !Task.isCancelled, let self, self.hasUnsavedChanges else { continue }
                 do {
                     try self.save()

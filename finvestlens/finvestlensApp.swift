@@ -61,6 +61,9 @@ struct finvestlensApp: App {
                 // (FR-PLAN-05). The system prompts only on first launch; later
                 // syncs are no-ops until granted.
                 .task { await AlertNotificationScheduler.requestAuthorization() }
+                // Reopen the last book on launch (window/state restoration),
+                // when the General setting allows it.
+                .task { await model.reopenLastBookIfEnabled() }
             #if os(macOS)
                 // Save the open book (and release its lock) on ⌘Q, so quitting
                 // never loses data. Wired here because the adaptor instance —

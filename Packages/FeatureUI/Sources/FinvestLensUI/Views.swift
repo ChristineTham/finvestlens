@@ -466,6 +466,24 @@ public struct FinvestLensRootView: View {
                       contentType: .commaSeparatedText, defaultFilename: csvFilename) { _ in
             csvDocument = nil
         }
+        .fileImporter(isPresented: Binding(
+            get: { model.attachDocumentRequestTxnID != nil },
+            set: { if !$0 { model.attachDocumentRequestTxnID = nil } }
+        ), allowedContentTypes: [.item]) { result in
+            guard let txnID = model.attachDocumentRequestTxnID else { return }
+            model.attachDocumentRequestTxnID = nil
+            guard case let .success(url) = result else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url) else {
+                statementError = "Couldn't read “\(url.lastPathComponent)”."; return
+            }
+            do {
+                _ = try model.attachDocument(named: url.lastPathComponent, data: data, to: txnID)
+            } catch {
+                statementError = "Couldn't attach the file: \(error.localizedDescription). Set a document folder in Settings ▸ Documents."
+            }
+        }
     }
 
     private func loadBankFile(_ url: URL) {
@@ -1403,8 +1421,12 @@ public struct TransactionActions: View {
             }
             .keyboardShortcut("j", modifiers: .command)
             .disabled(needsRow)
+            Button("Attach File…", systemImage: "paperclip") {
+                if let txnID { model.attachDocumentRequestTxnID = txnID }
+            }
+            .disabled(needsRow)
             if let txnID, model.hasLinkedDocument(txnID) {
-                Button("Open Linked Document", systemImage: "paperclip") {
+                Button("Open Linked Document", systemImage: "paperclip.badge.ellipsis") {
                     model.openLinkedDocument(for: txnID)
                 }
             }

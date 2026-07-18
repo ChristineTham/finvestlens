@@ -42,8 +42,25 @@ struct ReconcileView: View {
             DatePicker("Statement date", selection: $statementDate, displayedComponents: .date)
             TextField("Statement ending balance", text: $endingBalanceText)
                 .multilineTextAlignment(.trailing)
+
+            if let last = model.lastReconciliationDate(accountID: accountID) {
+                Section {
+                    Button("Re-open Last Reconciliation…") {
+                        let reverted = model.reopenLastReconciliation(accountID: accountID)
+                        autoClearMessage = reverted > 0
+                            ? "Re-opened \(reverted) reconciled split\(reverted == 1 ? "" : "s") — they're now cleared and can be reconciled again."
+                            : "Nothing to re-open."
+                    }
+                    Text("The most recent reconciliation was \(last, format: .dateTime.year().month().day()). Re-opening reverts those splits to cleared so you can reconcile the statement again (FR-REC-03).")
+                        .scaledFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .navigationTitle("Reconcile")
+        .alert("Reconciliation", isPresented: Binding(
+            get: { autoClearMessage != nil }, set: { if !$0 { autoClearMessage = nil } }
+        )) { Button("OK", role: .cancel) {} } message: { Text(autoClearMessage ?? "") }
         .onEscapeCommand { dismiss() }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {

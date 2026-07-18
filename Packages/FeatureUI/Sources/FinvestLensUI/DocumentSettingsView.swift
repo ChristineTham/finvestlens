@@ -48,12 +48,50 @@ public struct DocumentSettingsView: View {
     }
 }
 
-/// Tabbed Settings window: Appearance + Documents.
+/// General preferences: autosave (`FR-DAT-10`).
+public struct GeneralSettingsView: View {
+    @AppStorage("finvestlens.autosaveIntervalSeconds") private var autosaveSeconds = 300
+    @AppStorage(AppModel.reopenLastBookDefaultsKey) private var reopenLastBook = true
+
+    public init() {}
+
+    public var body: some View {
+        Form {
+            Section("On launch") {
+                Toggle("Reopen the last book", isOn: $reopenLastBook)
+                Text("When on, FinvestLens reopens the book you had open when you last quit.")
+                    .scaledFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Autosave") {
+                Picker("Save automatically", selection: $autosaveSeconds) {
+                    Text("Off").tag(0)
+                    Text("Every minute").tag(60)
+                    Text("Every 5 minutes").tag(300)
+                    Text("Every 10 minutes").tag(600)
+                    Text("Every 15 minutes").tag(900)
+                }
+                Text(autosaveSeconds == 0
+                     ? "Autosave is off — changes are written only on Save (⌘S) or when closing the book."
+                     : "The working copy is written back to the document on this interval while there are unsaved changes. Save (⌘S) and save-on-close still apply.")
+                    .scaledFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .frame(minWidth: 420, minHeight: 220)
+        .navigationTitle("General")
+    }
+}
+
+/// Tabbed Settings window: General + Appearance + Documents.
 public struct FinvestLensSettingsView: View {
     public init() {}
 
     public var body: some View {
         TabView {
+            GeneralSettingsView()
+                .tabItem { Label("General", systemImage: "gearshape") }
             AppearanceSettingsView()
                 .tabItem { Label("Appearance", systemImage: "paintpalette") }
             DocumentSettingsView()
