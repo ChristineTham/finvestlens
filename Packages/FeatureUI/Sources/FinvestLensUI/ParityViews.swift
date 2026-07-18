@@ -273,6 +273,7 @@ struct LoanCalculatorView: View {
     @State private var years = 30.0
     @State private var paymentsPerYear = 12
     @State private var showSchedule = false
+    @State private var showingCreatePayment = false
 
     private var loan: LoanCalculator {
         LoanCalculator(principal: Decimal(principal),
@@ -320,6 +321,12 @@ struct LoanCalculatorView: View {
                         if showSchedule { scheduleTable }
                     }
                 }
+                Section {
+                    Button("Create Scheduled Payment…") { showingCreatePayment = true }
+                        .disabled(model.postableAccounts.count < 3)
+                    Text("Generates a scheduled transaction (GnuCash's Mortgage/Loan assistant): the fixed payment, split into a variable **interest** amount — you enter each period from the schedule above — and the remaining **principal**.")
+                        .scaledFont(.caption).foregroundStyle(.secondary)
+                }
             }
             .formStyle(.grouped)
             .navigationTitle("Loan Calculator")
@@ -327,6 +334,9 @@ struct LoanCalculatorView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .sheet(isPresented: $showingCreatePayment) {
+                CreateLoanPaymentSheet(model: model, loan: loan, onCreated: { dismiss() })
             }
         }
         .frame(minWidth: 460, minHeight: 460)
@@ -342,5 +352,73 @@ struct LoanCalculatorView: View {
             TableColumn("Balance") { Text(AmountFormat.string($0.balance, code: code)).monospacedDigit() }
         }
         .frame(minHeight: 220)
+    }
+}
+
+/// Picks the accounts for a loan-payment scheduled transaction and creates it
+/// (GnuCash's Mortgage/Loan assistant, `FR-SCH-04`).
+struct CreateLoanPaymentSheet: View {
+    @Bindable var model: AppModel
+    let loan: LoanCalculator
+    var onCreated: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var name = "Loan payment"
+    @State private var startDate = Date()
+    @State private var fromID: GncGUID?
+    @State private var principalID: GncGUID?
+    @State private var interestID: GncGUID?
+
+    private var isValid: Bool {
+        guard let fromID, let principalID, let interestID else { return false }
+        return Set([fromID, principalID, interestID]).count == 3
+            && !name.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Payment") {
+                    TextField("Name", text: $name)
+                    DatePicker("First payment", selection: $startDate, displayedComponents: .date)
+                    LabeledContent("Amount") {
+                        Text(AmountFormat.string(loan.payment, code: model.reportCurrency.mnemonic))
+                            .monospacedDigit()
+                    }
+                }
+                Section("Accounts") {
+                    accountPicker("Pay from", $fromID)
+                    accountPicker("Principal (liability)", $principalID)
+                    accountPicker("Interest (expense)", $interestID)
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("Scheduled Loan Payment")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
+                        guard let fromID, let principalID, let interestID else { return }
+                        let sx = loan.scheduledPayment(
+                            name: name, currency: model.reportCurrency, startDate: startDate,
+                            from: fromID, principal: principalID, interest: interestID)
+                        model.addScheduledTransaction(sx)
+                        dismiss()
+                        onCreated()
+                    }
+                    .disabled(!isValid)
+                }
+            }
+        }
+        .frame(minWidth: 420, minHeight: 320)
+    }
+
+    private func accountPicker(_ label: String, _ selection: Binding<GncGUID?>) -> some View {
+        Picker(label, selection: selection) {
+            Text("—").tag(GncGUID?.none)
+            ForEach(model.postableAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+        }
     }
 }

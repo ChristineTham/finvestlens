@@ -55,4 +55,31 @@ struct LoanCalculatorTests {
         // More frequent compounding on the same loan → slightly less total interest.
         #expect(weekly.totalInterest < fortnightly.totalInterest)
     }
+
+    @Test("The loan assistant builds a monthly payment SX with variable interest (FR-SCH-04)")
+    func scheduledPayment() {
+        let loan = LoanCalculator(principal: 300_000, annualRatePercent: 6, years: 30)
+        let bank = GncGUID.random(), principal = GncGUID.random(), interest = GncGUID.random()
+        let sx = loan.scheduledPayment(name: "Mortgage", currency: .aud,
+                                       startDate: Date(timeIntervalSince1970: 0),
+                                       from: bank, principal: principal, interest: interest)
+        #expect(sx.recurrence.period == .monthly)
+        #expect(sx.splits.count == 3)
+        #expect(sx.variableNames == ["interest"])
+
+        // Post the first instalment with that period's interest (from schedule()).
+        let firstInterest = loan.schedule().first!.interest      // 1500.00 at 6%/12 on 300k
+        let book = Book(baseCurrency: .aud)
+        let bankA = Account(guid: bank, name: "Bank", type: .bank, commodity: .aud)
+        let liab = Account(guid: principal, name: "Mortgage", type: .liability, commodity: .aud)
+        let exp = Account(guid: interest, name: "Interest", type: .expense, commodity: .aud)
+        book.addAccount(bankA); book.addAccount(liab); book.addAccount(exp)
+        let txn = try! #require(ScheduledTransactionService.post(
+            sx, date: Date(timeIntervalSince1970: 0), into: book,
+            variables: ["interest": firstInterest]))
+        #expect(txn.isBalanced)
+        // Interest leg = the period interest; principal leg = payment − interest.
+        #expect(txn.splits.first { $0.account?.guid == interest }?.value == firstInterest)
+        #expect(txn.splits.first { $0.account?.guid == principal }?.value == loan.payment - firstInterest)
+    }
 }

@@ -111,6 +111,38 @@ public struct LoanCalculator: Sendable, Equatable {
         }
         return rows
     }
+
+    /// Builds a scheduled loan-payment transaction (GnuCash's Mortgage/Loan
+    /// assistant, `FR-SCH-04`): the fixed ``payment`` leaves `fromAccount`, split
+    /// into a variable **interest** amount (`interestAccount`) and the remaining
+    /// **principal** (`principalAccount`, formula `payment − interest`). Because
+    /// the interest/principal split changes every period, the interest is a
+    /// formula variable the user enters at post time (`FR-SCH-02`) — read it
+    /// from ``schedule()``.
+    public func scheduledPayment(name: String, currency: Commodity, startDate: Date,
+                                 from fromAccount: GncGUID, principal principalAccount: GncGUID,
+                                 interest interestAccount: GncGUID) -> ScheduledTransaction {
+        let pay = currency.round(payment)
+        let (period, interval): (RecurrencePeriod, Int)
+        switch paymentsPerYear {
+        case 1:  (period, interval) = (.yearly, 1)
+        case 2:  (period, interval) = (.monthly, 6)
+        case 4:  (period, interval) = (.monthly, 3)
+        case 12: (period, interval) = (.monthly, 1)
+        case 26: (period, interval) = (.weekly, 2)
+        case 52: (period, interval) = (.weekly, 1)
+        default: (period, interval) = (.monthly, 1)
+        }
+        return ScheduledTransaction(
+            name: name, currency: currency, description: name,
+            recurrence: Recurrence(period: period, interval: interval, startDate: startDate),
+            splits: [
+                ScheduledSplit(accountGUID: fromAccount, value: -pay, memo: "Payment"),
+                ScheduledSplit(accountGUID: interestAccount, value: 0, memo: "Interest", formula: "interest"),
+                ScheduledSplit(accountGUID: principalAccount, value: 0, memo: "Principal",
+                               formula: "\(pay) - interest"),
+            ])
+    }
 }
 
 private extension Decimal {

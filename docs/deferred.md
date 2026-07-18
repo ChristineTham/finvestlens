@@ -64,11 +64,8 @@ Lower-priority pieces of features that are otherwise complete.
 | Item | FR / Phase | Notes |
 |---|---|---|
 | Legacy report internals → document scaffold + PDF | FR-RPT-05 / P4 | Transactions, Reconciliation, Forecast, Portfolio, Investment Lots, Price Scatter, Capital Gains keep their interactive views; migrating them onto `ReportDocument` (and giving each PDF export) is follow-up. |
-| Scheduled-split formulas | FR-SCH-02 / P4 | Fixed amounts only (the amount-expression parser is built for entry; per-split SX formulas are not). |
 | Check printing | FR-REG-11 / P4 | Not implemented. |
 | Savings goals / piggy banks | FR-GOAL-01 / P5 | Not implemented. |
-| Loan amortization assistant | FR-SCH-04 / P5 | The Loan **Calculator** exists (payment + schedule); the *assistant* that generates the scheduled loan transactions does not. |
-| Advanced Portfolio: Income column | FR-RPT-02 / P5 | Money In/Out and rate-of-return columns are now built; the **Income** column (cash dividends/interest) still isn't — the lot engine doesn't see income-account cash flows, so it needs income-account-to-security attribution. |
 | Managed-fund money-flow realised model | FR-RPT-02 / P5 | Our per-parcel engine subtracts non-fee expense splits booked inside managed-fund transactions where GnuCash's money-in/out model washes them out (~$34k realised across ~6 accounts). Matching would mean adopting GnuCash's money-flow model — arguably not more correct. |
 | Business: vendor / employee / job detail reports | FR-BUS / P7 | Customer Summary + Receivable/Payable Aging built; the per-vendor/employee/job detail reports are todo. |
 | Business: Australian-Tax invoice layout | FR-BUS-03 / P7 | Printable INVOICE/BILL/VOUCHER PDF built (with an ABN/Tax-ID field on company info); a "Tax Invoice"-titled AU GST layout is todo. |

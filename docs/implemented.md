@@ -59,9 +59,23 @@ GnuCash-source reference where relevant:
 - **Rules: `account` trigger + set-tags / set-description actions**
   (FR-RULE-01, partial) — engine + apply-to-history + editor UI; convert-type /
   link-to-bill / allocate-to-goal still need bill/goal infra.
-- **Advanced Portfolio: Money In / Money Out / rate-of-return columns**
-  (FR-RPT-02) — from the lot engine's proceeds/cost-basis; Income (cash
-  dividends) still needs income-account attribution.
+- **Advanced Portfolio: Money In / Money Out / Income / rate-of-return columns**
+  (FR-RPT-02) — from the lot engine's proceeds/cost-basis, plus an **Income**
+  column: cash dividends/interest attributed by summing income-account splits in
+  every transaction that touches the security account (GnuCash's
+  `advanced-portfolio.scm` money-in model), FX-converted on the posting date and
+  deduped per transaction. Income folds into total return over money-in.
+- **Scheduled-split formulas with variables** (FR-SCH-02) — a `ScheduledSplit`
+  can carry a GnuCash credit/debit **formula** (e.g. `interest`, `pay - interest`)
+  instead of a fixed amount; `AmountExpression` evaluates it against named
+  variables prompted at post time. Imported from GnuCash's SX formula slots and
+  surfaced in the Add-Scheduled sheet + the Enter-Due-Transactions prompt.
+- **Loan amortization assistant** (FR-SCH-04) — `LoanCalculator.scheduledPayment`
+  builds a GnuCash Mortgage/Loan-style scheduled transaction: fixed payment out
+  of the funding account, split into a variable **interest** leg (`FR-SCH-02`
+  formula, read from the schedule) and the remaining **principal**. Wired into
+  the Loan Calculator view via a "Create Scheduled Payment…" sheet that picks the
+  three accounts.
 - **CI** (NFR-08) — `.github/workflows/ci.yml`: a matrix job builds + tests the
   seven core packages and an SPDX-header gate on every push/PR; the app +
   Intelligence build job is present but `continue-on-error` until a hosted
@@ -70,8 +84,8 @@ GnuCash-source reference where relevant:
 Every code item above ships with unit tests (or, for the GnuCash SX/budget
 import, a real-book verification); each package suite and the full app build
 (`CODE_SIGNING_ALLOWED=NO`) are green. The remaining deferred items are either
-larger features (QIF/OFX investment import, savings goals, loan-amortisation
-assistant, report→PDF scaffold, check printing, business detail reports) or
+larger features (QIF/OFX investment import, savings goals, report→PDF
+scaffold, check printing, business detail reports) or
 externally blocked (Apple developer-portal provisioning, real NAS/SMB
 hardware, a physical iOS device, human translators) — see deferred.md.
 
