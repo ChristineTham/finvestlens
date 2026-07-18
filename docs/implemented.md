@@ -70,6 +70,13 @@ GnuCash-source reference where relevant:
   instead of a fixed amount; `AmountExpression` evaluates it against named
   variables prompted at post time. Imported from GnuCash's SX formula slots and
   surfaced in the Add-Scheduled sheet + the Enter-Due-Transactions prompt.
+- **Legacy reports → PDF export** (FR-RPT-05) — the seven interactive reports
+  (Transactions, Reconciliation, Forecast, Portfolio, Investment Lots, Price
+  Scatter, Capital Gains) each gain a **PDF** toolbar button that builds a
+  printable `ReportDocument` from the report's live data and exports it through
+  the same paginated statement path the scaffold reports use. The interactive
+  views (with their charts) are kept deliberately; only the PDF surface was the
+  actionable gap.
 - **Rules: allocate-to-goal action** (FR-RULE-01) — a rule can now earmark a
   matched transaction's amount to a savings goal (`FR-GOAL-01`); Apply-to-History
   previews the allocation and commits the aggregated goal deltas as one change.

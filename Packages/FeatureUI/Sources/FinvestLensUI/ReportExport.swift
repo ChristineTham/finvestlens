@@ -133,3 +133,41 @@ enum ReportExport {
         return pdf as Data
     }
 }
+
+// MARK: - PDF toolbar for interactive reports
+
+/// Adds a "PDF" toolbar button to an interactive report view (`FR-RPT-05`).
+/// The report keeps its live view; the button builds a printable
+/// ``ReportDocument`` from the current data and exports it. `makeDocument`
+/// returns `nil` when there is nothing to print (no account chosen, no data).
+struct ReportPDFToolbar: ViewModifier {
+    let title: String
+    let makeDocument: () -> ReportDocument?
+    @State private var exporting = false
+    @State private var document: PDFReportDocument?
+
+    func body(content: Content) -> some View {
+        content
+            .toolbar {
+                ToolbarItem {
+                    Button("PDF", systemImage: "arrow.up.doc") {
+                        guard let doc = makeDocument(),
+                              let data = ReportExport.pdf(doc.printable) else { return }
+                        document = PDFReportDocument(data: data)
+                        exporting = true
+                    }
+                    .help("Export this report as a PDF")
+                }
+            }
+            .fileExporter(isPresented: $exporting, document: document,
+                          contentType: .pdf, defaultFilename: title) { _ in }
+    }
+}
+
+extension View {
+    /// Attaches a PDF-export toolbar button that renders `document()` on demand.
+    func reportPDFToolbar(title: String,
+                          document: @escaping () -> ReportDocument?) -> some View {
+        modifier(ReportPDFToolbar(title: title, makeDocument: document))
+    }
+}

@@ -68,6 +68,7 @@ struct PortfolioView: View {
     @Bindable var model: AppModel
 
     var body: some View {
+        Group {
         if let portfolio = model.advancedPortfolio() {
             List {
                 Section {
@@ -109,6 +110,8 @@ struct PortfolioView: View {
             ContentUnavailableView("No securities", systemImage: "chart.pie",
                                    description: Text("Add a stock or fund account to see your portfolio."))
         }
+        }
+        .reportPDFToolbar(title: "Portfolio") { model.portfolioDocument() }
     }
 
     private func signedTotal(_ label: String, _ amount: Decimal, _ code: String) -> some View {
@@ -287,6 +290,9 @@ struct ReconcileReportView: View {
                                                          + "cleared, and what is neither."))
             }
         }
+        .reportPDFToolbar(title: "Reconciliation") {
+            accountID.flatMap { model.reconcileDocument(accountID: $0, asOf: asOf) }
+        }
     }
 
     private func content(_ report: ReconcileReport) -> some View {
@@ -413,6 +419,9 @@ struct TransactionReportView: View {
                                        description: Text("Pick an account to list its postings."))
             }
         }
+        .reportPDFToolbar(title: "Transactions") {
+            accountID.flatMap { model.transactionsDocument(accountID: $0, from: from, to: to) }
+        }
     }
 }
 
@@ -421,6 +430,7 @@ struct InvestmentLotsView: View {
 
     var body: some View {
         let lots = model.investmentLots()
+        Group {
         if lots.isEmpty {
             ContentUnavailableView("No open lots", systemImage: "square.stack.3d.up",
                                    description: Text("Buy a security to see its tax lots."))
@@ -463,6 +473,8 @@ struct InvestmentLotsView: View {
                 }
             }
         }
+        }
+        .reportPDFToolbar(title: "Investment Lots") { model.investmentLotsDocument() }
     }
 }
 
@@ -487,6 +499,7 @@ struct PriceScatterView: View {
 
     var body: some View {
         let data = points
+        Group {
         if data.isEmpty {
             ContentUnavailableView("No prices", systemImage: "chart.dots.scatter",
                                    description: Text("Record security prices to plot them over time."))
@@ -502,6 +515,8 @@ struct PriceScatterView: View {
                 .accessibilityLabel("Price scatter of all securities over time")
             }
         }
+        }
+        .reportPDFToolbar(title: "Price History") { model.priceHistoryDocument() }
     }
 }
 
@@ -509,6 +524,7 @@ struct CapitalGainsView: View {
     @Bindable var model: AppModel
 
     var body: some View {
+        Group {
         if let report = model.capitalGains() {
             List {
                 Section {
@@ -580,6 +596,8 @@ struct CapitalGainsView: View {
             ContentUnavailableView("No securities", systemImage: "chart.line.uptrend.xyaxis",
                                    description: Text("Record buys and sells in a stock or fund account to see capital gains."))
         }
+        }
+        .reportPDFToolbar(title: "Capital Gains") { model.capitalGainsDocument() }
     }
 
     @ViewBuilder
@@ -609,6 +627,7 @@ struct CashFlowView: View {
     private var balanceWidth: CGFloat { 96 * appFontScale }
 
     var body: some View {
+        Group {
         if let accountID = model.defaultForecastAccountID {
             let points = model.cashFlowForecast(accountID: accountID)
             let events = points.filter { $0.change != 0 }
@@ -666,6 +685,8 @@ struct CashFlowView: View {
             ContentUnavailableView("No account to forecast", systemImage: "banknote",
                                    description: Text("Create an asset account first."))
         }
+        }
+        .reportPDFToolbar(title: "Forecast") { model.forecastDocument() }
     }
 
     private var whatIfBar: some View {
