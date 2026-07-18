@@ -351,6 +351,7 @@ public struct FinvestLensRootView: View {
             case .rules: RulesView(model: model)
             case .scheduled: ScheduledView(model: model)
             case .budget: BudgetView(model: model)
+            case .goals: GoalsView(model: model)
             case .prices: PricesView(model: model)
             case .saveSearch: SaveSearchSheet(model: model)
             case .onboarding: OnboardingSheet(model: model)

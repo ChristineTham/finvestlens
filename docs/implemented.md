@@ -70,6 +70,12 @@ GnuCash-source reference where relevant:
   instead of a fixed amount; `AmountExpression` evaluates it against named
   variables prompted at post time. Imported from GnuCash's SX formula slots and
   surfaced in the Add-Scheduled sheet + the Enter-Due-Transactions prompt.
+- **Savings goals / piggy banks** (FR-GOAL-01) — named targets that earmark part
+  of an asset account (Firefly III's piggy banks): target amount + optional date
+  + group, add/withdraw money (a read-model, no transaction posted), progress
+  bars, and completion. Book-menu Savings Goals panel; stored as one JSON
+  collection in a book KVP slot (`finvestlens/savingsGoals`), so each change is
+  one undoable whole-book edit and it round-trips through save/reload.
 - **Check printing** (FR-REG-11) — Transaction ▸ Print Check… draws a check
   for the selected transaction: the outflow from a bank/cash/asset account sets
   the amount and the account, the description is the payee, and the amount is

@@ -34,7 +34,7 @@ Common workflows partly built; each is a bounded piece of work.
 |---|---|---|
 | QIF splits + investment actions | FR-XIO-01 / P4 | Parser handles flat D/T/U/P/M/N/L cash rows; `S/E/$` splits and `!Type:Invst` actions dropped. Needs an extended `StagedTransaction` (splits + security/action/qty/price), matcher routing, and stock-transaction creation — a genuine multi-part feature, not a small gap. |
 | OFX investment statements | FR-XIO-02 / P4 | Only `<STMTTRN>` cash rows parsed; `<INVBUY>`/`<INVSELL>` ignored (use the Stock Assistant). Shares the staging/matcher work above. |
-| Rule actions tail | FR-RULE-01 / P4 | The engine now has an `account` trigger and set-tags / set-description actions. Remaining: **convert-type**, **link-to-bill**, and **allocate-to-goal**, which need bill-link / savings-goal (`FR-GOAL-01`) infrastructure that isn't built yet. |
+| Rule actions tail | FR-RULE-01 / P4 | The engine now has an `account` trigger and set-tags / set-description actions. Remaining: **convert-type**, **link-to-bill** (needs bill-link infrastructure not yet built), and **allocate-to-goal** (savings-goal infrastructure now exists — `FR-GOAL-01` — so this action is now buildable). |
 
 *Closed this pass (now in [implemented.md](implemented.md)): CSV export (FR-XIO-06); CSV price import (FR-XIO-03); import GnuCash scheduled transactions + budgets (FR-IMP-03/04); Twelve Data + Stooq quote providers (FR-INV-03b); re-open a finished reconciliation (FR-REC-03); manual attach-a-file (FR-REG-10); Open Read-Only on a live lock (FR-DAT-06); autosave-interval setting (FR-DAT-10); CSV import mapping profiles (FR-XIO-08); free-text search operators (FR-FIND-01); rules `account` trigger + set-tags/set-description (FR-RULE-01, partial); window/state restoration.*
 
@@ -64,7 +64,6 @@ Lower-priority pieces of features that are otherwise complete.
 | Item | FR / Phase | Notes |
 |---|---|---|
 | Legacy report internals → document scaffold + PDF | FR-RPT-05 / P4 | Transactions, Reconciliation, Forecast, Portfolio, Investment Lots, Price Scatter, Capital Gains keep their interactive views; migrating them onto `ReportDocument` (and giving each PDF export) is follow-up. |
-| Savings goals / piggy banks | FR-GOAL-01 / P5 | Not implemented. |
 | Managed-fund money-flow realised model | FR-RPT-02 / P5 | Our per-parcel engine subtracts non-fee expense splits booked inside managed-fund transactions where GnuCash's money-in/out model washes them out (~$34k realised across ~6 accounts). Matching would mean adopting GnuCash's money-flow model — arguably not more correct. |
 | Business: time & mileage tracking | FR-PLAN-14 / P7 | Not implemented (no billable-time / mileage model). |
 | `rebuildAccountTree` subtree-only rebuild | NFR-02 / P2 | The remaining ~0.04s of a refresh is a full-tree rebuild + search; fast enough to feel instant. Rebuild only the affected subtree if ever needed. |

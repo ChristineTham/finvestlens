@@ -195,6 +195,8 @@ struct finvestlensApp: App {
                 Button("Budget…") { model.presentedPanel = .budget }
                     .keyboardShortcut("b", modifiers: .command)
                     .disabled(!model.isOpen)
+                Button("Savings Goals…") { model.presentedPanel = .goals }
+                    .disabled(!model.isOpen)
                 Button("Rules…") { model.presentedPanel = .rules }
                     .disabled(!model.isOpen)
                 Button("Scheduled Transactions…") { model.presentedPanel = .scheduled }
