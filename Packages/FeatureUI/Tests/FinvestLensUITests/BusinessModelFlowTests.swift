@@ -194,6 +194,50 @@ struct BusinessModelFlowTests {
         #expect(row.amounts == [dec("400"), dec("150"), dec("250")])
     }
 
+    @Test("Unbilled time & mileage gathers onto a customer invoice and marks entries billed (FR-PLAN-14)")
+    func billableToInvoice() async throws {
+        let url = tempURL()
+        let model = AppModel()
+        try model.newDocument(at: url)
+
+        let ar = try #require(model.addAccount(name: "A/R", type: .receivable))
+        let sales = try #require(model.addAccount(name: "Consulting Income", type: .income))
+        let customer = try #require(model.addCustomer(id: "C1", name: "Acme"))
+
+        model.addBillableEntry(BillableEntry(kind: .time, date: Date(timeIntervalSince1970: 0),
+                                             customerID: customer, detail: "Design",
+                                             quantity: dec("3"), rate: dec("120"),
+                                             incomeAccountID: sales))
+        model.addBillableEntry(BillableEntry(kind: .mileage, date: Date(timeIntervalSince1970: 1000),
+                                             customerID: customer, detail: "Site visit",
+                                             quantity: dec("50"), rate: dec("0.85"),
+                                             incomeAccountID: sales))
+        #expect(model.unbilledEntries(forCustomer: customer).count == 2)
+
+        let invoiceID = try #require(model.createInvoiceFromUnbilled(
+            customerID: customer, invoiceNumber: "INV-100"))
+        // Both entries are now billed; none remain to bill.
+        #expect(model.unbilledEntries(forCustomer: customer).isEmpty)
+        let allBilled = model.billableEntries.allSatisfy { $0.billed }
+        #expect(allBilled)
+
+        // The invoice totals 3×120 + 50×0.85 = 360 + 42.50 = 402.50.
+        let book = try #require(model.book)
+        let invoice = try #require(book.invoice(with: invoiceID))
+        #expect(invoice.total == dec("402.50"))
+        #expect(invoice.entries.count == 2)
+        #expect(model.postInvoice(invoiceID, to: ar))
+
+        // Entries survive save/reload with their billed flag.
+        try model.save(); model.close()
+        let reopened = AppModel()
+        try await reopened.open(at: url)
+        defer { reopened.close(); try? FileManager.default.removeItem(at: url) }
+        #expect(reopened.billableEntries.count == 2)
+        let reopenedBilled = reopened.billableEntries.allSatisfy { $0.billed }
+        #expect(reopenedBilled)
+    }
+
     @Test("A created invoice persists on save and reloads")
     func savesAndReloads() async throws {
         let url = tempURL()

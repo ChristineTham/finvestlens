@@ -230,6 +230,8 @@ struct finvestlensApp: App {
                 Button("Customers, Vendors & Invoices…") { model.presentedPanel = .business }
                     .keyboardShortcut("b", modifiers: [.command, .shift])
                     .disabled(!model.isOpen)
+                Button("Time & Mileage…") { model.presentedPanel = .timeMileage }
+                    .disabled(!model.isOpen)
                 Divider()
                 Button("Receivable Aging Report…") { model.openReceivableAging() }
                     .disabled(!model.isOpen)

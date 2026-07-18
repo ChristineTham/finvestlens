@@ -113,6 +113,7 @@ public struct RegisterFilter: Equatable, Sendable {
 public enum RootPanel: String, Identifiable, Sendable {
     case newAccount, newTransaction, stockTransaction, currencyTransfer
     case reports, rules, scheduled, budget, goals, prices, saveSearch, onboarding
+    case timeMileage
     case reconcile
     case autoCategorize
     case linkedDocuments
@@ -428,6 +429,9 @@ public final class AppModel {
     /// (`FR-GOAL-01`).
     public internal(set) var savingsGoals: [SavingsGoal] = []
 
+    /// Billable time and mileage awaiting or placed on invoices (`FR-PLAN-14`).
+    public internal(set) var billableEntries: [BillableEntry] = []
+
     /// Per-security ticker overrides for quote lookups, keyed by
     /// `"namespace|mnemonic"` (e.g. maps `CBA` → `CBA.AX` for Yahoo).
     public internal(set) var quoteSymbols: [String: String] = [:]
@@ -600,13 +604,14 @@ public final class AppModel {
         static let priceTargets = "finvestlens/priceTargets"
         static let companyInfo = "finvestlens/companyInfo"
         static let savingsGoals = "finvestlens/savingsGoals"
+        static let billableEntries = "finvestlens/billableEntries"
     }
 
     /// Loads the KVP-backed collections from the current book.
     func reloadKvpCollections() {
         guard let book else {
             ruleGroups = []; scheduledTransactions = []; budgets = []; quoteSymbols = [:]
-            savingsGoals = []
+            savingsGoals = []; billableEntries = []
             return
         }
         ruleGroups = Self.decodeSlot([RuleGroup].self, book.kvp[KvpKey.rules]) ?? []
@@ -621,6 +626,7 @@ public final class AppModel {
         priceTargets = Self.decodeSlot([PriceTarget].self, book.kvp[KvpKey.priceTargets]) ?? []
         companyInfo = Self.decodeSlot(CompanyInfo.self, book.kvp[KvpKey.companyInfo]) ?? CompanyInfo()
         savingsGoals = Self.decodeSlot([SavingsGoal].self, book.kvp[KvpKey.savingsGoals]) ?? []
+        billableEntries = Self.decodeSlot([BillableEntry].self, book.kvp[KvpKey.billableEntries]) ?? []
     }
 
     /// Writes the KVP-backed collections into the current book's slots.
@@ -642,6 +648,7 @@ public final class AppModel {
         book.kvp[KvpKey.companyInfo] =
             companyInfo == CompanyInfo() ? nil : Self.encodeSingle(companyInfo)
         book.kvp[KvpKey.savingsGoals] = Self.encodeSlot(savingsGoals)
+        book.kvp[KvpKey.billableEntries] = Self.encodeSlot(billableEntries)
     }
 
     /// Persists the collections and refreshes derived UI state, as one undoable

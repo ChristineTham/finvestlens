@@ -70,6 +70,11 @@ GnuCash-source reference where relevant:
   instead of a fixed amount; `AmountExpression` evaluates it against named
   variables prompted at post time. Imported from GnuCash's SX formula slots and
   surfaced in the Add-Scheduled sheet + the Enter-Due-Transactions prompt.
+- **Billable time & mileage** (FR-PLAN-14) — a Business ▸ Time & Mileage panel
+  logs hours or distance against a customer (quantity × rate, optional job +
+  income account); unbilled entries gather onto a customer invoice (one line
+  each, reusing the invoice machinery) and are marked billed. A KVP-backed
+  collection (`finvestlens/billableEntries`) that round-trips through save/reload.
 - **Legacy reports → PDF export** (FR-RPT-05) — the seven interactive reports
   (Transactions, Reconciliation, Forecast, Portfolio, Investment Lots, Price
   Scatter, Capital Gains) each gain a **PDF** toolbar button that builds a
