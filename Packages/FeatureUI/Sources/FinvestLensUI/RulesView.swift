@@ -127,7 +127,7 @@ struct RulesView: View {
                 set: { model.setRuleActive(rule.id, $0) })) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(rule.name).fontWeight(.medium)
-                    Text(Self.summary(rule, accountName: accountName))
+                    Text(Self.summary(rule, accountName: accountName, goalName: goalName))
                         .scaledFont(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -148,7 +148,8 @@ struct RulesView: View {
 
     /// The rule in words. Every part the engine honours has to show up here, or
     /// the list would say two different rules are the same one.
-    static func summary(_ rule: Rule, accountName: (GncGUID) -> String) -> String {
+    static func summary(_ rule: Rule, accountName: (GncGUID) -> String,
+                        goalName: (GncGUID) -> String = { _ in "goal" }) -> String {
         let conditions = rule.triggers
             .map { "\($0.field.rawValue) \($0.op.rawValue) “\($0.value)”" }
             .joined(separator: rule.matchAll ? " and " : " or ")
@@ -158,6 +159,7 @@ struct RulesView: View {
             case .setNotes(let notes): "notes “\(notes)”"
             case .setTags(let tags): "tag \(tags.joined(separator: ", "))"
             case .setDescription(let text): "rename “\(text)”"
+            case .allocateToGoal(let id): "→ goal “\(goalName(id))”"
             }
         }.joined(separator: ", ")
         let tail = rule.stopProcessing ? ", then stop" : ""
@@ -166,6 +168,10 @@ struct RulesView: View {
 
     private func accountName(_ id: GncGUID) -> String {
         model.postableAccounts.first { $0.id == id }?.name ?? "?"
+    }
+
+    private func goalName(_ id: GncGUID) -> String {
+        model.savingsGoals.first { $0.id == id }?.name ?? "?"
     }
 }
 
@@ -209,6 +215,10 @@ struct ApplyRulesSheet: View {
                             }
                             if let notes = item.proposedNotes {
                                 Text("Notes: \(notes)").scaledFont(.caption2).foregroundStyle(.secondary)
+                            }
+                            if let goal = item.proposedGoalName {
+                                Text("Allocate \(AmountFormat.string(item.allocateAmount, code: model.reportCurrency.mnemonic)) → goal “\(goal)”")
+                                    .scaledFont(.caption2).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -257,6 +267,7 @@ struct RuleEditorSheet: View {
     @State private var tagsText = ""
     @State private var setsDescription = false
     @State private var descriptionText = ""
+    @State private var goalID: GncGUID?
     @State private var stopProcessing = false
 
     private var isEditing: Bool { if case .existing = target { true } else { false } }
@@ -265,7 +276,8 @@ struct RuleEditorSheet: View {
         !validTriggers.isEmpty && (accountID != nil
             || (setsNotes && !notes.isEmpty)
             || (setsTags && !tagsText.trimmingCharacters(in: .whitespaces).isEmpty)
-            || (setsDescription && !descriptionText.isEmpty))
+            || (setsDescription && !descriptionText.isEmpty)
+            || goalID != nil)
     }
 
     var body: some View {
@@ -336,6 +348,12 @@ struct RuleEditorSheet: View {
                         TextField("Description", text: $descriptionText, prompt: Text("New description"))
                             .labelsHidden()
                     }
+                    if !model.savingsGoals.isEmpty {
+                        Picker("Allocate to goal", selection: $goalID) {
+                            Text("Don’t allocate").tag(GncGUID?.none)
+                            ForEach(model.savingsGoals) { Text($0.name).tag(GncGUID?.some($0.id)) }
+                        }
+                    }
                     Toggle("Stop processing further rules", isOn: $stopProcessing)
                 }
 
@@ -375,6 +393,7 @@ struct RuleEditorSheet: View {
             case .setNotes(let text): setsNotes = true; notes = text
             case .setTags(let tags): setsTags = true; tagsText = tags.joined(separator: ", ")
             case .setDescription(let text): setsDescription = true; descriptionText = text
+            case .allocateToGoal(let id): goalID = id
             }
         }
     }
@@ -389,6 +408,7 @@ struct RuleEditorSheet: View {
             if !tags.isEmpty { actions.append(.setTags(tags)) }
         }
         if setsDescription, !descriptionText.isEmpty { actions.append(.setDescription(descriptionText)) }
+        if let goalID { actions.append(.allocateToGoal(goalID)) }
 
         let fallback = validTriggers
             .map { "\($0.field.rawValue) \($0.op.rawValue) “\($0.value)”" }

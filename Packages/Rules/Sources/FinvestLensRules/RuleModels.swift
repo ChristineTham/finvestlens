@@ -53,6 +53,9 @@ public enum RuleAction: Codable, Hashable, Sendable {
     case setTags([String])
     /// Replace the transaction description (payee cleanup, `FR-RULE-01`).
     case setDescription(String)
+    /// Earmark the matched transaction's amount to a savings goal
+    /// (`FR-RULE-01` allocate-to-goal / `FR-GOAL-01`).
+    case allocateToGoal(GncGUID)
 }
 
 /// A rule: match some triggers (all or any), then apply actions.

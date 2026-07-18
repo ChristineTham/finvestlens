@@ -70,6 +70,10 @@ GnuCash-source reference where relevant:
   instead of a fixed amount; `AmountExpression` evaluates it against named
   variables prompted at post time. Imported from GnuCash's SX formula slots and
   surfaced in the Add-Scheduled sheet + the Enter-Due-Transactions prompt.
+- **Rules: allocate-to-goal action** (FR-RULE-01) — a rule can now earmark a
+  matched transaction's amount to a savings goal (`FR-GOAL-01`); Apply-to-History
+  previews the allocation and commits the aggregated goal deltas as one change.
+  Leaves only convert-type and link-to-bill on the rules-action tail.
 - **Smart Import: create a transaction from an unmatched invoice** (FR-AI-07) —
   when an analysed invoice has no matching register transaction, the review row
   now offers *Create Transaction…* with a funding-account picker (bank / cash /

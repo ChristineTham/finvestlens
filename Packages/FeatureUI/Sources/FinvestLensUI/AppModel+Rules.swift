@@ -120,7 +120,8 @@ extension AppModel {
                 memo: txn.splits.first?.memo ?? "", amount: amount,
                 accountNames: txn.splits.compactMap { $0.account?.name }))
             guard outcome.accountID != nil || outcome.notes != nil
-                    || !outcome.tags.isEmpty || outcome.descriptionText != nil else { continue }
+                    || !outcome.tags.isEmpty || outcome.descriptionText != nil
+                    || outcome.goalID != nil else { continue }
 
             let categoryLeg = txn.splits.first { isCategory($0.account?.type) }
             var proposedID: GncGUID?
@@ -134,15 +135,20 @@ extension AppModel {
             let newTags = outcome.tags.filter { !txn.tags.contains($0) }
             let proposedDescription = (outcome.descriptionText != nil
                 && outcome.descriptionText != txn.transactionDescription) ? outcome.descriptionText : nil
-            guard proposedID != nil || proposedNotes != nil
-                    || !newTags.isEmpty || proposedDescription != nil else { continue }
+            // Allocate the transaction's magnitude to the goal, when the goal
+            // still exists.
+            let goal = outcome.goalID.flatMap { id in savingsGoals.first { $0.id == id } }
+            guard proposedID != nil || proposedNotes != nil || !newTags.isEmpty
+                    || proposedDescription != nil || goal != nil else { continue }
 
             items.append(RuleApplication(
                 id: txn.guid, description: txn.transactionDescription,
                 currentCategory: categoryLeg?.account?.name,
                 proposedCategory: proposedName, proposedCategoryID: proposedID,
                 proposedNotes: proposedNotes,
-                proposedTags: newTags, proposedDescription: proposedDescription))
+                proposedTags: newTags, proposedDescription: proposedDescription,
+                proposedGoalID: goal?.id, proposedGoalName: goal?.name,
+                allocateAmount: goal != nil ? abs(amount) : 0))
         }
         return items
     }
@@ -165,6 +171,20 @@ extension AppModel {
                 if let description = item.proposedDescription { txn.transactionDescription = description }
             }
         }
+        // Goal allocations aren't transaction edits — they adjust the KVP-backed
+        // goals collection. Aggregate the deltas and commit them as one change.
+        var goalDeltas: [GncGUID: Decimal] = [:]
+        for item in items {
+            guard let goalID = item.proposedGoalID else { continue }
+            goalDeltas[goalID, default: 0] += item.allocateAmount
+        }
+        if !goalDeltas.isEmpty {
+            for (goalID, delta) in goalDeltas {
+                guard let index = savingsGoals.firstIndex(where: { $0.id == goalID }) else { continue }
+                savingsGoals[index].savedAmount = max(0, savingsGoals[index].savedAmount + delta)
+            }
+            commitKvpCollections(named: "Apply Rules — Allocate to Goals")
+        }
     }
 
     private func isCategory(_ type: AccountType?) -> Bool {
@@ -184,4 +204,9 @@ public struct RuleApplication: Identifiable, Hashable, Sendable {
     public var proposedTags: [String] = []
     /// A description a rule would set (payee cleanup), if different.
     public var proposedDescription: String?
+    /// A savings goal a rule would allocate the transaction's amount to.
+    public var proposedGoalID: GncGUID?
+    public var proposedGoalName: String?
+    /// The amount to earmark to ``proposedGoalID`` (the transaction's magnitude).
+    public var allocateAmount: Decimal = 0
 }

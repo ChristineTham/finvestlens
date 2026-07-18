@@ -36,15 +36,18 @@ public struct RuleOutcome: Equatable, Sendable {
     public var tags: [String]
     /// Replacement description, if a rule set one.
     public var descriptionText: String?
+    /// Savings goal to earmark the matched amount to, if a rule set one.
+    public var goalID: GncGUID?
     /// `true` if a matched rule requested stop-processing.
     public var stopped: Bool
 
     public init(accountID: GncGUID? = nil, notes: String? = nil, tags: [String] = [],
-                descriptionText: String? = nil, stopped: Bool = false) {
+                descriptionText: String? = nil, goalID: GncGUID? = nil, stopped: Bool = false) {
         self.accountID = accountID
         self.notes = notes
         self.tags = tags
         self.descriptionText = descriptionText
+        self.goalID = goalID
         self.stopped = stopped
     }
 }
@@ -122,6 +125,7 @@ public enum RuleEngine {
             case .setTags(let tags):
                 for tag in tags where !outcome.tags.contains(tag) { outcome.tags.append(tag) }
             case .setDescription(let text): outcome.descriptionText = text
+            case .allocateToGoal(let guid): outcome.goalID = guid
             }
         }
     }

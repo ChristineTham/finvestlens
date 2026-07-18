@@ -31,6 +31,20 @@ struct RuleEngineTests {
         #expect(outcome.accountID == groceries)
     }
 
+    @Test("An allocate-to-goal action carries the goal id into the outcome (FR-RULE-01)")
+    func allocateToGoal() {
+        let goal = GncGUID.random()
+        let rule = Rule(name: "Round-up → Holiday",
+                        triggers: [RuleTrigger(field: .description, op: .contains, value: "save")],
+                        actions: [.allocateToGoal(goal)])
+        let outcome = RuleEngine.evaluate(group([rule]),
+                                          context: RuleContext(description: "Auto SAVE transfer"))
+        #expect(outcome.goalID == goal)
+        // A non-matching context leaves the goal unset.
+        #expect(RuleEngine.evaluate(group([rule]),
+                                    context: RuleContext(description: "Groceries")).goalID == nil)
+    }
+
     @Test("matchAll requires every trigger; any requires one")
     func andOr() {
         let triggers = [
