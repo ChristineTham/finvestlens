@@ -52,6 +52,26 @@ GnuCash-source reference where relevant:
   to the token grammar.
 - **Window/state restoration** — reopen the last book on launch (General
   setting).
+- **CSV import mapping profiles** (FR-XIO-08) — named column-mapping profiles
+  (Load / Save as Profile… / Delete) persisted app-wide for repeat imports.
+- **Rules: `account` trigger + set-tags / set-description actions**
+  (FR-RULE-01, partial) — engine + apply-to-history + editor UI; convert-type /
+  link-to-bill / allocate-to-goal still need bill/goal infra.
+- **Advanced Portfolio: Money In / Money Out / rate-of-return columns**
+  (FR-RPT-02) — from the lot engine's proceeds/cost-basis; Income (cash
+  dividends) still needs income-account attribution.
+- **CI** (NFR-08) — `.github/workflows/ci.yml`: a matrix job builds + tests the
+  seven core packages and an SPDX-header gate on every push/PR; the app +
+  Intelligence build job is present but `continue-on-error` until a hosted
+  macOS-26 / Xcode-26 runner exists.
+
+Every code item above ships with unit tests (or, for the GnuCash SX/budget
+import, a real-book verification); each package suite and the full app build
+(`CODE_SIGNING_ALLOWED=NO`) are green. The remaining deferred items are either
+larger features (QIF/OFX investment import, savings goals, loan-amortisation
+assistant, report→PDF scaffold, check printing, business detail reports) or
+externally blocked (Apple developer-portal provisioning, real NAS/SMB
+hardware, a physical iOS device, human translators) — see deferred.md.
 
 ## Platform enablement — extension targets & capabilities (18 Jul 2026)
 

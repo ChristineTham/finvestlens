@@ -22,9 +22,9 @@ Quality automation and validation that a shippable release needs.
 
 | Item | FR / Phase | Notes |
 |---|---|---|
-| CI pipeline + round-trip corpus gate | NFR-08 / P0, P3 | Tests run locally; no `.github`. The env-gated `LiveFileRoundTripTests` and `gnucash-cli` interop are run by hand — automate them (and a file-header/coverage gate) as the CI gate. |
-| Large-book perf validation (local + SMB/NFS) | NFR-02 / P1 | Open/scroll/import/save on a 100k-txn book over real SMB/NFS. Also settles the one open architecture decision: GRDB **direct-mode vs always-working-copy** on local volumes (Architecture §10). |
-| Localization (string catalogs) | NFR-06 / P6 | Accessibility labels done; UI strings not yet localized. |
+| CI: app + Intelligence jobs on a hosted runner | NFR-08 / P0, P3 | `.github/workflows/ci.yml` now builds + tests the seven core packages and gates SPDX headers on every push/PR. The app + Intelligence jobs need **Xcode 26 / macOS 26**, which GitHub's hosted runners don't ship yet (the job is present but `continue-on-error`). Enable it once a macOS-26 runner is available (or a self-hosted one). |
+| Large-book perf validation (local + SMB/NFS) | NFR-02 / P1 | **Needs real NAS hardware** — open/scroll/import/save on a 100k-txn book over SMB/NFS. Also settles the one open architecture decision: GRDB **direct-mode vs always-working-copy** on local volumes (Architecture §10). |
+| Localization (string catalogs) | NFR-06 / P6 | **Needs translators** — accessibility labels done; the UI-string catalog + translations are not. |
 
 ## 2 — User-facing gaps (high value, tractable)
 
@@ -32,12 +32,11 @@ Common workflows partly built; each is a bounded piece of work.
 
 | Item | FR / Phase | Notes |
 |---|---|---|
-| CSV mapping profiles | FR-XIO-08 / P4 | Column mapping is per-import; no saved profiles. |
-| QIF splits + investment actions | FR-XIO-01 / P4 | Parser handles flat D/T/U/P/M/N/L cash rows; `S/E/$` splits and `!Type:Invst` actions dropped. |
-| OFX investment statements | FR-XIO-02 / P4 | Only `<STMTTRN>` cash rows parsed; `<INVBUY>`/`<INVSELL>` ignored (use the Stock Assistant). |
-| Rule actions beyond category + notes | FR-RULE-01 / P4 | Rule actions are limited to set-account and set-notes; FR-RULE-01's set-tags, set-description, convert-type, link-to-bill and allocate-to-goal are not built, and triggers test only description / memo / amount. |
+| QIF splits + investment actions | FR-XIO-01 / P4 | Parser handles flat D/T/U/P/M/N/L cash rows; `S/E/$` splits and `!Type:Invst` actions dropped. Needs an extended `StagedTransaction` (splits + security/action/qty/price), matcher routing, and stock-transaction creation — a genuine multi-part feature, not a small gap. |
+| OFX investment statements | FR-XIO-02 / P4 | Only `<STMTTRN>` cash rows parsed; `<INVBUY>`/`<INVSELL>` ignored (use the Stock Assistant). Shares the staging/matcher work above. |
+| Rule actions tail | FR-RULE-01 / P4 | The engine now has an `account` trigger and set-tags / set-description actions. Remaining: **convert-type**, **link-to-bill**, and **allocate-to-goal**, which need bill-link / savings-goal (`FR-GOAL-01`) infrastructure that isn't built yet. |
 
-*Closed this pass (now in [implemented.md](implemented.md)): CSV export (FR-XIO-06); CSV price import (FR-XIO-03); import GnuCash scheduled transactions + budgets (FR-IMP-03/04); Twelve Data + Stooq quote providers (FR-INV-03b); re-open a finished reconciliation (FR-REC-03); manual attach-a-file (FR-REG-10); Open Read-Only on a live lock (FR-DAT-06); autosave-interval setting (FR-DAT-10).*
+*Closed this pass (now in [implemented.md](implemented.md)): CSV export (FR-XIO-06); CSV price import (FR-XIO-03); import GnuCash scheduled transactions + budgets (FR-IMP-03/04); Twelve Data + Stooq quote providers (FR-INV-03b); re-open a finished reconciliation (FR-REC-03); manual attach-a-file (FR-REG-10); Open Read-Only on a live lock (FR-DAT-06); autosave-interval setting (FR-DAT-10); CSV import mapping profiles (FR-XIO-08); free-text search operators (FR-FIND-01); rules `account` trigger + set-tags/set-description (FR-RULE-01, partial); window/state restoration.*
 
 ## 3 — Platform enablement (targets/entitlements built — provisioning remains)
 
@@ -64,7 +63,7 @@ Lower-priority pieces of features that are otherwise complete.
 | Check printing | FR-REG-11 / P4 | Not implemented. |
 | Savings goals / piggy banks | FR-GOAL-01 / P5 | Not implemented. |
 | Loan amortization assistant | FR-SCH-04 / P5 | The Loan **Calculator** exists (payment + schedule); the *assistant* that generates the scheduled loan transactions does not. |
-| Advanced Portfolio extra columns | FR-RPT-02 / P5 | Money In/Out, Income, Rate-of-Return columns. |
+| Advanced Portfolio: Income column | FR-RPT-02 / P5 | Money In/Out and rate-of-return columns are now built; the **Income** column (cash dividends/interest) still isn't — the lot engine doesn't see income-account cash flows, so it needs income-account-to-security attribution. |
 | Managed-fund money-flow realised model | FR-RPT-02 / P5 | Our per-parcel engine subtracts non-fee expense splits booked inside managed-fund transactions where GnuCash's money-in/out model washes them out (~$34k realised across ~6 accounts). Matching would mean adopting GnuCash's money-flow model — arguably not more correct. |
 | Business: vendor / employee / job detail reports | FR-BUS / P7 | Customer Summary + Receivable/Payable Aging built; the per-vendor/employee/job detail reports are todo. |
 | Business: Australian-Tax invoice layout | FR-BUS-03 / P7 | Printable INVOICE/BILL/VOUCHER PDF built (with an ABN/Tax-ID field on company info); a "Tax Invoice"-titled AU GST layout is todo. |
