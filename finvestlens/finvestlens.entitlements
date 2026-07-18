@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  FinvestLens app entitlements. App Sandbox is intentionally OFF (see
+	  docs/deferred.md §6). Bundle-ID base is com.hellotham.finvestlensapp
+	  because com.hellotham.finvestlens is held by an inaccessible team.
+	-->
+
+	<!-- App Group: shared container the app writes widget/Quick Look snapshots
+	     into (the extensions read from it). -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.hellotham.finvestlensapp</string>
+	</array>
+
+	<!-- iCloud Documents (FR-PLT-02): the app's Documents surface in iCloud
+	     Drive so a .finvestlens book syncs file-level across devices. -->
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.com.hellotham.finvestlensapp</string>
+	</array>
+	<key>com.apple.developer.ubiquity-container-identifiers</key>
+	<array>
+		<string>iCloud.com.hellotham.finvestlensapp</string>
+	</array>
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudDocuments</string>
+	</array>
+</dict>
+</plist>

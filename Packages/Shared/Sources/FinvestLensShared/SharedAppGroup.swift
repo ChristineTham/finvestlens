@@ -15,7 +15,7 @@ public enum SharedAppGroup {
 
     /// Keep in sync with `finvestlens/finvestlens.entitlements` and each
     /// extension's `.entitlements`.
-    public static let identifier = "group.com.hellotham.finvestlens.shared"
+    public static let identifier = "group.com.hellotham.finvestlensapp"
 
     /// The shared container directory, or `nil` if the App Group is not yet
     /// provisioned (development before the capability is enabled).

@@ -6,7 +6,7 @@
 	     app publishes (see FinvestLensShared.SharedAppGroup). -->
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.hellotham.finvestlens.shared</string>
+		<string>group.com.hellotham.finvestlensapp</string>
 	</array>
 </dict>
 </plist>

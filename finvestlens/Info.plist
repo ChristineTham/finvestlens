@@ -4,6 +4,18 @@
 <dict>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Authenticate to unlock your FinvestLens book.</string>
+	<key>NSUbiquitousContainers</key>
+	<dict>
+		<key>iCloud.com.hellotham.finvestlensapp</key>
+		<dict>
+			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
+			<true/>
+			<key>NSUbiquitousContainerName</key>
+			<string>FinvestLens</string>
+			<key>NSUbiquitousContainerSupportedFolderLevels</key>
+			<string>Any</string>
+		</dict>
+	</dict>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
