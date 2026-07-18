@@ -378,53 +378,84 @@ extension AppModel {
 
         case .customerSummary:
             guard let book else { return nil }
-            let code = reportCurrency.mnemonic
-            struct Row { var name: String; var invoiced: Decimal = 0; var outstanding: Decimal = 0 }
-            var rows: [Row] = []
-            for customer in book.customers {
-                let posted = book.invoices(forOwner: customer.guid).filter { $0.isPosted }
-                guard !posted.isEmpty else { continue }
-                var row = Row(name: customer.name)
-                for invoice in posted {
-                    row.invoiced += invoice.total
-                    row.outstanding += book.outstanding(invoice)
-                }
-                rows.append(row)
-            }
-            rows.sort { $0.invoiced > $1.invoiced }
-            let columns = ["Invoiced", "Paid", "Outstanding"]
-            func amounts(_ r: Row) -> [Decimal?] {
-                [r.invoiced, r.invoiced - r.outstanding, r.outstanding]
-            }
-            let totalInvoiced = rows.reduce(Decimal(0)) { $0 + $1.invoiced }
-            let totalOutstanding = rows.reduce(Decimal(0)) { $0 + $1.outstanding }
-            return ReportDocument(
-                title: "Customer Summary",
-                periodLabel: asOfLabel,
-                currencyCode: code,
-                kpis: [
-                    ReportKPI(label: "Total invoiced", amount: totalInvoiced),
-                    ReportKPI(label: "Received", amount: totalInvoiced - totalOutstanding),
-                    ReportKPI(label: "Outstanding", amount: totalOutstanding),
-                ],
-                chart: nil,
-                sections: [ReportDocumentSection(
-                    title: "Customers",
-                    rows: rows.map { ReportDocumentRow(label: $0.name, amounts: amounts($0)) },
-                    columns: columns,
-                    columnTotals: ("Total",
-                                   [totalInvoiced, totalInvoiced - totalOutstanding, totalOutstanding]))],
-                notes: ["Totals cover posted invoices only, as of "
-                        + to.formatted(date: .abbreviated, time: .omitted)
-                        + ". \"Paid\" is invoiced less what is still outstanding."],
-                facts: ReportFactsSource(
-                    headline: [("Invoiced", totalInvoiced), ("Received", totalInvoiced - totalOutstanding),
-                               ("Outstanding", totalOutstanding)],
-                    lines: rows.map { ($0.name, $0.invoiced) }))
+            return ownerSummary(title: "Customer Summary", chargedNoun: "Invoiced",
+                                entity: "Customers", asOf: to, asOfLabel: asOfLabel,
+                                owners: book.customers.map { ($0.guid, $0.name) })
+
+        case .vendorSummary:
+            guard let book else { return nil }
+            return ownerSummary(title: "Vendor Summary", chargedNoun: "Billed",
+                                entity: "Vendors", asOf: to, asOfLabel: asOfLabel,
+                                owners: book.vendors.map { ($0.guid, $0.name) })
+
+        case .employeeSummary:
+            guard let book else { return nil }
+            return ownerSummary(title: "Employee Summary", chargedNoun: "Claimed",
+                                entity: "Employees", asOf: to, asOfLabel: asOfLabel,
+                                owners: book.employees.map { ($0.guid, $0.username) })
+
+        case .jobSummary:
+            guard let book else { return nil }
+            return ownerSummary(title: "Job Summary", chargedNoun: "Invoiced",
+                                entity: "Jobs", asOf: to, asOfLabel: asOfLabel,
+                                owners: book.jobs.map { ($0.guid, $0.name) })
 
         default:
             return nil
         }
+    }
+
+    /// One row per party — charged / paid / outstanding over its posted
+    /// documents, most-charged first — the shared shape behind the Customer,
+    /// Vendor, Employee and Job summaries (GnuCash's per-owner reports). Parties
+    /// with no posted document are omitted.
+    private func ownerSummary(title: String, chargedNoun: String, entity: String,
+                              asOf to: Date, asOfLabel: String,
+                              owners: [(guid: GncGUID, name: String)]) -> ReportDocument? {
+        guard let book else { return nil }
+        let code = reportCurrency.mnemonic
+        struct Row { var name: String; var charged: Decimal = 0; var outstanding: Decimal = 0 }
+        var rows: [Row] = []
+        for owner in owners {
+            let posted = book.invoices(forOwner: owner.guid).filter { $0.isPosted }
+            guard !posted.isEmpty else { continue }
+            var row = Row(name: owner.name)
+            for invoice in posted {
+                row.charged += invoice.total
+                row.outstanding += book.outstanding(invoice)
+            }
+            rows.append(row)
+        }
+        rows.sort { $0.charged > $1.charged }
+        let columns = [chargedNoun, "Paid", "Outstanding"]
+        func amounts(_ r: Row) -> [Decimal?] {
+            [r.charged, r.charged - r.outstanding, r.outstanding]
+        }
+        let totalCharged = rows.reduce(Decimal(0)) { $0 + $1.charged }
+        let totalOutstanding = rows.reduce(Decimal(0)) { $0 + $1.outstanding }
+        return ReportDocument(
+            title: title,
+            periodLabel: asOfLabel,
+            currencyCode: code,
+            kpis: [
+                ReportKPI(label: "Total \(chargedNoun.lowercased())", amount: totalCharged),
+                ReportKPI(label: "Paid", amount: totalCharged - totalOutstanding),
+                ReportKPI(label: "Outstanding", amount: totalOutstanding),
+            ],
+            chart: nil,
+            sections: [ReportDocumentSection(
+                title: entity,
+                rows: rows.map { ReportDocumentRow(label: $0.name, amounts: amounts($0)) },
+                columns: columns,
+                columnTotals: ("Total",
+                               [totalCharged, totalCharged - totalOutstanding, totalOutstanding]))],
+            notes: ["Totals cover posted documents only, as of "
+                    + to.formatted(date: .abbreviated, time: .omitted)
+                    + ". \"Paid\" is \(chargedNoun.lowercased()) less what is still outstanding."],
+            facts: ReportFactsSource(
+                headline: [(chargedNoun, totalCharged), ("Paid", totalCharged - totalOutstanding),
+                           ("Outstanding", totalOutstanding)],
+                lines: rows.map { ($0.name, $0.charged) }))
     }
 
     /// A short label for one average-balance interval — the start date, since

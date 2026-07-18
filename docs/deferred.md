@@ -67,7 +67,6 @@ Lower-priority pieces of features that are otherwise complete.
 | Check printing | FR-REG-11 / P4 | Not implemented. |
 | Savings goals / piggy banks | FR-GOAL-01 / P5 | Not implemented. |
 | Managed-fund money-flow realised model | FR-RPT-02 / P5 | Our per-parcel engine subtracts non-fee expense splits booked inside managed-fund transactions where GnuCash's money-in/out model washes them out (~$34k realised across ~6 accounts). Matching would mean adopting GnuCash's money-flow model — arguably not more correct. |
-| Business: vendor / employee / job detail reports | FR-BUS / P7 | Customer Summary + Receivable/Payable Aging built; the per-vendor/employee/job detail reports are todo. |
 | Business: Australian-Tax invoice layout | FR-BUS-03 / P7 | Printable INVOICE/BILL/VOUCHER PDF built (with an ABN/Tax-ID field on company info); a "Tax Invoice"-titled AU GST layout is todo. |
 | Business: time & mileage tracking | FR-PLAN-14 / P7 | Not implemented (no billable-time / mileage model). |
 | `rebuildAccountTree` subtree-only rebuild | NFR-02 / P2 | The remaining ~0.04s of a refresh is a full-tree rebuild + search; fast enough to feel instant. Rebuild only the affected subtree if ever needed. |

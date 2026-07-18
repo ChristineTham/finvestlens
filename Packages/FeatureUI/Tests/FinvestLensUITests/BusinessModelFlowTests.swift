@@ -166,6 +166,34 @@ struct BusinessModelFlowTests {
         #expect(row.amounts == [dec("400"), dec("150"), dec("250")])
     }
 
+    @Test("The vendor-summary report totals billed, paid, and outstanding")
+    func vendorSummaryReport() throws {
+        let url = tempURL()
+        let model = AppModel()
+        try model.newDocument(at: url)
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        let ap = try #require(model.addAccount(name: "A/P", type: .payable))
+        let bank = try #require(model.addAccount(name: "Bank", type: .bank))
+        let expense = try #require(model.addAccount(name: "Supplies", type: .expense))
+        let vendor = try #require(model.addVendor(id: "V1", name: "Globex"))
+        let bill = try #require(model.createInvoice(
+            id: "BILL-1", kind: .bill, ownerType: .vendor, ownerID: vendor,
+            lines: [.init(accountID: expense, price: dec("400"))]))
+        #expect(model.postInvoice(bill, to: ap))
+        #expect(model.processPayment(ownerType: .vendor, ownerID: vendor,
+                                     amount: dec("150"), fromAccountID: bank))
+
+        let config = ReportConfiguration(kind: ReportKind.vendorSummary.rawValue, period: .allTime)
+        let document = try #require(model.reportDocument(for: config))
+        #expect(document.title == "Vendor Summary")
+        #expect(document.sections.first?.columns?.first == "Billed")
+        let row = try #require(document.sections.first?.rows.first)
+        #expect(row.label == "Globex")
+        // Billed 400, paid 150, outstanding 250.
+        #expect(row.amounts == [dec("400"), dec("150"), dec("250")])
+    }
+
     @Test("A created invoice persists on save and reloads")
     func savesAndReloads() async throws {
         let url = tempURL()

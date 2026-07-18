@@ -70,6 +70,11 @@ GnuCash-source reference where relevant:
   instead of a fixed amount; `AmountExpression` evaluates it against named
   variables prompted at post time. Imported from GnuCash's SX formula slots and
   surfaced in the Add-Scheduled sheet + the Enter-Due-Transactions prompt.
+- **Business: Vendor / Employee / Job summary reports** (FR-BUS) — three new
+  business reports joining Customer Summary + Receivable/Payable Aging, one row
+  per party (charged / paid / outstanding over its posted documents, most-charged
+  first), the shared shape behind GnuCash's per-owner reports. Book-wide, as-of,
+  PDF-exportable through the report scaffold.
 - **Loan amortization assistant** (FR-SCH-04) — `LoanCalculator.scheduledPayment`
   builds a GnuCash Mortgage/Loan-style scheduled transaction: fixed payment out
   of the funding account, split into a variable **interest** leg (`FR-SCH-02`
@@ -85,7 +90,7 @@ Every code item above ships with unit tests (or, for the GnuCash SX/budget
 import, a real-book verification); each package suite and the full app build
 (`CODE_SIGNING_ALLOWED=NO`) are green. The remaining deferred items are either
 larger features (QIF/OFX investment import, savings goals, report→PDF
-scaffold, check printing, business detail reports) or
+scaffold, check printing) or
 externally blocked (Apple developer-portal provisioning, real NAS/SMB
 hardware, a physical iOS device, human translators) — see deferred.md.
 

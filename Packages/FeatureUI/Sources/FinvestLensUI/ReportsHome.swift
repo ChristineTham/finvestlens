@@ -43,6 +43,9 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
     case receivableAging = "Receivable Aging"
     case payableAging = "Payable Aging"
     case customerSummary = "Customer Summary"
+    case vendorSummary = "Vendor Summary"
+    case employeeSummary = "Employee Summary"
+    case jobSummary = "Job Summary"
 
     var id: String { rawValue }
 
@@ -62,7 +65,8 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
             .activity
         case .portfolio, .investmentLots, .priceScatter, .capitalGains:
             .investments
-        case .receivableAging, .payableAging, .customerSummary:
+        case .receivableAging, .payableAging, .customerSummary,
+             .vendorSummary, .employeeSummary, .jobSummary:
             .business
         }
     }
@@ -78,7 +82,8 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
     var isAsOf: Bool {
         switch self {
         case .balanceSheet, .trialBalance, .accountSummary, .receivableAging,
-             .payableAging, .customerSummary: true
+             .payableAging, .customerSummary, .vendorSummary, .employeeSummary,
+             .jobSummary: true
         default: false
         }
     }
@@ -111,6 +116,9 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
         case .receivableAging: "person.crop.circle.badge.clock"
         case .payableAging: "building.2.crop.circle.badge.clock"
         case .customerSummary: "person.2.badge.gearshape"
+        case .vendorSummary: "building.2"
+        case .employeeSummary: "person.text.rectangle"
+        case .jobSummary: "briefcase"
         }
     }
 
@@ -135,6 +143,9 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
         case .receivableAging: "What customers owe, by how overdue"
         case .payableAging: "What you owe vendors, by how overdue"
         case .customerSummary: "Sales and receivables by customer"
+        case .vendorSummary: "Bills and payables by vendor"
+        case .employeeSummary: "Expense vouchers and payables by employee"
+        case .jobSummary: "Charges and outstanding by job"
         }
     }
 
