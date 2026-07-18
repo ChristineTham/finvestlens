@@ -189,6 +189,37 @@ struct SmartInvoiceTests {
         #expect(transaction.isBalanced)
     }
 
+    @Test("An unmatched invoice creates a new transaction funded from the chosen account (FR-AI-07)")
+    func createFromInvoice() throws {
+        let url = tempURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let model = AppModel()
+        try model.newDocument(at: url)
+        defer { model.close() }
+
+        let bank = try #require(model.addAccount(name: "Bank", type: .bank))
+        let shopping = try #require(model.addAccount(name: "Shopping", type: .expense))
+
+        // No bank transaction exists to match against.
+        let analysis = makeAnalysis(date: utcDate(2026, 6, 3), groceries: shopping)
+        #expect(model.findInvoiceMatch(for: analysis) == nil)
+
+        let txnID = try model.createTransactionFromInvoice(analysis, fundingAccountID: bank)
+        let book = try #require(model.book)
+        let txn = try #require(book.transaction(with: txnID))
+        #expect(txn.isBalanced)
+        #expect(txn.transactionDescription == "Officeworks")
+        #expect(txn.datePosted == utcDate(2026, 6, 3))
+
+        let bankAccount = try #require(book.account(with: bank))
+        #expect(book.splits(for: bankAccount).map(\.value) == [Decimal(string: "-809.75")!])
+        // Printer + Paper carry Shopping; Chair (no category) falls back to the
+        // first resolved category, also Shopping.
+        let shoppingAccount = try #require(book.account(with: shopping))
+        #expect(book.splits(for: shoppingAccount).map(\.value).sorted()
+                == [Decimal(string: "21.75")!, Decimal(string: "289.00")!, Decimal(string: "499.00")!])
+    }
+
     @Test("Line-item shortfall against the total posts an adjustment split")
     func residual() throws {
         let url = tempURL()

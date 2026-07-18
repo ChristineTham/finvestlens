@@ -252,6 +252,43 @@ extension AppModel {
         if let imbalance { throw TransactionEntryError.unbalanced(imbalance) }
     }
 
+    /// Creates a brand-new transaction from an invoice with no register match
+    /// (`FR-AI-07`): the chosen funding account pays the total, and each line
+    /// item books to its suggested category (falling back to the first resolved
+    /// category, with any line-sum residual posted as an adjustment). Returns the
+    /// new transaction's id.
+    @discardableResult
+    public func createTransactionFromInvoice(
+        _ analysis: InvoiceAnalysis,
+        fundingAccountID: GncGUID
+    ) throws -> GncGUID {
+        guard let book, let funding = book.account(with: fundingAccountID) else {
+            throw TransactionEntryError.unknownAccount
+        }
+        let categories = analysis.lineItems.map { $0.suggestedCategoryID.flatMap { book.account(with: $0) } }
+        guard !analysis.lineItems.isEmpty, let firstCategory = categories.compactMap({ $0 }).first else {
+            throw TransactionEntryError.unknownAccount
+        }
+
+        var splits = [SplitInput(accountID: fundingAccountID, value: -analysis.total,
+                                 memo: analysis.vendor)]
+        var allocated = Decimal(0)
+        for (item, account) in zip(analysis.lineItems, categories) {
+            splits.append(SplitInput(accountID: (account ?? firstCategory).guid,
+                                     value: item.amount, memo: item.itemDescription))
+            allocated += item.amount
+        }
+        // Post any line-sum-vs-total residual so the new transaction balances.
+        let residual = analysis.total - allocated
+        if residual != 0 {
+            splits.append(SplitInput(accountID: firstCategory.guid, value: residual,
+                                     memo: "Invoice adjustment"))
+        }
+        return try addTransaction(date: analysis.date ?? Date(),
+                                  description: analysis.vendor,
+                                  currency: funding.commodity, splits: splits)
+    }
+
     // MARK: Date helpers
 
     /// Adopts `newDate` as the economic date, preserving the bank's date in

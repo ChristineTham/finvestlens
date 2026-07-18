@@ -76,7 +76,6 @@ Quality limits of the on-device import layer (PRD §5.18), caught by the review 
 |---|---|---|
 | Scanned-statement OCR quality | FR-AI-01 / P4 | Vision OCR fallback untested against real bank scans; digital-PDF reflow is solid. |
 | Statement sign inference without a balance column | FR-AI-01 / P4 | Signs re-derived from the running balance; statements with unsigned debit/credit columns *and* no balance column may import with wrong signs (the review screen catches it). |
-| Smart Import: create a transaction from an unmatched invoice | FR-AI-07 / P7 | An invoice with no matching register transaction reports "import the bank statement first"; direct creation (with a funding-account picker) is not offered. |
 | iOS file pickers on-device | FR-AI-01/03/04/07 / P4–P7 | iOS keeps `.fileImporter`; not yet exercised on a device. |
 
 ## 6 — Platform & HIG — deferred decisions

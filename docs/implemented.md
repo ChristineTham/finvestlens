@@ -70,6 +70,12 @@ GnuCash-source reference where relevant:
   instead of a fixed amount; `AmountExpression` evaluates it against named
   variables prompted at post time. Imported from GnuCash's SX formula slots and
   surfaced in the Add-Scheduled sheet + the Enter-Due-Transactions prompt.
+- **Smart Import: create a transaction from an unmatched invoice** (FR-AI-07) —
+  when an analysed invoice has no matching register transaction, the review row
+  now offers *Create Transaction…* with a funding-account picker (bank / cash /
+  asset / credit / liability). The new transaction pays the total from that
+  account, split across each line item's suggested category (line-sum residual
+  posted as an adjustment), and the PDF is linked to it.
 - **Savings goals / piggy banks** (FR-GOAL-01) — named targets that earmark part
   of an asset account (Firefly III's piggy banks): target amount + optional date
   + group, add/withdraw money (a read-model, no transaction posted), progress

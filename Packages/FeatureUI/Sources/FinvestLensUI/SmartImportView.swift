@@ -181,6 +181,15 @@ private struct SmartDocumentRow: View {
 
     @State private var adjustDate = true
     @State private var actionError: String?
+    /// Set when the user chooses to create a transaction for an unmatched
+    /// invoice (`FR-AI-07`); presents the funding-account picker.
+    @State private var creatingInvoice: IdentifiedInvoice?
+
+    /// Wraps a non-Identifiable ``InvoiceAnalysis`` for `.sheet(item:)`.
+    private struct IdentifiedInvoice: Identifiable {
+        let id = UUID()
+        let analysis: InvoiceAnalysis
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -202,6 +211,12 @@ private struct SmartDocumentRow: View {
             }
         }
         .padding(.vertical, 4)
+        .sheet(item: $creatingInvoice) { wrapper in
+            CreateFromInvoiceSheet(model: model, analysis: wrapper.analysis) { txnID in
+                document.phase = .done(linkNote("Transaction created", attachTo: txnID))
+                onRegisterChanged()
+            }
+        }
     }
 
     private var icon: String {
@@ -314,8 +329,11 @@ private struct SmartDocumentRow: View {
                 }
                 Button("Apply Split") { applyInvoice(analysis, match) }
             } else {
-                Text("No matching transaction in the register — import the bank statement first.")
+                Text("No matching transaction in the register — import the bank statement, or create one now.")
                     .scaledFont(.callout).foregroundStyle(.secondary)
+                Button("Create Transaction…") {
+                    creatingInvoice = IdentifiedInvoice(analysis: analysis)
+                }
             }
         }
     }
@@ -360,6 +378,78 @@ private struct SmartDocumentRow: View {
         } catch {
             actionError = error.localizedDescription
             return note
+        }
+    }
+}
+
+/// Picks a funding account and creates a transaction from an unmatched invoice
+/// (`FR-AI-07`).
+private struct CreateFromInvoiceSheet: View {
+    @Bindable var model: AppModel
+    let analysis: InvoiceAnalysis
+    var onCreated: (GncGUID) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var fundingID: GncGUID?
+    @State private var error: String?
+
+    private var code: String { model.reportCurrency.mnemonic }
+    private var fundingAccounts: [AccountNode] {
+        model.postableAccounts.filter {
+            $0.typeName == AccountType.bank.rawValue
+                || $0.typeName == AccountType.cash.rawValue
+                || $0.typeName == AccountType.asset.rawValue
+                || $0.typeName == AccountType.credit.rawValue
+                || $0.typeName == AccountType.liability.rawValue
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent("Vendor", value: analysis.vendor.isEmpty ? "—" : analysis.vendor)
+                    LabeledContent("Total", value: AmountFormat.string(analysis.total, code: code))
+                    if let date = analysis.date {
+                        LabeledContent("Date", value: date.formatted(date: .abbreviated, time: .omitted))
+                    }
+                }
+                Section("Pay from") {
+                    Picker("Account", selection: $fundingID) {
+                        Text("Choose…").tag(GncGUID?.none)
+                        ForEach(fundingAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+                    }
+                    .labelsHidden()
+                }
+                Text("A transaction is created with the funding account paying the total, split across each line item's category.")
+                    .scaledFont(.caption).foregroundStyle(.secondary)
+                if let error {
+                    Text(error).scaledFont(.caption).foregroundStyle(.red)
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("Create Transaction")
+            .onEscapeCommand { dismiss() }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") { create() }.disabled(fundingID == nil)
+                }
+            }
+        }
+        .frame(minWidth: 400, minHeight: 320)
+    }
+
+    private func create() {
+        guard let fundingID else { return }
+        do {
+            let txnID = try model.createTransactionFromInvoice(analysis, fundingAccountID: fundingID)
+            dismiss()
+            onCreated(txnID)
+        } catch {
+            self.error = "Couldn't create the transaction — check that line items have categories."
         }
     }
 }
