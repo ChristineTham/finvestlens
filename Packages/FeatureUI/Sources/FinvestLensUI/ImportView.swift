@@ -49,6 +49,8 @@ struct ImportView: View {
     @State private var payeeCol = 2
     @State private var dateFormat = "yyyy-MM-dd"
     @State private var hasHeader = true
+    @State private var showingSaveProfile = false
+    @State private var newProfileName = ""
 
     private var accounts: [AccountNode] { model.postableAccounts }
     private var importCount: Int {
@@ -67,11 +69,25 @@ struct ImportView: View {
 
                 if payload.format == .csv {
                     Section("CSV columns (0-based)") {
+                        if !model.csvImportProfiles.isEmpty {
+                            Menu("Load Profile") {
+                                ForEach(model.csvImportProfiles) { profile in
+                                    Button(profile.name) { applyProfile(profile) }
+                                }
+                                Divider()
+                                ForEach(model.csvImportProfiles) { profile in
+                                    Button(role: .destructive) {
+                                        model.deleteCSVImportProfile(profile.id)
+                                    } label: { Label("Delete “\(profile.name)”", systemImage: "trash") }
+                                }
+                            }
+                        }
                         Stepper("Date column: \(dateCol)", value: $dateCol, in: 0...20)
                         Stepper("Amount column: \(amountCol)", value: $amountCol, in: 0...20)
                         Stepper("Payee column: \(payeeCol)", value: $payeeCol, in: 0...20)
                         TextField("Date format", text: $dateFormat)
                         Toggle("Has header row", isOn: $hasHeader)
+                        Button("Save as Profile…") { newProfileName = ""; showingSaveProfile = true }
                     }
                 }
 
@@ -131,6 +147,27 @@ struct ImportView: View {
             }
         }
         .frame(minWidth: 640, minHeight: 520)
+        .alert("Save Import Profile", isPresented: $showingSaveProfile) {
+            TextField("Profile name", text: $newProfileName)
+            Button("Save") {
+                let name = newProfileName.trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty else { return }
+                model.saveCSVImportProfile(CSVImportProfile(
+                    name: name, dateColumn: dateCol, amountColumn: amountCol,
+                    payeeColumn: payeeCol, dateFormat: dateFormat, hasHeader: hasHeader))
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Save these column settings to reuse on the next import from this bank.")
+        }
+    }
+
+    private func applyProfile(_ profile: CSVImportProfile) {
+        dateCol = profile.dateColumn
+        amountCol = profile.amountColumn
+        payeeCol = profile.payeeColumn
+        dateFormat = profile.dateFormat
+        hasHeader = profile.hasHeader
     }
 
     // MARK: Row
