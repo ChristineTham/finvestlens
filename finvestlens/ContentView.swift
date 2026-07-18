@@ -70,6 +70,9 @@ struct RootHost: View {
                                     set: { if !$0 { model.documentError = nil } }),
                presenting: model.documentError) { error in
             if let lockedURL = error.lockedURL {
+                Button("Open Read-Only") {
+                    Task { await model.openReadOnly(at: lockedURL) }
+                }
                 Button("Break Lock and Open") {
                     Task { await model.openBook(at: lockedURL, breakStaleLock: true) }
                 }

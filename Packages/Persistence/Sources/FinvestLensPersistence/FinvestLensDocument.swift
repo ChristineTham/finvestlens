@@ -37,7 +37,13 @@ public final class FinvestLensDocument {
     public enum DocumentError: Error, Equatable {
         case conflict          // the shared file changed underneath us
         case alreadyOpen
+        case readOnly          // opened read-only (someone else holds the lock)
     }
+
+    /// True when the book was opened **read-only** (`FR-DAT-06`): no lock was
+    /// acquired and ``save()`` is refused. Used when another instance holds a
+    /// live lock and the user chooses to look without editing.
+    public private(set) var isReadOnly = false
 
     /// The shared document location (may be on a NAS / iCloud).
     public let fileURL: URL
@@ -151,6 +157,34 @@ public final class FinvestLensDocument {
                                    fingerprint: fingerprint, dirty: false)
     }
 
+    /// Opens an existing document **read-only** (`FR-DAT-06`): reads it into a
+    /// working copy and materialises the book **without acquiring the lock**, so
+    /// it is safe to open while another instance holds a live lock. ``save()``
+    /// is refused; the shared file is never touched.
+    public static func openReadOnly(at fileURL: URL,
+                                    progress: (@Sendable (BookLoadProgress) -> Void)? = nil) throws -> FinvestLensDocument {
+        let lock = FileLock(documentURL: fileURL)     // constructed but never acquired
+        let workingCopyURL = Self.makeWorkingCopyURL()
+        try Self.copyItem(from: fileURL, to: workingCopyURL)
+        let store = try SQLiteDocumentStore(path: workingCopyURL.path)
+        let book = try store.read(progress: progress)
+        let fingerprint = try Self.fingerprint(of: fileURL)
+
+        let document = FinvestLensDocument(fileURL: fileURL, book: book, lock: lock,
+                                           lockHeld: false,
+                                           workingCopyURL: workingCopyURL, store: store,
+                                           fingerprint: fingerprint, dirty: false)
+        document.isReadOnly = true
+        return document
+    }
+
+    /// ``openReadOnly(at:)`` performed off the main actor.
+    @DocumentLoader
+    public static func loadReadOnly(at fileURL: URL,
+                                    progress: (@Sendable (BookLoadProgress) -> Void)? = nil) throws -> sending FinvestLensDocument {
+        try openReadOnly(at: fileURL, progress: progress)
+    }
+
     /// ``open(at:breakStaleLock:)`` performed off the main actor.
     ///
     /// This is how the app opens a book: materialising the reference book takes
@@ -180,6 +214,8 @@ public final class FinvestLensDocument {
     /// Writes the working copy back to the shared file, atomically and under the
     /// lock, after verifying the shared file has not changed beneath us.
     public func save() throws {
+        // A read-only session never touches the shared file (FR-DAT-06).
+        if isReadOnly { throw DocumentError.readOnly }
         // Detect an out-of-band change to the shared file (bypassed lock, etc.).
         if FileManager.default.fileExists(atPath: fileURL.path) {
             let current = try Self.fingerprint(of: fileURL)

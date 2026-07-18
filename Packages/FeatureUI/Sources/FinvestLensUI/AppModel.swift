@@ -563,6 +563,10 @@ public final class AppModel {
     /// `true` when there are unsaved changes.
     public var hasUnsavedChanges: Bool { document?.hasUnsavedChanges ?? false }
 
+    /// True when the open book was opened read-only (`FR-DAT-06`) — editing and
+    /// saving are refused; the shared file is never touched.
+    public var isReadOnly: Bool { document?.isReadOnly ?? false }
+
     var book: Book? { document?.book }
 
     public init(apiKeys: APIKeyStoring? = nil, quoteHTTP: HTTPFetching? = nil,
@@ -707,6 +711,35 @@ public final class AppModel {
         reloadKvpCollections()
         refreshAll()
         startQuoteAutoRefresh()
+        lockIfNeeded()
+        recordLastBook(accessURL)
+        observeExternalChanges()
+        resetUndoStack()
+    }
+
+    /// Opens a book **read-only** (`FR-DAT-06`) — no lock is taken, so it is
+    /// safe while another instance holds a live lock. Editing and saving are
+    /// disabled for the session.
+    public func openReadOnly(at url: URL) async {
+        if isOpening { return }
+        guard saveAndCloseIfOpen() else { return }
+        openingURL = url
+        loadProgress = nil
+        defer { openingURL = nil; loadProgress = nil }
+        let accessURL = beginBookAccess(to: url)
+        do {
+            document = try await FinvestLensDocument.loadReadOnly(at: accessURL) { progress in
+                Task { @MainActor [weak self] in self?.recordLoadProgress(progress) }
+            }
+        } catch {
+            endBookAccess()
+            documentError = DocumentError(message: error.localizedDescription)
+            return
+        }
+        recordLoadProgress(BookLoadProgress(stage: .finishing, completed: 0, total: 0, fraction: 1))
+        try? await Task.sleep(for: .milliseconds(16))
+        reloadKvpCollections()
+        refreshAll()
         lockIfNeeded()
         recordLastBook(accessURL)
         observeExternalChanges()
@@ -1386,6 +1419,7 @@ public final class AppModel {
     /// creates — generate the guid up front and pass it in. Anything `body`
     /// changes outside those transactions will not be undone.
     func editing(_ ids: [GncGUID], named: String, _ body: () -> Void) {
+        if isReadOnly { return }   // read-only session: edits are refused (FR-DAT-06)
         let before = ids.map {
             TransactionSnapshot(id: $0, state: book?.transaction(with: $0)?.detachedCopy())
         }
@@ -1474,6 +1508,7 @@ public final class AppModel {
     /// first. Costs a full serialisation — use ``editing(_:named:)`` (or
     /// ``editingAccounts(_:named:)``) whenever the touched objects can be named.
     func editingWholeBook(named: String, _ body: () -> Void) {
+        if isReadOnly { return }   // read-only session: edits are refused (FR-DAT-06)
         let before = gnuCashExportData()
         body()
         refreshAfterChange()
