@@ -1,0 +1,76 @@
+name: CI
+
+# Builds and tests the Swift packages on every push / PR (NFR-08). The
+# correctness-critical packages (engine, persistence, interchange, quotes,
+# rules, reports, shared) target macOS 14 and run on GitHub's macOS runners.
+# The app target and the Intelligence package need Xcode 26 (FoundationModels /
+# macOS 26) and are built in a separate, allowed-to-fail job until the hosted
+# runners ship that toolchain.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  packages:
+    name: Test SPM packages
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - Engine
+          - Persistence
+          - Interchange
+          - Quotes
+          - Rules
+          - Reports
+          - Shared
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app || true
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        working-directory: Packages/${{ matrix.package }}
+        run: swift build
+      - name: Test
+        working-directory: Packages/${{ matrix.package }}
+        run: swift test
+
+  license-headers:
+    name: SPDX license header check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every Swift source carries an SPDX header
+        run: |
+          missing=0
+          while IFS= read -r -d '' file; do
+            if ! grep -q "SPDX-License-Identifier: GPL-3.0-or-later" "$file"; then
+              echo "::error file=$file::missing SPDX-License-Identifier header"
+              missing=1
+            fi
+          done < <(find Packages FinvestLensWidgets FinvestLensQuickLook \
+                     -name '*.swift' -not -path '*/.build/*' -print0 2>/dev/null)
+          exit $missing
+
+  app:
+    name: Build app (Xcode 26 — allowed to fail until hosted)
+    runs-on: macos-15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build app + extensions (unsigned)
+        run: |
+          xcodebuild build \
+            -scheme finvestlens \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO
