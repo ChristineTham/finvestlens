@@ -399,9 +399,12 @@ private final class Delegate: NSObject, XMLParserDelegate {
         }
     }
 
-    /// Applies `mutate` to the active party's address.
+    /// Applies `mutate` to the active party's address. GnuCash writes the
+    /// billing address (`cust:addr`/`vendor:addr`) and then the shipping address
+    /// (`cust:shipaddr`); the model holds a single address, so shipping-wrapper
+    /// children are ignored rather than allowed to overwrite the billing address.
     private func setAddress(_ mutate: (inout BusinessAddress) -> Void) {
-        guard party != nil else { return }
+        guard party != nil, parentElement?.hasSuffix(":shipaddr") != true else { return }
         mutate(&party!.address)
     }
 

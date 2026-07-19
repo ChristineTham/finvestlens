@@ -45,9 +45,12 @@ public struct YahooQuoteProvider: QuoteProvider {
         var components = URLComponents()
         components.scheme = "https"
         components.host = host
-        components.path = "/v8/finance/chart/\(symbol)"
+        // Percent-encode the symbol: an override like "BRK B" (space) would
+        // otherwise make `components.url` nil and crash the force-unwrap.
+        let encoded = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
+        components.percentEncodedPath = "/v8/finance/chart/" + encoded
         components.queryItems = query
-        return components.url!
+        return components.url ?? URL(string: "https://\(host)")!
     }
 
     // MARK: Parsing

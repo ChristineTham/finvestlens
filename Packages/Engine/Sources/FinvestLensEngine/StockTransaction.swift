@@ -51,9 +51,14 @@ public enum StockTransaction {
     ) -> Transaction {
         let cost = currency.round(shares * pricePerShare)
         let fee = currency.round(commission)
+        let expenseFee = fee != 0 && commissionAccount != nil
         let txn = Transaction(currency: currency, datePosted: date, description: description)
-        txn.addSplit(account: security, value: cost, quantity: shares, memo: memo)
-        if fee != 0, let commissionAccount {
+        // With a commission account the fee is expensed separately; without one it
+        // capitalises into the security's cost basis so the transaction still
+        // balances (GnuCash's fee-in-basis treatment) rather than being rejected.
+        txn.addSplit(account: security, value: expenseFee ? cost : cost + fee,
+                     quantity: shares, memo: memo)
+        if expenseFee, let commissionAccount {
             txn.addSplit(account: commissionAccount, value: fee, memo: "Commission")
         }
         txn.addSplit(account: cash, value: -(cost + fee))
@@ -73,9 +78,14 @@ public enum StockTransaction {
     ) -> Transaction {
         let gross = currency.round(shares * pricePerShare)
         let fee = currency.round(commission)
+        let expenseFee = fee != 0 && commissionAccount != nil
         let txn = Transaction(currency: currency, datePosted: date, description: description)
-        txn.addSplit(account: security, value: -gross, quantity: -shares, memo: memo)
-        if fee != 0, let commissionAccount {
+        // With a commission account the fee is expensed and the disposal value is
+        // the gross; without one the fee nets against the disposal (reducing the
+        // proceeds used for the gain) so the transaction still balances.
+        txn.addSplit(account: security, value: expenseFee ? -gross : -(gross - fee),
+                     quantity: -shares, memo: memo)
+        if expenseFee, let commissionAccount {
             txn.addSplit(account: commissionAccount, value: fee, memo: "Commission")
         }
         txn.addSplit(account: cash, value: gross - fee)

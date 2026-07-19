@@ -698,6 +698,7 @@ public final class AppModel {
         reloadKvpCollections()
         refreshAll()
         startQuoteAutoRefresh()
+        startDocumentMaintenance()
         recordLastBook(url)
         resetUndoStack()
     }
@@ -732,6 +733,7 @@ public final class AppModel {
         refreshAll()
         startQuoteAutoRefresh()
         lockIfNeeded()
+        startDocumentMaintenance()
         recordLastBook(accessURL)
         observeExternalChanges()
         resetUndoStack()
@@ -1128,6 +1130,7 @@ public final class AppModel {
         // Remember how the last register was arranged before everything resets.
         persistRegisterViewState(for: selectedAccountID)
         stopQuoteAutoRefresh()
+        stopDocumentMaintenance()
         document?.stopObservingExternalChanges()
         isLocked = false
         externalChangePending = false

@@ -8,6 +8,18 @@
 
 import Foundation
 
+/// Whole calendar days between two posted timestamps, measured in UTC. Posted
+/// dates carry a canonical time-of-day, so a raw `timeInterval / 86_400`
+/// truncation would flip the long/short-term class on the clock time rather
+/// than the calendar dates; comparing start-of-day in a fixed zone doesn't.
+func wholeCalendarDays(from start: Date, to end: Date) -> Int {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "UTC")!
+    let a = calendar.startOfDay(for: start)
+    let b = calendar.startOfDay(for: end)
+    return calendar.dateComponents([.day], from: a, to: b).day ?? 0
+}
+
 /// How disposals are matched against acquisitions to compute cost basis and
 /// realised gains (`FR-INV-04`).
 public enum CostBasisMethod: String, Codable, Sendable, CaseIterable, Identifiable {
@@ -134,7 +146,7 @@ public struct RealizedGain: Hashable, Sendable {
     /// Whole days the shares were held, when an acquisition date is known.
     public var holdingDays: Int? {
         guard let acquisitionDate else { return nil }
-        return Int(disposalDate.timeIntervalSince(acquisitionDate) / 86_400)
+        return wholeCalendarDays(from: acquisitionDate, to: disposalDate)
     }
 }
 
@@ -254,13 +266,23 @@ public enum CostBasis {
             if event.isReturnOfCapital {
                 // Reduce basis pro rata by remaining cost; floor at zero.
                 let totalCost = open.reduce(Decimal(0)) { $0 + $1.remaining * $1.costPerShare }
-                let reduction = min(-event.value, totalCost)
+                let distribution = -event.value
+                let reduction = min(distribution, totalCost)
                 if totalCost > 0, reduction > 0 {
                     for index in open.indices where open[index].remaining != 0 {
                         let lotCost = open[index].remaining * open[index].costPerShare
                         let newLotCost = max(0, lotCost - reduction * (lotCost / totalCost))
                         open[index].costPerShare = newLotCost / open[index].remaining
                     }
+                }
+                // A return of capital exceeding remaining basis can't drive basis
+                // negative; the excess is a realised capital gain (no single
+                // acquisition lot, so the term is left undefined).
+                let excess = distribution - reduction
+                if excess > 0 {
+                    gains.append(RealizedGain(
+                        disposalDate: event.date, acquisitionDate: nil, quantity: 0,
+                        proceeds: excess, costBasis: 0, longTerm: nil))
                 }
                 continue
             }
@@ -280,7 +302,7 @@ public enum CostBasis {
                     let shortFee = rounded(
                         shorts[index].remainingFee * cover / shorts[index].remainingShares, fraction)
                     let coverCost = rounded(cover * perShare, fraction) + shortFee
-                    let heldDays = Int(event.date.timeIntervalSince(shorts[index].date) / 86_400)
+                    let heldDays = wholeCalendarDays(from: shorts[index].date, to: event.date)
                     gains.append(RealizedGain(
                         disposalDate: event.date, acquisitionDate: shorts[index].date,
                         quantity: cover, proceeds: proceeds, costBasis: coverCost,
@@ -309,7 +331,7 @@ public enum CostBasis {
                     let proceeds = rounded(proceedsRemaining * take / sharesToSell, fraction)
                     let feeThis = rounded(feeRemaining * take / sharesToSell, fraction)
                     let costBasis = rounded(take * open[index].costPerShare, fraction) + feeThis
-                    let heldDays = Int(event.date.timeIntervalSince(open[index].date) / 86_400)
+                    let heldDays = wholeCalendarDays(from: open[index].date, to: event.date)
                     gains.append(RealizedGain(
                         disposalDate: event.date, acquisitionDate: open[index].date,
                         quantity: take, proceeds: proceeds, costBasis: costBasis,
@@ -359,7 +381,16 @@ public enum CostBasis {
                 continue
             }
             if event.isReturnOfCapital {
-                pooledCost = max(0, pooledCost + event.value)   // value is negative
+                let distribution = -event.value   // value is negative
+                let reduction = min(distribution, pooledCost)
+                pooledCost -= reduction
+                // Excess over the pool is a realised gain, not negative basis.
+                let excess = distribution - reduction
+                if excess > 0 {
+                    gains.append(RealizedGain(
+                        disposalDate: event.date, acquisitionDate: nil, quantity: 0,
+                        proceeds: excess, costBasis: 0, longTerm: nil))
+                }
                 continue
             }
             if event.quantity > 0 {

@@ -109,6 +109,14 @@ enum ImportParsing {
             negative = true
             text = String(text.dropFirst().dropLast())
         }
+        // A trailing minus ("500.00-") denotes a debit in many accounting/German
+        // exports; `Decimal(string:)` only honours a *leading* sign and would
+        // silently read it as +500, flipping a debit into a credit.
+        text = text.trimmingCharacters(in: .whitespaces)
+        if text.hasSuffix("-") {
+            negative = true
+            text = String(text.dropLast())
+        }
         text = text.filter { $0.isNumber || $0 == "." || $0 == "-" || $0 == "+" }
         guard let value = Decimal(string: text) else { return nil }
         return negative ? -value : value

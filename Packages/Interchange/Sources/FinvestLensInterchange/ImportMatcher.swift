@@ -84,9 +84,15 @@ public enum ImportMatcher {
                        onlineID == row.reference {
                         return split
                     }
+                    // Match the reference only against fields that hold it
+                    // verbatim. A `memo.contains` substring test would treat a
+                    // short cheque number ("202") as a duplicate of any memo that
+                    // merely embeds it ("Invoice 20205"), silently dropping a real
+                    // transaction; require equality. A genuine re-import is still
+                    // caught by the amount + date-window check below.
                     if transaction.number == row.reference
                         || split.action == row.reference
-                        || split.memo.contains(row.reference) {
+                        || split.memo == row.reference {
                         return split
                     }
                 }

@@ -97,11 +97,19 @@ extension AppModel {
         var created = 0
         for index in list.indices {
             let dueDates = list[index].dueDates(through: through)
-            for date in dueDates where ScheduledTransactionService.post(list[index], date: date, into: book, variables: variables) != nil {
+            // Post in chronological order and advance `lastPosted` only across the
+            // contiguous prefix that actually posted. Stopping at the first failure
+            // (e.g. an unbound formula variable) leaves that instance and the ones
+            // after it to be retried, rather than silently skipping them.
+            var postedThrough: Date?
+            for date in dueDates {
+                guard ScheduledTransactionService.post(list[index], date: date, into: book, variables: variables) != nil
+                else { break }
                 created += 1
+                postedThrough = date
             }
-            if let last = dueDates.last, (list[index].lastPosted ?? .distantPast) < last {
-                list[index].lastPosted = last
+            if let postedThrough, (list[index].lastPosted ?? .distantPast) < postedThrough {
+                list[index].lastPosted = postedThrough
             }
         }
         if created > 0 {

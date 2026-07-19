@@ -39,12 +39,16 @@ public struct EODHDQuoteProvider: QuoteProvider {
         var components = URLComponents()
         components.scheme = "https"
         components.host = host
-        components.path = path
+        // Percent-encode the path (which embeds the symbol): a symbol with a
+        // space or other path-invalid character would otherwise make
+        // `components.url` nil and crash the force-unwrap. `.urlPathAllowed`
+        // keeps the "/" separators intact.
+        components.percentEncodedPath = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
         components.queryItems = [
             URLQueryItem(name: "api_token", value: apiKey),
             URLQueryItem(name: "fmt", value: "json"),
         ] + extra
-        return components.url!
+        return components.url ?? URL(string: "https://\(host)")!
     }
 
     // MARK: Parsing
