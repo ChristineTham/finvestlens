@@ -7,7 +7,13 @@
 //
 
 import Foundation
+import OSLog
 import FinvestLensEngine
+
+/// Warnings for non-canonical persisted data. The store's own writer never
+/// produces these, so a hit means a corrupt or externally-edited file — the
+/// resilient fallback still returns a value, but it's no longer silent.
+let persistenceLog = Logger(subsystem: "com.hellotham.finvestlens", category: "persistence")
 
 /// Conversions between engine value types and their SQLite column encodings.
 enum Serialize {
@@ -40,7 +46,11 @@ enum Serialize {
     }
 
     static func parseDecimal(_ text: String) -> Decimal {
-        Decimal(string: text, locale: Locale(identifier: "en_US_POSIX")) ?? 0
+        guard let value = Decimal(string: text, locale: Locale(identifier: "en_US_POSIX")) else {
+            persistenceLog.warning("Unparseable decimal \"\(text, privacy: .public)\" defaulted to 0")
+            return 0
+        }
+        return value
     }
 
     // MARK: KVP frame (JSON, nil when empty)
@@ -52,9 +62,13 @@ enum Serialize {
     }
 
     static func parseKvp(_ text: String?) -> KvpFrame {
-        guard let text, let data = text.data(using: .utf8),
+        guard let text else { return KvpFrame() }
+        guard let data = text.data(using: .utf8),
               let frame = try? JSONDecoder().decode(KvpFrame.self, from: data)
-        else { return KvpFrame() }
+        else {
+            persistenceLog.warning("Unparseable KVP frame discarded; preserved GnuCash slots may be lost")
+            return KvpFrame()
+        }
         return frame
     }
 }

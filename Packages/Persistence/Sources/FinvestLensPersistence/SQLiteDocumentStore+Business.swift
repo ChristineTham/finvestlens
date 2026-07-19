@@ -281,9 +281,13 @@ extension SQLiteDocumentStore {
         (try? JSONEncoder().encode(address)).flatMap { String(data: $0, encoding: .utf8) }
     }
     private static func decodeAddress(_ text: String?) -> BusinessAddress {
-        guard let text, let data = text.data(using: .utf8),
+        guard let text else { return BusinessAddress() }
+        guard let data = text.data(using: .utf8),
               let address = try? JSONDecoder().decode(BusinessAddress.self, from: data)
-        else { return BusinessAddress() }
+        else {
+            persistenceLog.warning("Unparseable business address discarded")
+            return BusinessAddress()
+        }
         return address
     }
 }
