@@ -101,6 +101,15 @@ enum AmountFormat {
     static func string(_ value: Decimal, code: String) -> String {
         value.formatted(.currency(code: code))
     }
+
+    /// A VoiceOver-friendly reading of a signed money value: the magnitude in
+    /// words plus "debit"/"credit", so a dense numeric cell isn't read as a
+    /// bare stream of digits with an ambiguous minus sign.
+    static func spoken(_ value: Decimal, code: String) -> String {
+        let money = abs(value).formatted(.currency(code: code))
+        if value == 0 { return money }
+        return "\(money), \(value < 0 ? "debit" : "credit")"
+    }
 }
 
 /// Applies keyboard focus a beat after a sheet finishes presenting, so very
@@ -1210,6 +1219,7 @@ struct RegisterView: View {
                     .scaledFont(.body)
                     .monospacedDigit()
                     .foregroundStyle(row.amount < 0 ? .red : .primary)
+                    .accessibilityLabel(AmountFormat.spoken(row.amount, code: currencyCode))
             }
             // Balance has no sort on purpose: each row's balance is the
             // account's balance *as of that posting*, computed in date order —
@@ -1221,8 +1231,10 @@ struct RegisterView: View {
                     Text(AmountFormat.string(balance, code: currencyCode))
                         .scaledFont(.body)
                         .monospacedDigit()
+                        .accessibilityLabel("Balance \(AmountFormat.spoken(balance, code: currencyCode))")
                 } else {
                     Text("—").foregroundStyle(.tertiary)
+                        .accessibilityLabel("No running balance")
                 }
             }
         }
@@ -1230,6 +1242,15 @@ struct RegisterView: View {
         // A dense financial table reads better with a crisp cutoff where rows
         // scroll under the glass toolbar than with the default soft fade.
         .scrollEdgeEffectStyle(.hard, for: .top)
+        // A VoiceOver rotor to jump straight between unreconciled postings in a
+        // long ledger, rather than swiping through every row.
+        .accessibilityRotor("Unreconciled") {
+            ForEach(model.registerRows) { row in
+                if reconcileWord(row.reconcile) == "Not reconciled" {
+                    AccessibilityRotorEntry(row.description, id: row.id)
+                }
+            }
+        }
         .contextMenu(forSelectionType: GncGUID.self) { ids in
             TransactionActions(model: model, splitID: ids.first)
         }
