@@ -111,9 +111,11 @@ public struct RegisterFilter: Equatable, Sendable {
 /// ``AppModel/presentedPanel`` so both menu-bar commands and toolbar buttons
 /// can open any panel.
 public enum RootPanel: String, Identifiable, Sendable {
+    // Short, focused tasks that remain modal sheets (HIG). App *areas* (reports,
+    // rules, scheduled, budgets, goals, prices, business, time & mileage) are now
+    // sidebar destinations — see ``SidebarSelection``.
     case newAccount, newTransaction, stockTransaction, currencyTransfer
-    case reports, rules, scheduled, budget, goals, prices, saveSearch, onboarding
-    case timeMileage
+    case saveSearch, onboarding
     case reconcile
     case autoCategorize
     case linkedDocuments
@@ -122,8 +124,23 @@ public enum RootPanel: String, Identifiable, Sendable {
     case taxOptions
     case find
     case findAccount
-    case business
     public var id: String { rawValue }
+}
+
+/// What the sidebar has selected: a top-level app area or a specific account.
+/// Areas that used to open as modal sheets are now navigation destinations
+/// shown inline in the detail pane (HIG: minimise modality).
+public enum SidebarSelection: Hashable, Sendable {
+    case dashboard
+    case account(GncGUID)
+    case reports
+    case budgets
+    case scheduled
+    case rules
+    case goals
+    case prices
+    case business
+    case timeMileage
 }
 
 /// The observable application/document model driving the UI.
@@ -214,21 +231,44 @@ public final class AppModel {
                            to: $0.currency.mnemonic, date: $0.date, value: $0.value) }
     }
 
-    public var selectedAccountID: GncGUID? {
+    /// The sidebar's current destination (an app area or an account). The
+    /// source of truth for what the detail pane shows.
+    public var sidebarSelection: SidebarSelection? = .dashboard {
         didSet {
-            // Choosing an account is navigation: it leaves Reports.
-            if selectedAccountID != nil { isShowingReports = false }
-            // GnuCash's Save Sort Order / Save Filter, without the button:
-            // leaving a register remembers how it was arranged, returning
-            // restores it. Held outside the book, as GnuCash holds it in its
-            // state file — sorting a register is not an edit, and must not
-            // mark the document dirty or show up in an export.
-            if oldValue != selectedAccountID {
-                persistRegisterViewState(for: oldValue)
-                restoreRegisterViewState(for: selectedAccountID)
+            let old = Self.accountID(of: oldValue)
+            let new = Self.accountID(of: sidebarSelection)
+            if old != new {
+                // GnuCash's Save Sort Order / Save Filter, without the button:
+                // leaving a register remembers how it was arranged, returning
+                // restores it. Held outside the book, as GnuCash holds it in its
+                // state file — sorting a register is not an edit, and must not
+                // mark the document dirty or show up in an export.
+                persistRegisterViewState(for: old)
+                restoreRegisterViewState(for: new)
+                refreshRegister()
             }
-            refreshRegister()
         }
+    }
+
+    private static func accountID(of selection: SidebarSelection?) -> GncGUID? {
+        if case .account(let id) = selection { return id }
+        return nil
+    }
+
+    /// The selected account, if the sidebar is on an account. Setting it is
+    /// navigation to that account (or the dashboard when cleared).
+    public var selectedAccountID: GncGUID? {
+        get { Self.accountID(of: sidebarSelection) }
+        set { sidebarSelection = newValue.map(SidebarSelection.account) ?? .dashboard }
+    }
+
+    /// Navigates the sidebar to `selection` (closing any open modal panel and
+    /// leaving search) — how menu-bar and toolbar commands open an app area now
+    /// that these are inline destinations rather than sheets.
+    public func show(_ selection: SidebarSelection) {
+        presentedPanel = nil
+        searchQuery = ""
+        sidebarSelection = selection
     }
 
     /// Display order of the register (`FR-REG-01`).
@@ -460,11 +500,11 @@ public final class AppModel {
 
     /// Opens the Reports panel straight onto the receivable-aging report.
     public func openReceivableAging() {
-        pendingReportKind = .receivableAging; presentedPanel = .reports
+        pendingReportKind = .receivableAging; show(.reports)
     }
     /// Opens the Reports panel straight onto the payable-aging report.
     public func openPayableAging() {
-        pendingReportKind = .payableAging; presentedPanel = .reports
+        pendingReportKind = .payableAging; show(.reports)
     }
 
     /// The register row the user has selected.
@@ -488,7 +528,15 @@ public final class AppModel {
     /// like the dashboard — the detached window is the explicit alternative.
     /// Sidebar navigation clears it: selecting an account always answers
     /// "show me this account".
-    public var isShowingReports = false
+    /// Backwards-compatible shim over ``sidebarSelection``: the Reports area is
+    /// now a sidebar destination rather than a flag.
+    public var isShowingReports: Bool {
+        get { sidebarSelection == .reports }
+        set {
+            if newValue { sidebarSelection = .reports }
+            else if sidebarSelection == .reports { sidebarSelection = .dashboard }
+        }
+    }
 
     /// The transaction the selected row belongs to — what a menu command acts on.
     public var selectedTransactionID: GncGUID? {

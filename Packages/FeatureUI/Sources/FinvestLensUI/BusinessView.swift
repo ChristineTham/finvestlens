@@ -19,6 +19,7 @@ import FinvestLensEngine
 struct BusinessHub: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.isEmbeddedDestination) private var embedded
 
     private enum Editing: Identifiable {
         case customer, vendor, employee, job
@@ -130,11 +131,13 @@ struct BusinessHub: View {
                 }
             }
             .navigationTitle("Business")
-            .frame(minWidth: 460, minHeight: 460)
+            .frame(minWidth: embedded ? nil : 460, minHeight: embedded ? nil : 460)
             .onEscapeCommand { dismiss() }
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                if !embedded {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {

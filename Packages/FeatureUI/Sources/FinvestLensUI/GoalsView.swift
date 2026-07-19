@@ -16,6 +16,7 @@ import FinvestLensEngine
 struct GoalsView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.isEmbeddedDestination) private var embedded
 
     @State private var editing: SavingsGoal?
     @State private var creating = false
@@ -72,8 +73,10 @@ struct GoalsView: View {
             .navigationTitle("Savings Goals")
             .onEscapeCommand { dismiss() }
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                if !embedded {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                    }
                 }
                 ToolbarItem {
                     Button("New Goal", systemImage: "plus") { creating = true }
@@ -84,7 +87,7 @@ struct GoalsView: View {
             .sheet(item: $editing) { goal in GoalEditorSheet(model: model, goal: goal) }
             .sheet(item: $adjusting) { goal in GoalAdjustSheet(model: model, goal: goal) }
         }
-        .frame(minWidth: 460, minHeight: 420)
+        .frame(minWidth: embedded ? nil : 460, minHeight: embedded ? nil : 420)
     }
 }
 

@@ -14,6 +14,7 @@ import FinvestLensReports
 struct BudgetView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.isEmbeddedDestination) private var embedded
     @State private var showingEdit = false
     @State private var showingSuggest = false
 
@@ -63,8 +64,10 @@ struct BudgetView: View {
             }
             .navigationTitle("Budget")
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                if !embedded {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
                 }
                 if model.isIntelligenceAvailable {
                     ToolbarItem {
@@ -90,7 +93,7 @@ struct BudgetView: View {
                 }
             }
         }
-        .frame(minWidth: 500, minHeight: 420)
+        .frame(minWidth: embedded ? nil : 500, minHeight: embedded ? nil : 420)
     }
 }
 

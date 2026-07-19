@@ -15,6 +15,7 @@ import FinvestLensReports
 struct ScheduledView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.isEmbeddedDestination) private var embedded
     @State private var showingAdd = false
     @State private var promptingVariables = false
     @State private var variableInputs: [String: String] = [:]
@@ -87,8 +88,10 @@ struct ScheduledView: View {
             }
             .navigationTitle("Scheduled")
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                if !embedded {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
                 }
                 ToolbarItem {
                     Button("Add", systemImage: "plus") { showingAdd = true }
@@ -134,7 +137,7 @@ struct ScheduledView: View {
                 .frame(minWidth: 360, minHeight: 240)
             }
         }
-        .frame(minWidth: 500, minHeight: 420)
+        .frame(minWidth: embedded ? nil : 500, minHeight: embedded ? nil : 420)
     }
 
     private func recurrenceSummary(_ recurrence: Recurrence) -> String {

@@ -13,6 +13,7 @@ import FinvestLensEngine
 struct PricesView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.isEmbeddedDestination) private var embedded
     @State private var showingAdd = false
     @State private var showingQuotes = false
     @State private var showingAddRate = false
@@ -67,8 +68,10 @@ struct PricesView: View {
             }
             .navigationTitle("Prices & Rates")
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                if !embedded {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
                 }
                 ToolbarItem {
                     Button("Securities", systemImage: "building.2") { showingSecurities = true }
@@ -115,7 +118,7 @@ struct PricesView: View {
                 get: { importMessage != nil }, set: { if !$0 { importMessage = nil } }
             )) { Button("OK", role: .cancel) {} } message: { Text(importMessage ?? "") }
         }
-        .frame(minWidth: 460, minHeight: 380)
+        .frame(minWidth: embedded ? nil : 460, minHeight: embedded ? nil : 380)
     }
 }
 

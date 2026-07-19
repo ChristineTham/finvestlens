@@ -18,6 +18,7 @@ import FinvestLensRules
 struct RulesView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.isEmbeddedDestination) private var embedded
     @State private var editing: RuleEditorTarget?
     @State private var showingApply = false
     @State private var renamingGroup: UUID?
@@ -37,8 +38,10 @@ struct RulesView: View {
             }
             .navigationTitle("Rules")
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                if !embedded {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
                 }
                 ToolbarItem {
                     Button("Apply to History", systemImage: "clock.arrow.circlepath") {
@@ -70,7 +73,7 @@ struct RulesView: View {
                 }
             }
         }
-        .frame(minWidth: 520, minHeight: 420)
+        .frame(minWidth: embedded ? nil : 520, minHeight: embedded ? nil : 420)
     }
 
     private var list: some View {

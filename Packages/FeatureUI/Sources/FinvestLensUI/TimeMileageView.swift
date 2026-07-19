@@ -15,6 +15,7 @@ import FinvestLensEngine
 struct TimeMileageView: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.isEmbeddedDestination) private var embedded
 
     @State private var editing: BillableEntry?
     @State private var creating = false
@@ -75,8 +76,10 @@ struct TimeMileageView: View {
             .navigationTitle("Time & Mileage")
             .onEscapeCommand { dismiss() }
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                if !embedded {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                    }
                 }
                 ToolbarItem {
                     Button("Log Entry", systemImage: "plus") { creating = true }
@@ -89,7 +92,7 @@ struct TimeMileageView: View {
                 BillCustomerSheet(model: model, customer: customer)
             }
         }
-        .frame(minWidth: 480, minHeight: 440)
+        .frame(minWidth: embedded ? nil : 480, minHeight: embedded ? nil : 440)
     }
 
     @ViewBuilder

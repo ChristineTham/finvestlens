@@ -185,7 +185,7 @@ struct finvestlensApp: App {
                     #if os(macOS)
                     model.isShowingReports = true
                     #else
-                    model.presentedPanel = .reports
+                    model.show(.reports)
                     #endif
                 }
                 .keyboardShortcut("r", modifiers: .command)
@@ -196,16 +196,16 @@ struct finvestlensApp: App {
                 Button("Reports in New Window") { openWindow(id: "reports") }
                     .disabled(!model.isOpen)
                 #endif
-                Button("Budget…") { model.presentedPanel = .budget }
+                Button("Budget…") { model.show(.budgets) }
                     .keyboardShortcut("b", modifiers: .command)
                     .disabled(!model.isOpen)
-                Button("Savings Goals…") { model.presentedPanel = .goals }
+                Button("Savings Goals…") { model.show(.goals) }
                     .disabled(!model.isOpen)
-                Button("Rules…") { model.presentedPanel = .rules }
+                Button("Rules…") { model.show(.rules) }
                     .disabled(!model.isOpen)
-                Button("Scheduled Transactions…") { model.presentedPanel = .scheduled }
+                Button("Scheduled Transactions…") { model.show(.scheduled) }
                     .disabled(!model.isOpen)
-                Button("Prices & Quotes…") { model.presentedPanel = .prices }
+                Button("Prices & Quotes…") { model.show(.prices) }
                     .disabled(!model.isOpen)
                 Button("Linked Documents…") { model.presentedPanel = .linkedDocuments }
                     .disabled(!model.isOpen)
@@ -231,10 +231,10 @@ struct finvestlensApp: App {
                     .disabled(!model.isOpen)
             }
             CommandMenu("Business") {
-                Button("Customers, Vendors & Invoices…") { model.presentedPanel = .business }
+                Button("Customers, Vendors & Invoices…") { model.show(.business) }
                     .keyboardShortcut("b", modifiers: [.command, .shift])
                     .disabled(!model.isOpen)
-                Button("Time & Mileage…") { model.presentedPanel = .timeMileage }
+                Button("Time & Mileage…") { model.show(.timeMileage) }
                     .disabled(!model.isOpen)
                 Divider()
                 Button("Receivable Aging Report…") { model.openReceivableAging() }

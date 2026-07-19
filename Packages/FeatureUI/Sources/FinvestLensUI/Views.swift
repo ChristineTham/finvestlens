@@ -95,6 +95,15 @@ struct CSVFileDocument: FileDocument {
     }
 }
 
+// MARK: - Embedded destinations
+
+extension EnvironmentValues {
+    /// True when a view that was designed as a modal sheet is instead shown
+    /// inline as a sidebar destination — it should then hide its Done/Cancel
+    /// dismissal chrome and drop its sheet-sizing frame.
+    @Entry public var isEmbeddedDestination: Bool = false
+}
+
 // MARK: - Formatting
 
 enum AmountFormat {
@@ -248,20 +257,42 @@ public struct FinvestLensRootView: View {
         self.model = model
     }
 
+    /// The detail pane: search results, or the selected sidebar destination.
+    /// Areas that used to be modal sheets are shown inline here (HIG).
+    @ViewBuilder
+    private var detailPane: some View {
+        if model.isSearching {
+            SearchResultsView(model: model)
+        } else {
+            destinationView
+                // Areas that were modal sheets suppress their Done/sheet chrome
+                // via this flag when shown inline.
+                .environment(\.isEmbeddedDestination, true)
+        }
+    }
+
+    @ViewBuilder
+    private var destinationView: some View {
+        switch model.sidebarSelection ?? .dashboard {
+        case .dashboard: DashboardView(model: model)
+        case .account: RegisterView(model: model)
+        case .reports: ReportsHome(model: model)
+        case .budgets: BudgetView(model: model)
+        case .scheduled: ScheduledView(model: model)
+        case .rules: RulesView(model: model)
+        case .goals: GoalsView(model: model)
+        case .prices: PricesView(model: model)
+        case .business: BusinessHub(model: model)
+        case .timeMileage: TimeMileageView(model: model)
+        }
+    }
+
     public var body: some View {
         NavigationSplitView {
             AccountsSidebar(model: model)
                 .navigationTitle("Accounts")
         } detail: {
-            if model.isSearching {
-                SearchResultsView(model: model)
-            } else if model.isShowingReports {
-                ReportsHome(model: model)
-            } else if model.selectedAccountID == nil {
-                DashboardView(model: model)
-            } else {
-                RegisterView(model: model)
-            }
+            detailPane
         }
         .searchable(text: $model.searchQuery, prompt: "Search transactions")
         .safeAreaInset(edge: .top) {
@@ -289,7 +320,7 @@ public struct FinvestLensRootView: View {
                     #if os(macOS)
                     openWindow(id: "reports")
                     #else
-                    model.presentedPanel = .reports
+                    model.show(.reports)
                     #endif
                 }
                 .help("Reports (⌘R)")
@@ -315,16 +346,16 @@ public struct FinvestLensRootView: View {
                     .disabled(model.currencyCommodities.count < 2)
                     Divider()
                     Button("Rules…", systemImage: "wand.and.stars") {
-                        model.presentedPanel = .rules
+                        model.show(.rules)
                     }
                     Button("Scheduled…", systemImage: "calendar.badge.clock") {
-                        model.presentedPanel = .scheduled
+                        model.show(.scheduled)
                     }
                     Button("Budget…", systemImage: "chart.bar.doc.horizontal") {
-                        model.presentedPanel = .budget
+                        model.show(.budgets)
                     }
                     Button("Prices & Quotes…", systemImage: "tag") {
-                        model.presentedPanel = .prices
+                        model.show(.prices)
                     }
                     Divider()
                     // Apple Intelligence (on-device model) features.
@@ -368,13 +399,6 @@ public struct FinvestLensRootView: View {
             case .newTransaction: TransactionEditorSheet(model: model)
             case .stockTransaction: StockTransactionSheet(model: model)
             case .currencyTransfer: CurrencyTransferSheet(model: model)
-            case .reports: NavigationStack { ReportsHome(model: model) }
-            case .rules: RulesView(model: model)
-            case .scheduled: ScheduledView(model: model)
-            case .budget: BudgetView(model: model)
-            case .goals: GoalsView(model: model)
-            case .timeMileage: TimeMileageView(model: model)
-            case .prices: PricesView(model: model)
             case .saveSearch: SaveSearchSheet(model: model)
             case .onboarding: OnboardingSheet(model: model)
             case .reconcile:
@@ -388,7 +412,6 @@ public struct FinvestLensRootView: View {
             case .taxOptions: TaxOptionsView(model: model)
             case .find: FindSheet(model: model)
             case .findAccount: FindAccountSheet(model: model)
-            case .business: BusinessHub(model: model)
             }
         }
         #if os(macOS)
@@ -879,7 +902,33 @@ struct AccountsSidebar: View {
 
     @ViewBuilder
     private var list: some View {
-        List(selection: $model.selectedAccountID) {
+        List(selection: $model.sidebarSelection) {
+            // App areas that used to be modal sheets are now destinations shown
+            // inline in the detail pane (HIG: minimise modality).
+            if trimmedFilter.isEmpty {
+                Section {
+                    Label("Dashboard", systemImage: "square.grid.2x2").tag(SidebarSelection.dashboard)
+                    Label("Reports", systemImage: "chart.pie").tag(SidebarSelection.reports)
+                }
+                Section("Planning") {
+                    Label("Budgets", systemImage: "chart.bar.doc.horizontal").tag(SidebarSelection.budgets)
+                    Label("Scheduled", systemImage: "calendar.badge.clock").tag(SidebarSelection.scheduled)
+                    Label("Savings Goals", systemImage: "target").tag(SidebarSelection.goals)
+                }
+                Section("Records") {
+                    Label("Business", systemImage: "building.2").tag(SidebarSelection.business)
+                    Label("Prices & Quotes", systemImage: "tag").tag(SidebarSelection.prices)
+                    Label("Time & Mileage", systemImage: "clock.badge.checkmark").tag(SidebarSelection.timeMileage)
+                    Label("Rules", systemImage: "wand.and.stars").tag(SidebarSelection.rules)
+                }
+            }
+            accountsSection
+        }
+    }
+
+    @ViewBuilder
+    private var accountsSection: some View {
+        Section("Accounts") {
             if trimmedFilter.isEmpty {
                 OutlineGroup(visibleTree, children: \.children) { node in
                     row(node, label: node.name)
@@ -921,7 +970,7 @@ struct AccountsSidebar: View {
                 .monospacedDigit()
                 .foregroundStyle(node.balance < 0 ? .red : .secondary)
         }
-        .tag(node.id)
+        .tag(SidebarSelection.account(node.id))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(AmountFormat.string(node.balance, code: node.currencyCode))
