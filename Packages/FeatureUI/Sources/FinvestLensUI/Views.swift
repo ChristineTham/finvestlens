@@ -301,40 +301,18 @@ public struct FinvestLensRootView: View {
             }
         }
         .toolbar {
-            ToolbarItemGroup {
-                Button("Dashboard", systemImage: "house") {
-                    model.selectedAccountID = nil
-                    model.isShowingReports = false
-                }
-                .help("Show the dashboard (⌘D)")
-                Button("New Transaction", systemImage: "plus.circle") {
-                    model.presentedPanel = .newTransaction
-                }
-                .help("New transaction (⌘T)")
-                .disabled(model.postableAccounts.count < 2)
-                Button("New Account", systemImage: "plus.rectangle.on.folder") {
-                    model.presentedPanel = .newAccount
-                }
-                .help("New account (⇧⌘N)")
-                Button("Reports", systemImage: "chart.pie") {
-                    #if os(macOS)
-                    openWindow(id: "reports")
-                    #else
-                    model.show(.reports)
-                    #endif
-                }
-                .help("Reports (⌘R)")
-            }
-            ToolbarSpacer(.fixed)
+            // Primary create actions (the rest live in the menu bar). Areas
+            // (Dashboard, Reports, Budgets, …) are now in the sidebar, so they
+            // no longer need toolbar buttons.
             ToolbarItemGroup {
                 Menu {
-                    Button("Import Bank File…", systemImage: "square.and.arrow.down.on.square") {
-                        model.bankImportRequested = true
+                    Button("New Transaction…", systemImage: "plus.circle") {
+                        model.presentedPanel = .newTransaction
                     }
-                    Button("Reconcile Account…", systemImage: "checkmark.seal") {
-                        model.presentedPanel = .reconcile
+                    .disabled(model.postableAccounts.count < 2)
+                    Button("New Account…", systemImage: "plus.rectangle.on.folder") {
+                        model.presentedPanel = .newAccount
                     }
-                    .disabled(model.selectedAccountID == nil)
                     Divider()
                     Button("Stock Transaction…", systemImage: "chart.line.uptrend.xyaxis") {
                         model.presentedPanel = .stockTransaction
@@ -344,18 +322,21 @@ public struct FinvestLensRootView: View {
                         model.presentedPanel = .currencyTransfer
                     }
                     .disabled(model.currencyCommodities.count < 2)
-                    Divider()
-                    Button("Rules…", systemImage: "wand.and.stars") {
-                        model.show(.rules)
-                    }
-                    Button("Scheduled…", systemImage: "calendar.badge.clock") {
-                        model.show(.scheduled)
-                    }
-                    Button("Budget…", systemImage: "chart.bar.doc.horizontal") {
-                        model.show(.budgets)
-                    }
-                    Button("Prices & Quotes…", systemImage: "tag") {
-                        model.show(.prices)
+                } label: {
+                    Label("New", systemImage: "plus")
+                }
+                .help("Create a transaction or account")
+                Button("Reconcile", systemImage: "checkmark.seal") {
+                    model.presentedPanel = .reconcile
+                }
+                .help("Reconcile the selected account against a statement")
+                .disabled(model.selectedAccountID == nil)
+            }
+            ToolbarSpacer(.fixed)
+            ToolbarItemGroup {
+                Menu {
+                    Button("Import Bank File…", systemImage: "square.and.arrow.down.on.square") {
+                        model.bankImportRequested = true
                     }
                     Divider()
                     // Apple Intelligence (on-device model) features.
@@ -370,9 +351,9 @@ public struct FinvestLensRootView: View {
                     }
                     .help("Assign categories to uncategorised transactions")
                 } label: {
-                    Label("Tools", systemImage: "wrench.and.screwdriver")
+                    Label("Import", systemImage: "square.and.arrow.down")
                 }
-                .help("Rules, scheduled, budget, prices and more")
+                .help("Import a bank file, read PDFs, or auto-categorise")
                 Menu {
                     if model.savedSearches.isEmpty {
                         Text("No saved searches")
