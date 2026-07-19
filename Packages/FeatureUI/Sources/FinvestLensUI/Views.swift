@@ -374,6 +374,19 @@ public struct FinvestLensRootView: View {
                 .help("Saved searches")
             }
         }
+        // Editing a transaction happens in a trailing inspector, not a modal, so
+        // the register stays visible for cross-referencing (HIG). Selecting a
+        // different row re-loads the editor via `.id`.
+        .inspector(isPresented: Binding(
+            get: { model.editingTransactionID != nil },
+            set: { if !$0 { model.editingTransactionID = nil } }
+        )) {
+            if let id = model.editingTransactionID {
+                TransactionEditorSheet(model: model, editingID: id)
+                    .id(id)
+                    .inspectorColumnWidth(min: 340, ideal: 400, max: 560)
+            }
+        }
         .sheet(item: $model.presentedPanel) { panel in
             switch panel {
             case .newAccount: NewAccountSheet(model: model)
@@ -1284,9 +1297,8 @@ struct RegisterView: View {
         .contextMenu(forSelectionType: GncGUID.self) { ids in
             TransactionActions(model: model, splitID: ids.first)
         }
-        .sheet(item: $model.editingTransactionID) { id in
-            TransactionEditorSheet(model: model, editingID: id)
-        }
+        // The transaction editor is now a trailing inspector (see RootHost) so
+        // the register stays visible while editing (HIG).
         .sheet(item: $model.schedulingTransactionID) { id in
             ScheduleTransactionSheet(model: model, transactionID: id)
         }
@@ -2556,10 +2568,10 @@ struct TransactionEditorSheet: View {
             .navigationTitle(isEditing ? "Edit Transaction" : "New Transaction")
             // Esc cancels even while a text field has focus (cancelOperation
             // bubbles up the responder chain; .cancelAction alone doesn't).
-            .onEscapeCommand { dismiss() }
+            .onEscapeCommand { close() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                    Button("Cancel") { close() }.keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(isEditing ? "Save" : "Add") { commit() }
@@ -2657,6 +2669,14 @@ struct TransactionEditorSheet: View {
         }
     }
 
+    /// Closes the editor. Clearing the model's editing id also collapses the
+    /// register inspector (its binding tracks that id); `dismiss()` closes the
+    /// sheet presentations (new-transaction, journal, linked-docs).
+    private func close() {
+        model.editingTransactionID = nil
+        dismiss()
+    }
+
     private func commit() {
         let inputs = lines
             .filter { $0.accountID != nil }
@@ -2672,7 +2692,7 @@ struct TransactionEditorSheet: View {
                                          currency: currency, splits: inputs,
                                          tags: parsedTags, notes: notes)
             }
-            dismiss()
+            close()
         } catch {
             // Keep the sheet up — the user's entry must not silently vanish.
             commitError = error.localizedDescription
