@@ -283,6 +283,9 @@ public struct FinvestLensRootView: View {
                     #endif
                 }
                 .help("Reports (⌘R)")
+            }
+            ToolbarSpacer(.fixed)
+            ToolbarItemGroup {
                 Menu {
                     Button("Import Bank File…", systemImage: "square.and.arrow.down.on.square") {
                         model.bankImportRequested = true
@@ -1222,6 +1225,9 @@ struct RegisterView: View {
             }
         }
         .tableColumnHeaders(.visible)
+        // A dense financial table reads better with a crisp cutoff where rows
+        // scroll under the glass toolbar than with the default soft fade.
+        .scrollEdgeEffectStyle(.hard, for: .top)
         .contextMenu(forSelectionType: GncGUID.self) { ids in
             TransactionActions(model: model, splitID: ids.first)
         }
