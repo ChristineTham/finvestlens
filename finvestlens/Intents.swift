@@ -13,8 +13,8 @@ import FinvestLensUI
 
 /// Reports the current net worth (`FR-PLT-03`).
 struct NetWorthIntent: AppIntent {
-    static var title: LocalizedStringResource = "Show Net Worth"
-    static var description = IntentDescription("Reports your current net worth from your FinvestLens book.")
+    static let title: LocalizedStringResource = "Show Net Worth"
+    static let description = IntentDescription("Reports your current net worth from your FinvestLens book.")
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         .result(dialog: IntentDialog(stringLiteral: IntentSupport.netWorthSummary()))
@@ -23,8 +23,8 @@ struct NetWorthIntent: AppIntent {
 
 /// Reports upcoming/overdue bills.
 struct UpcomingBillsIntent: AppIntent {
-    static var title: LocalizedStringResource = "Show Upcoming Bills"
-    static var description = IntentDescription("Summarises your upcoming and overdue bills.")
+    static let title: LocalizedStringResource = "Show Upcoming Bills"
+    static let description = IntentDescription("Summarises your upcoming and overdue bills.")
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         .result(dialog: IntentDialog(stringLiteral: IntentSupport.upcomingBillsSummary()))
@@ -33,8 +33,8 @@ struct UpcomingBillsIntent: AppIntent {
 
 /// Reports current financial alerts.
 struct FinancialAlertsIntent: AppIntent {
-    static var title: LocalizedStringResource = "Show Financial Alerts"
-    static var description = IntentDescription("Reports bills due, over-budget spending and other alerts.")
+    static let title: LocalizedStringResource = "Show Financial Alerts"
+    static let description = IntentDescription("Reports bills due, over-budget spending and other alerts.")
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
         .result(dialog: IntentDialog(stringLiteral: IntentSupport.alertsSummary()))
