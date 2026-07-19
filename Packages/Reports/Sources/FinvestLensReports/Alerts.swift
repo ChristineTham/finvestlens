@@ -141,9 +141,6 @@ public extension FinancialReports {
 /// Small money formatter shared by report messages (avoids a FeatureUI dep).
 enum AmountFormat {
     static func money(_ value: Decimal, _ currency: Commodity) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = currency.mnemonic
-        return formatter.string(from: NSDecimalNumber(decimal: value)) ?? "\(value) \(currency.mnemonic)"
+        value.formatted(.currency(code: currency.mnemonic))
     }
 }

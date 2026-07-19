@@ -109,7 +109,7 @@ struct SmartImportSheet: View {
     private func analyze(at index: Int) async {
         let data = documents[index].data
         do {
-            let text = try await Task.detached { try DocumentText.extractText(from: data) }.value
+            let text = try await Task.detached { try await DocumentText.extractText(from: data) }.value
             let kind = await DocumentClassifier.classify(text: text)
             documents[index].kind = kind
             switch kind {

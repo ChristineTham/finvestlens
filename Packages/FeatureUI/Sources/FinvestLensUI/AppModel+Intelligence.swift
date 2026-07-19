@@ -64,7 +64,7 @@ extension AppModel {
         guard #available(macOS 26.0, iOS 26.0, *) else {
             throw IntelligenceError.unavailable("Apple Intelligence requires macOS 26 or iOS 26.")
         }
-        let pages = try await Task.detached { try DocumentText.extractPages(from: data) }.value
+        let pages = try await Task.detached { try await DocumentText.extractPages(from: data) }.value
         return try await StatementExtractor.extract(pages: pages, onProgress: onProgress)
     }
 
@@ -194,7 +194,7 @@ extension AppModel {
         guard #available(macOS 26.0, iOS 26.0, *) else {
             throw IntelligenceError.unavailable("Apple Intelligence requires macOS 26 or iOS 26.")
         }
-        let text = try await Task.detached { try DocumentText.extractText(from: data) }.value
+        let text = try await Task.detached { try await DocumentText.extractText(from: data) }.value
         return try await InvoiceAnalyzer.analyze(text: text,
                                                  candidates: categoryCandidates(includeIncome: false))
     }
@@ -207,7 +207,7 @@ extension AppModel {
         guard #available(macOS 26.0, iOS 26.0, *) else {
             throw IntelligenceError.unavailable("Apple Intelligence requires macOS 26 or iOS 26.")
         }
-        let text = try await Task.detached { try DocumentText.extractText(from: data) }.value
+        let text = try await Task.detached { try await DocumentText.extractText(from: data) }.value
         return try await DividendExtractor.extract(text: text)
     }
 

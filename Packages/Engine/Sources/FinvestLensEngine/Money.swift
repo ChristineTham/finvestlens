@@ -53,16 +53,11 @@ public struct Money: Hashable, Codable, Sendable {
 
     /// A locale-aware currency string (best-effort; presentation may override).
     public func formatted(locale: Locale = .current) -> String {
-        let formatter = NumberFormatter()
-        formatter.locale = locale
-        formatter.numberStyle = .currency
-        formatter.currencyCode = commodity.mnemonic
+        var style = Decimal.FormatStyle.Currency(code: commodity.mnemonic, locale: locale)
         if let digits = commodity.fractionDigits {
-            formatter.minimumFractionDigits = digits
-            formatter.maximumFractionDigits = digits
+            style = style.precision(.fractionLength(digits))
         }
-        return formatter.string(from: NSDecimalNumber(decimal: rounded.amount))
-            ?? "\(rounded.amount) \(commodity.mnemonic)"
+        return rounded.amount.formatted(style)
     }
 }
 

@@ -86,11 +86,7 @@ struct CSVFileDocument: FileDocument {
 
 enum AmountFormat {
     static func string(_ value: Decimal, code: String) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = code
-        return formatter.string(from: NSDecimalNumber(decimal: value))
-            ?? "\(value) \(code)"
+        value.formatted(.currency(code: code))
     }
 }
 

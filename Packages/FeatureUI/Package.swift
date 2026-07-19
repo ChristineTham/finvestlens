@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 //
 //  Package.swift
 //  FinvestLens — FeatureUI
@@ -12,9 +12,9 @@ import PackageDescription
 let package = Package(
     name: "FinvestLensUI",
     platforms: [
-        .macOS(.v14),
-        .iOS(.v17),
-        .macCatalyst(.v17),
+        .macOS("26.0"),
+        .iOS("26.0"),
+        .macCatalyst("26.0"),
     ],
     products: [
         .library(name: "FinvestLensUI", targets: ["FinvestLensUI"]),

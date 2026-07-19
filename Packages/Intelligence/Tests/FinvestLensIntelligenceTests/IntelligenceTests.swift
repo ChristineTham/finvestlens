@@ -184,7 +184,7 @@ struct DocumentTextTests {
 
     /// Renders a one-page text PDF, round-trips it through DocumentText.
     @Test("Text-based PDF pages extract directly")
-    func textPDF() throws {
+    func textPDF() async throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("finvestlens-test-\(UUID().uuidString).pdf")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -202,20 +202,20 @@ struct DocumentTextTests {
         context.endPDFPage()
         context.closePDF()
 
-        let pages = try DocumentText.extractPages(from: url)
+        let pages = try await DocumentText.extractPages(from: url)
         #expect(pages.count == 1)
         #expect(pages.first?.text.contains("WOOLWORTHS") == true)
 
-        let whole = try DocumentText.extractText(from: url)
+        let whole = try await DocumentText.extractText(from: url)
         #expect(whole.contains("-45.20"))
     }
 
     @Test("Unreadable files throw emptyDocument")
-    func unreadable() {
+    func unreadable() async {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("finvestlens-test-missing-\(UUID().uuidString).pdf")
-        #expect(throws: (any Error).self) {
-            _ = try DocumentText.extractPages(from: url)
+        await #expect(throws: (any Error).self) {
+            _ = try await DocumentText.extractPages(from: url)
         }
     }
 }

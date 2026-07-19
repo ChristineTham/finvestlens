@@ -67,7 +67,7 @@ struct LiveModelTests {
             "Closing balance 8,069.46",
         ], at: url)
 
-        let pages = try DocumentText.extractPages(from: url)
+        let pages = try await DocumentText.extractPages(from: url)
         let staged = try await StatementExtractor.extract(pages: pages)
 
         #expect(staged.count == 4, "expected 4 rows, got \(staged.map(\.payee))")
@@ -151,7 +151,7 @@ struct LiveModelTests {
             CategoryCandidate(id: .random(), fullName: "Expenses:Home Office:Equipment"),
             CategoryCandidate(id: .random(), fullName: "Expenses:Food:Groceries"),
         ]
-        let text = try DocumentText.extractText(from: url)
+        let text = try await DocumentText.extractText(from: url)
         let analysis = try await InvoiceAnalyzer.analyze(text: text, candidates: candidates)
 
         #expect(analysis.vendor.uppercased().contains("HARVEY"))
@@ -181,7 +181,7 @@ struct LiveModelTests {
             "Net dividend paid to your bank account          217.00",
         ], at: url)
 
-        let text = try DocumentText.extractText(from: url)
+        let text = try await DocumentText.extractText(from: url)
         let details = try await DividendExtractor.extract(text: text)
 
         #expect(details.ticker == "CBA")

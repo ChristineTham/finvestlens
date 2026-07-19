@@ -31,30 +31,30 @@ public enum DocumentText {
         public let text: String
     }
 
-    public static func extractPages(from url: URL) throws -> [Page] {
+    public static func extractPages(from url: URL) async throws -> [Page] {
         #if canImport(PDFKit)
         guard let document = PDFDocument(url: url) else {
             throw IntelligenceError.emptyDocument
         }
-        return try extractPages(from: document)
+        return try await extractPages(from: document)
         #else
         throw IntelligenceError.unavailable("PDF reading is not supported on this platform.")
         #endif
     }
 
-    public static func extractPages(from data: Data) throws -> [Page] {
+    public static func extractPages(from data: Data) async throws -> [Page] {
         #if canImport(PDFKit)
         guard let document = PDFDocument(data: data) else {
             throw IntelligenceError.emptyDocument
         }
-        return try extractPages(from: document)
+        return try await extractPages(from: document)
         #else
         throw IntelligenceError.unavailable("PDF reading is not supported on this platform.")
         #endif
     }
 
     #if canImport(PDFKit)
-    private static func extractPages(from document: PDFDocument) throws -> [Page] {
+    private static func extractPages(from document: PDFDocument) async throws -> [Page] {
         var pages: [Page] = []
         for index in 0..<document.pageCount {
             guard let page = document.page(at: index) else { continue }
@@ -62,9 +62,11 @@ public enum DocumentText {
                 ?? page.string?.trimmingCharacters(in: .whitespacesAndNewlines)
                 ?? ""
             if text.count < 32 {  // likely a scanned page — try OCR
-                if let recognized = try? ocr(page: page), recognized.count > text.count {
+                #if canImport(Vision)
+                if let recognized = try? await ocr(page: page), recognized.count > text.count {
                     text = recognized
                 }
+                #endif
             }
             if !text.isEmpty {
                 pages.append(Page(number: index + 1, text: text))
@@ -156,16 +158,16 @@ public enum DocumentText {
 
     /// Convenience: the whole document as one string (small documents such as
     /// invoices and dividend statements).
-    public static func extractText(from url: URL) throws -> String {
-        try extractPages(from: url).map(\.text).joined(separator: "\n\n")
+    public static func extractText(from url: URL) async throws -> String {
+        try await extractPages(from: url).map(\.text).joined(separator: "\n\n")
     }
 
-    public static func extractText(from data: Data) throws -> String {
-        try extractPages(from: data).map(\.text).joined(separator: "\n\n")
+    public static func extractText(from data: Data) async throws -> String {
+        try await extractPages(from: data).map(\.text).joined(separator: "\n\n")
     }
 
     #if canImport(PDFKit) && canImport(Vision)
-    private static func ocr(page: PDFPage) throws -> String? {
+    private static func ocr(page: PDFPage) async throws -> String? {
         let bounds = page.bounds(for: .mediaBox)
         let scale: CGFloat = 2.5  // ~180 dpi, enough for statement type sizes
         let width = Int(bounds.width * scale)
@@ -186,13 +188,39 @@ public enum DocumentText {
         page.draw(with: .mediaBox, to: context)
         guard let image = context.makeImage() else { return nil }
 
-        let request = VNRecognizeTextRequest()
+        // Prefer the structured document reader (Vision 26): it groups a
+        // statement grid into tables, so rows/columns survive as tab-separated
+        // text instead of collapsing into loose lines. Fall back to plain text
+        // recognition when it finds no structure.
+        if let structured = try? await recognizeDocument(image), !structured.isEmpty {
+            return structured
+        }
+        var request = RecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
-        try VNImageRequestHandler(cgImage: image).perform([request])
-        let lines = (request.results ?? [])
-            .compactMap { $0.topCandidates(1).first?.string }
+        let observations = try await request.perform(on: image)
+        let lines = observations.compactMap { $0.topCandidates(1).first?.string }
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    /// Reads a rendered page as a structured document, reconstructing detected
+    /// tables as tab-separated rows so the model sees the statement grid rather
+    /// than a reflowed wall of text.
+    private static func recognizeDocument(_ image: CGImage) async throws -> String? {
+        let observations = try await RecognizeDocumentsRequest().perform(on: image)
+        guard let document = observations.first?.document else { return nil }
+        var blocks: [String] = []
+        for table in document.tables {
+            for row in table.rows {
+                let cells = row.map { $0.content.text.transcript }
+                let line = cells.joined(separator: "\t").trimmingCharacters(in: .whitespaces)
+                if !line.isEmpty { blocks.append(line) }
+            }
+        }
+        let body = document.text.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        if blocks.isEmpty { return body.isEmpty ? nil : body }
+        if !body.isEmpty { blocks.append(body) }
+        return blocks.joined(separator: "\n")
     }
     #endif
 }
