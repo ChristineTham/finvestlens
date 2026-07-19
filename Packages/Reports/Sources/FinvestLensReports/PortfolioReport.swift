@@ -49,7 +49,7 @@ public extension FinancialReports {
         for account in book.accounts where account.type.isSecurityType && !account.isPlaceholder {
             var shares = Decimal(0)
             var cost = Decimal(0)
-            for transaction in book.transactions {
+            for transaction in book.transactions where transaction.datePosted <= asOf {
                 for split in transaction.splits
                 where split.account === account && split.reconcileState != .voided {
                     shares += split.quantity

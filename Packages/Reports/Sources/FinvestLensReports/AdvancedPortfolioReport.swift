@@ -104,7 +104,8 @@ public extension FinancialReports {
             var total = Decimal(0)
             var counted = Set<GncGUID>()
             for split in book.splits(for: account) {
-                guard let txn = split.transaction, counted.insert(txn.guid).inserted else { continue }
+                guard let txn = split.transaction, txn.datePosted <= asOf,
+                      counted.insert(txn.guid).inserted else { continue }
                 for other in txn.splits where other.account?.type == .income {
                     let amount = -other.value                 // income splits are credits
                     if txn.currency == currency {
@@ -121,7 +122,7 @@ public extension FinancialReports {
         var totalValue = Decimal(0)
 
         for account in book.accounts where account.type.isSecurityType && !account.isPlaceholder {
-            let basis = book.costBasis(for: account, method: method, feeTreatment: feeTreatment,
+            let basis = book.costBasis(for: account, asOf: asOf, method: method, feeTreatment: feeTreatment,
                                        currencyFraction: currency.smallestFraction)
             let shares = basis.remainingQuantity
             guard shares != 0 || basis.totalRealizedGain != 0 else { continue }

@@ -65,9 +65,16 @@ public struct AlphaVantageQuoteProvider: QuoteProvider {
         try checkForNotice(data)
         let response = try JSONDecoder().decode(TimeSeriesResponse.self, from: data)
         guard let series = response.series else { throw QuoteError.noData }
+        // Bar dates are day-only (UTC midnight); `from`/`to` usually carry a
+        // wall-clock time, so compare at UTC day granularity or the first/last
+        // day of the window would be dropped.
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        let fromDay = utc.startOfDay(for: from)
+        let toDay = utc.startOfDay(for: to)
         var quotes: [Quote] = []
         for (dateString, bar) in series {
-            guard let date = QuoteDate.date(from: dateString), date >= from, date <= to,
+            guard let date = QuoteDate.date(from: dateString), date >= fromDay, date <= toDay,
                   let price = Decimal(string: bar.close) else { continue }
             quotes.append(Quote(symbol: fallbackSymbol, currencyCode: nil, price: price, date: date))
         }

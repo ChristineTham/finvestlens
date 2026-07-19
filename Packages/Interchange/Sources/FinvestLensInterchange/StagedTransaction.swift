@@ -117,6 +117,18 @@ enum ImportParsing {
             negative = true
             text = String(text.dropLast())
         }
+        // When both separators appear, the rightmost is the decimal point — this
+        // disambiguates US "1,234.56" from European "1.234,56"; the other groups
+        // thousands. (A single separator stays ambiguous, so the en/US reading
+        // below — comma = thousands, period = decimal — is kept.)
+        if let dot = text.lastIndex(of: "."), let comma = text.lastIndex(of: ",") {
+            if comma > dot {   // European: comma is the decimal separator
+                text = text.replacingOccurrences(of: ".", with: "")
+                              .replacingOccurrences(of: ",", with: ".")
+            } else {           // US: comma groups thousands
+                text = text.replacingOccurrences(of: ",", with: "")
+            }
+        }
         text = text.filter { $0.isNumber || $0 == "." || $0 == "-" || $0 == "+" }
         guard let value = Decimal(string: text) else { return nil }
         return negative ? -value : value

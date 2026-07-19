@@ -48,7 +48,10 @@ public extension FinancialReports {
     static func budgetActuals(_ book: Book, budget: Budget, from: Date, to: Date,
                               currency: Commodity, period: Int? = nil) -> [BudgetActual] {
         let length = to.timeIntervalSince(from)
-        let priorTo = from
+        // The prior period must end strictly *before* `from`: displayBalance is
+        // inclusive at both ends, so sharing the `from` instant would count a
+        // posting dated exactly at `from` in both the prior and current windows.
+        let priorTo = from.addingTimeInterval(-1)
         let priorFrom = from.addingTimeInterval(-length)
 
         return budget.lines.compactMap { line -> BudgetActual? in

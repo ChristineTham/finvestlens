@@ -67,8 +67,14 @@ public enum BookClosing {
                 equityQuantity += entry.balance
                 closed += 1
             }
-            // The balancing leg into equity carries the period result.
-            txn.addSplit(Split(account: equity, value: equityQuantity))
+            // The balancing leg into equity carries the period result. Its value
+            // is in the transaction (P&L) currency; when equity is denominated in
+            // a different commodity the quantity must be converted, or the equity
+            // balance would read the foreign value as if it were its own currency.
+            let equityQty = equity.commodity == currency
+                ? equityQuantity
+                : (book.convert(equityQuantity, from: currency, to: equity.commodity, on: date) ?? equityQuantity)
+            txn.addSplit(Split(account: equity, value: equityQuantity, quantity: equityQty))
             transactions.append(txn)
         }
         return Result(transactions: transactions, closedAccountCount: closed)

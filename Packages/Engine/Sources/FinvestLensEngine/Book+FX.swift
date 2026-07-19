@@ -97,8 +97,23 @@ public extension Book {
                           on date: Date? = nil,
                           filter: BalanceFilter = .all,
                           includingDescendants: Bool = false) -> Decimal? {
-        let native = balance(of: account, filter: filter,
-                             includingDescendants: includingDescendants).amount
+        // A subtree can mix currencies and securities, so each account must be
+        // valued in its own commodity and the converted amounts summed — summing
+        // native quantities first and valuing the total at the parent's single
+        // commodity (e.g. treating 100 shares as 100 of the parent currency) is
+        // meaningless. Zero-balance nodes contribute nothing and need no price.
+        if includingDescendants {
+            var total = Decimal(0)
+            for node in [account] + account.descendants {
+                let native = balance(of: node, filter: filter).amount
+                guard native != 0 else { continue }
+                guard let value = convertedBalance(of: node, in: currency, on: date,
+                                                   filter: filter) else { return nil }
+                total += value
+            }
+            return total
+        }
+        let native = balance(of: account, filter: filter).amount
         if account.commodity == currency { return native }
         // GnuCash rounds each converted balance to the target currency's fraction
         // before it is summed into a report total (convert_amount_at_date), so

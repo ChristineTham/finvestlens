@@ -23,12 +23,16 @@ public enum MoneyRoundingMode: String, Codable, Sendable, CaseIterable {
     /// Banker's rounding (round half to even).
     case bankers
 
-    var nsMode: NSDecimalNumber.RoundingMode {
+    /// The `NSDecimalNumber` mode realising this mode's *sign-relative*
+    /// semantics. `NSDecimalNumber.down`/`.up` round toward −∞/+∞, so for a
+    /// negative value they are the opposite of the documented toward-zero /
+    /// away-from-zero behaviour; flip them when the value is negative.
+    func nsMode(negative: Bool) -> NSDecimalNumber.RoundingMode {
         switch self {
         case .plain: return .plain
-        case .down: return .down
-        case .up: return .up
         case .bankers: return .bankers
+        case .down: return negative ? .up : .down   // toward zero
+        case .up: return negative ? .down : .up     // away from zero
         }
     }
 }
@@ -128,7 +132,7 @@ public struct Commodity: Hashable, Codable, Sendable {
         let fraction = Decimal(smallestFraction)
         var scaled = value * fraction
         var result = Decimal()
-        NSDecimalRound(&result, &scaled, 0, roundingMode.nsMode)
+        NSDecimalRound(&result, &scaled, 0, roundingMode.nsMode(negative: value < 0))
         return result / fraction
     }
 

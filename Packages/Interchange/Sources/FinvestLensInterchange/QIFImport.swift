@@ -26,6 +26,10 @@ public enum QIFImporter {
     }
 
     public static func parse(_ text: String) -> [StagedTransaction] {
+        // Choose one date orientation for the whole file so day-first and
+        // month-first rows don't parse inconsistently (05/06 as May 6 but 15/06
+        // as 15 June within the same file).
+        let formats = orderedDateFormats(for: text)
         var result: [StagedTransaction] = []
         var investing = false        // inside a !Type:Invst section
         var date: Date?
@@ -84,7 +88,7 @@ public enum QIFImporter {
             case "!":                                   // section header
                 investing = value.lowercased().contains("invst")
             case "^": flush()
-            case "D": date = parseDate(value)
+            case "D": date = parseDate(value, formats: formats)
             case "T", "U": amount = ImportParsing.amount(value)
             case "M": memo = value
             case "L": category = value
@@ -121,15 +125,36 @@ public enum QIFImporter {
         }
     }
 
-    private static func parseDate(_ raw: String) -> Date? {
+    private static func parseDate(_ raw: String, formats: [String]) -> Date? {
         let text = raw.replacingOccurrences(of: " ", with: "")
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")
-        for format in dateFormats {
+        for format in formats {
             formatter.dateFormat = format
             if let date = formatter.date(from: text) { return date }
         }
         return nil
+    }
+
+    /// Picks a date-format precedence for the whole file. Slash-separated QIF
+    /// dates are ambiguous (`MM/dd` vs `dd/MM`); scan every `D` line and, if any
+    /// unambiguously puts the day first (a first field > 12) without conflicting
+    /// month-first evidence, try `dd/MM` before `MM/dd`. Otherwise keep the
+    /// default US month-first order.
+    static func orderedDateFormats(for text: String) -> [String] {
+        var dayFirst = false, monthFirst = false
+        for line in text.split(whereSeparator: \.isNewline) where line.first == "D" {
+            let raw = line.dropFirst().replacingOccurrences(of: " ", with: "")
+            let parts = raw.split(whereSeparator: { $0 == "/" || $0 == "'" })
+            guard parts.count >= 2, let a = Int(parts[0]), let b = Int(parts[1]) else { continue }
+            if a > 12 { dayFirst = true }
+            if b > 12 { monthFirst = true }
+        }
+        if dayFirst && !monthFirst {
+            return ["dd/MM/yyyy", "d/M/yyyy", "MM/dd/yyyy", "M/d/yyyy",
+                    "dd/MM''yy", "d/M''yy", "yyyy-MM-dd"]
+        }
+        return dateFormats
     }
 }

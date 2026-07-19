@@ -60,7 +60,11 @@ public enum AccountNameMatcher {
         let bySpecificity = candidates.sorted { $0.fullName.count > $1.fullName.count }
         return bySpecificity.first {
             let candidate = normalize($0.leafName)
-            return candidate.contains(needle) || needle.contains(candidate)
+            // Account-leaf contains the model's answer, or vice versa — but only
+            // when the shorter side is long enough that the containment is
+            // meaningful, so a 3-letter leaf like "Tax" doesn't swallow "Taxi".
+            if candidate.contains(needle) { return true }
+            return candidate.count >= 4 && needle.contains(candidate)
         }
     }
 

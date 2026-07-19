@@ -45,9 +45,24 @@ public enum MerchantHeuristics {
     public static func category(for description: String) -> String? {
         let haystack = description.lowercased()
         for (keywords, category) in keywordCategories {
-            if keywords.contains(where: { haystack.contains($0) }) { return category }
+            if keywords.contains(where: { matchesKeyword(haystack, $0) }) { return category }
         }
         return nil
+    }
+
+    /// Whether `keyword` appears at a word start in `haystack`. Matching the
+    /// *start* of a word keeps stem keywords working ("grocer" → "grocery")
+    /// while rejecting mid-word coincidences ("rent" inside "current"/"parent").
+    private static func matchesKeyword(_ haystack: String, _ keyword: String) -> Bool {
+        guard !keyword.isEmpty else { return false }
+        var searchStart = haystack.startIndex
+        while let range = haystack.range(of: keyword, range: searchStart..<haystack.endIndex) {
+            let precededByLetter = range.lowerBound > haystack.startIndex
+                && haystack[haystack.index(before: range.lowerBound)].isLetter
+            if !precededByLetter { return true }
+            searchStart = range.upperBound
+        }
+        return false
     }
 
     private static func titleCase(_ text: String) -> String {

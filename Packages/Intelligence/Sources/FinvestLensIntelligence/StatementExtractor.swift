@@ -107,7 +107,11 @@ public enum StatementExtractor {
                     }
                     if let balance { previousBalance = balance }
                     // Dedupe across pages (carried-over rows, repeated headers).
-                    let key = "\(row.date)|\(abs(amount))|\(row.payee.lowercased())"
+                    // Include the running balance and reference so two genuinely
+                    // distinct same-day/amount/payee rows (e.g. two identical
+                    // coffees) aren't collapsed — only a truly repeated row, which
+                    // shares its balance and reference too, is dropped.
+                    let key = "\(row.date)|\(abs(amount))|\(row.payee.lowercased())|\(row.reference)|\(row.balanceAfter)"
                     guard seen.insert(key).inserted else { continue }
                     staged.append(StagedTransaction(
                         date: date,

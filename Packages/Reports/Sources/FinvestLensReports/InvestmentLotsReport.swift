@@ -39,7 +39,7 @@ public extension FinancialReports {
         var details: [LotDetail] = []
 
         for account in book.accounts where account.type.isSecurityType && !account.isPlaceholder {
-            let result = book.costBasis(for: account, method: method, feeTreatment: feeTreatment,
+            let result = book.costBasis(for: account, asOf: asOf, method: method, feeTreatment: feeTreatment,
                                         currencyFraction: currency.smallestFraction)
             let symbol = account.commodity.mnemonic
             let price = book.securityUnitValue(account.commodity, in: currency, on: asOf)
@@ -48,7 +48,7 @@ public extension FinancialReports {
                 let cost = currency.round(lot.costBasis)
                 let marketValue = price.map { currency.round(lot.quantity * $0) }
                 let unrealized = marketValue.map { $0 - cost }
-                let days = lot.acquisitionDate.map { Int(asOf.timeIntervalSince($0) / 86_400) }
+                let days = lot.acquisitionDate.map { wholeCalendarDays(from: $0, to: asOf) }
                 details.append(LotDetail(
                     id: .random(), symbol: symbol, accountName: account.name,
                     acquisitionDate: lot.acquisitionDate, quantity: lot.quantity,

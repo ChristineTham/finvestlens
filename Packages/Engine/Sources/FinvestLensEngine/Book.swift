@@ -292,9 +292,9 @@ public final class Book {
 
     /// The chronological acquisition/disposal events for a security `account`,
     /// derived from its non-voided splits (`FR-INV-04`).
-    public func lotEvents(for account: Account) -> [LotEvent] {
+    public func lotEvents(for account: Account, asOf: Date = .distantFuture) -> [LotEvent] {
         var events: [LotEvent] = []
-        for transaction in transactions {
+        for transaction in transactions where transaction.datePosted <= asOf {
             // Brokerage/commission on the transaction: its expense-account
             // splits, shared equally across the transaction's security splits
             // (so a two-security swap doesn't double-count the fee).
@@ -326,12 +326,13 @@ public final class Book {
     /// `account` under `method`.
     public func costBasis(
         for account: Account,
+        asOf: Date = .distantFuture,
         method: CostBasisMethod = .fifo,
         longTermThresholdDays: Int = CostBasis.defaultLongTermThresholdDays,
         feeTreatment: FeeTreatment = .ignore,
         currencyFraction: Int? = nil
     ) -> CostBasisResult {
-        CostBasis.compute(events: lotEvents(for: account), method: method,
+        CostBasis.compute(events: lotEvents(for: account, asOf: asOf), method: method,
                           longTermThresholdDays: longTermThresholdDays,
                           feeTreatment: feeTreatment, currencyFraction: currencyFraction)
     }

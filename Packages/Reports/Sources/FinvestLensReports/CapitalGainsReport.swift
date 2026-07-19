@@ -83,22 +83,34 @@ public extension FinancialReports {
                                         currencyFraction: currency.smallestFraction)
             let symbol = account.commodity.mnemonic
 
+            // Cost-basis amounts are in the security's trade currency; convert
+            // each to the report currency (dated at the disposal / acquisition)
+            // so the totals aren't a meaningless sum across currencies.
+            let trade = book.splits(for: account).lazy.compactMap { $0.transaction?.currency }.first ?? currency
+            func toReport(_ amount: Decimal, on date: Date) -> Decimal {
+                guard trade != currency else { return amount }
+                return book.convert(amount, from: trade, to: currency, on: date) ?? amount
+            }
+
             for gain in result.realizedGains where gain.disposalDate >= from && gain.disposalDate <= to {
+                let proceeds = currency.round(toReport(gain.proceeds, on: gain.disposalDate))
+                let costBasis = currency.round(toReport(gain.costBasis, on: gain.disposalDate))
                 lines.append(CapitalGainLine(
                     id: .random(), symbol: symbol, accountName: account.name,
                     disposalDate: gain.disposalDate, acquisitionDate: gain.acquisitionDate,
                     quantity: gain.quantity,
-                    proceeds: currency.round(gain.proceeds),
-                    costBasis: currency.round(gain.costBasis),
-                    gain: currency.round(gain.gain),
+                    proceeds: proceeds,
+                    costBasis: costBasis,
+                    gain: proceeds - costBasis,
                     longTerm: gain.longTerm))
             }
 
             for lot in result.openLots {
+                let on = lot.acquisitionDate ?? to
                 openLots.append(OpenLotLine(
                     id: .random(), symbol: symbol, accountName: account.name,
                     acquisitionDate: lot.acquisitionDate, quantity: lot.quantity,
-                    costBasis: currency.round(lot.costBasis)))
+                    costBasis: currency.round(toReport(lot.costBasis, on: on))))
             }
         }
 

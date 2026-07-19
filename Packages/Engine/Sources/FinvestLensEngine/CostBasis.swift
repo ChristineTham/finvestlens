@@ -12,7 +12,7 @@ import Foundation
 /// dates carry a canonical time-of-day, so a raw `timeInterval / 86_400`
 /// truncation would flip the long/short-term class on the clock time rather
 /// than the calendar dates; comparing start-of-day in a fixed zone doesn't.
-func wholeCalendarDays(from start: Date, to end: Date) -> Int {
+public func wholeCalendarDays(from start: Date, to end: Date) -> Int {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(identifier: "UTC")!
     let a = calendar.startOfDay(for: start)

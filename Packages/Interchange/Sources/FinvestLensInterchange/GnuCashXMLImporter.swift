@@ -332,6 +332,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "cust:credit": party?.credit = GnuCashNumeric.parse(value) ?? 0
         case "employee:rate": party?.rate = GnuCashNumeric.parse(value) ?? 0
         case "cust:use-tt", "vendor:use-tt": party?.useTaxTable = (value == "1")
+        case "cust:taxincluded", "vendor:taxincluded": party?.taxIncluded = (value == "YES")
         case "cust:terms", "vendor:terms": party?.termsGUID = GncGUID(hex: value)
         case "cust:taxtable", "vendor:taxtable": party?.taxTableGUID = GncGUID(hex: value)
         case "employee:ccard": party?.creditAccountGUID = GncGUID(hex: value)
@@ -735,8 +736,8 @@ private final class Delegate: NSObject, XMLParserDelegate {
                              active: b.active, currency: currency(b.currencySpace, b.currencyID),
                              terms: b.termsGUID.flatMap { terms[$0] },
                              taxTable: b.taxTableGUID.flatMap { tables[$0] },
-                             taxTableOverride: b.useTaxTable, discountPercent: b.discount,
-                             creditLimit: b.credit)
+                             taxTableOverride: b.useTaxTable, taxIncluded: b.taxIncluded,
+                             discountPercent: b.discount, creditLimit: b.credit)
             customers[guid] = c; book.addCustomer(c)
         }
         var vendors: [GncGUID: Vendor] = [:]
@@ -745,7 +746,8 @@ private final class Delegate: NSObject, XMLParserDelegate {
             let v = Vendor(guid: guid, id: b.id, name: b.name, address: b.address, notes: b.notes,
                            active: b.active, currency: currency(b.currencySpace, b.currencyID),
                            terms: b.termsGUID.flatMap { terms[$0] },
-                           taxTable: b.taxTableGUID.flatMap { tables[$0] }, taxTableOverride: b.useTaxTable)
+                           taxTable: b.taxTableGUID.flatMap { tables[$0] }, taxTableOverride: b.useTaxTable,
+                           taxIncluded: b.taxIncluded)
             vendors[guid] = v; book.addVendor(v)
         }
         var employees: [GncGUID: Employee] = [:]
@@ -920,6 +922,7 @@ struct PartyBuilder {   // customer / vendor / employee share these
     var guid: GncGUID?; var name = ""; var id = ""; var notes = ""; var active = true
     var address = BusinessAddress(); var currencySpace: String?; var currencyID: String?
     var termsGUID: GncGUID?; var taxTableGUID: GncGUID?; var useTaxTable = false
+    var taxIncluded = false
     var discount: Decimal = 0; var credit: Decimal = 0; var rate: Decimal = 0
     var creditAccountGUID: GncGUID?
 }
