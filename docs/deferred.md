@@ -55,16 +55,7 @@ bundle-ID base under team *Hello Tham Pty. Ltd.* (`RPL5R637DS`) — see
 > `com.hellotham.finvestlensapp`. The `.finvestlens` **file extension / UTI is
 > unchanged** — only the app's identity moved.
 
-## 4 — Feature tails within delivered phases
-
-Lower-priority pieces of features that are otherwise complete.
-
-| Item | FR / Phase | Notes |
-|---|---|---|
-| Managed-fund money-flow realised model | FR-RPT-02 / P5 | Our per-parcel engine subtracts non-fee expense splits booked inside managed-fund transactions where GnuCash's money-in/out model washes them out (~$34k realised across ~6 accounts). Matching would mean adopting GnuCash's money-flow model — arguably not more correct. |
-| `rebuildAccountTree` subtree-only rebuild | NFR-02 / P2 | The remaining ~0.04s of a refresh is a full-tree rebuild + search; fast enough to feel instant. Rebuild only the affected subtree if ever needed. |
-
-## 5 — Apple Intelligence import caveats (monitor)
+## 4 — Apple Intelligence import caveats (monitor)
 
 Quality limits of the on-device import layer (PRD §5.18), caught by the review screen.
 
@@ -74,7 +65,7 @@ Quality limits of the on-device import layer (PRD §5.18), caught by the review 
 | Statement sign inference without a balance column | FR-AI-01 / P4 | Signs re-derived from the running balance; statements with unsigned debit/credit columns *and* no balance column may import with wrong signs (the review screen catches it). |
 | iOS file pickers on-device | FR-AI-01/03/04/07 / P4–P7 | iOS keeps `.fileImporter`; not yet exercised on a device. |
 
-## 6 — Platform & HIG — deferred decisions
+## 5 — Platform & HIG — deferred decisions
 
 | Item | Notes |
 |---|---|
@@ -94,3 +85,12 @@ Not open work — recorded so they aren't re-raised as bugs. Detail in
 - `isBalanced` treats a sub-minor-unit residual as balanced (ADR-1).
 - Average-cost basis keeps full precision to the report edge where GnuCash rounds
   progressively (~2¢ over 40 years).
+- **Managed-fund money-flow realised model** (FR-RPT-02) — our per-parcel engine
+  subtracts non-fee expense splits booked inside managed-fund transactions where
+  GnuCash's money-in/out model washes them out (~$34k realised across ~6
+  accounts). Matching would mean adopting GnuCash's money-flow model, which is
+  arguably *not* more correct — kept per-parcel by decision.
+- **`rebuildAccountTree` subtree-only rebuild** (NFR-02) — the ~0.04s of a
+  refresh spent on a full-tree rebuild is fast enough to feel instant; a
+  subtree-only rebuild is a micro-optimization to do only if a future profile
+  ever shows it matters.
