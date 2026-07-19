@@ -34,28 +34,7 @@ Common workflows partly built; each is a bounded piece of work.
 |---|---|---|
 | Rule actions tail | FR-RULE-01 / P4 | The engine now has an `account` trigger and set-tags / set-description / **allocate-to-goal** (`FR-GOAL-01`) actions. Remaining: **convert-type** (fuzzy in a double-entry model) and **link-to-bill** (needs bill-link infrastructure not yet built). |
 
-*Closed this pass (now in [implemented.md](implemented.md)): CSV export (FR-XIO-06); CSV price import (FR-XIO-03); import GnuCash scheduled transactions + budgets (FR-IMP-03/04); Twelve Data + Stooq quote providers (FR-INV-03b); re-open a finished reconciliation (FR-REC-03); manual attach-a-file (FR-REG-10); Open Read-Only on a live lock (FR-DAT-06); autosave-interval setting (FR-DAT-10); CSV import mapping profiles (FR-XIO-08); free-text search operators (FR-FIND-01); rules `account` trigger + set-tags/set-description/allocate-to-goal (FR-RULE-01, partial); window/state restoration.*
-
-## 3 — Platform enablement ✅ done
-
-The extension targets, entitlements, iCloud container, and App Group are built,
-**provisioned, signed, and verified working** on the `com.hellotham.finvestlensapp`
-bundle-ID base under team *Hello Tham Pty. Ltd.* (`RPL5R637DS`) — see
-[implemented.md](implemented.md) and the [provisioning runbook](provisioning.md):
-
-- **iCloud Documents container** (FR-PLT-02) — `iCloud.com.hellotham.finvestlensapp`,
-  CloudDocuments; the book surfaces in iCloud Drive.
-- **Widgets** (FR-PLT-03) — `FinvestLensWidgets` signs, embeds, and reads the
-  App Group snapshot (`group.com.hellotham.finvestlensapp`).
-- **Quick Look preview** (FR-PLT-03) — `FinvestLensQuickLook` signs and previews.
-- **App Group** — provisioned; the app↔extension snapshot hand-off works.
-
-> The bundle-ID base moved from `com.hellotham.finvestlens` (held by an
-> inaccessible team, so its explicit App ID couldn't be registered) to
-> `com.hellotham.finvestlensapp`. The `.finvestlens` **file extension / UTI is
-> unchanged** — only the app's identity moved.
-
-## 4 — Apple Intelligence import caveats (monitor)
+## 3 — Apple Intelligence import caveats (monitor)
 
 Quality limits of the on-device import layer (PRD §5.18), caught by the review screen.
 
@@ -65,7 +44,7 @@ Quality limits of the on-device import layer (PRD §5.18), caught by the review 
 | Statement sign inference without a balance column | FR-AI-01 / P4 | Signs re-derived from the running balance; statements with unsigned debit/credit columns *and* no balance column may import with wrong signs (the review screen catches it). |
 | iOS file pickers on-device | FR-AI-01/03/04/07 / P4–P7 | iOS keeps `.fileImporter`; not yet exercised on a device. |
 
-## 5 — Platform & HIG — deferred decisions
+## 4 — Platform & HIG — deferred decisions
 
 | Item | Notes |
 |---|---|
