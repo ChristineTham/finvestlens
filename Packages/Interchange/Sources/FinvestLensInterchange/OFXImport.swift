@@ -13,9 +13,10 @@ import Foundation
 /// Handles both **OFX v1 (SGML)** — where value-only tags have no closing tag —
 /// and **OFX v2 (XML)** with a single tolerant scanner: for each field tag we
 /// read the value up to the next `<`, which captures the value in both formats
-/// (Architecture §5.8a). Extracts `<STMTTRN>` (cash) entries from bank and
-/// card statements; investment transactions (`<INVBUY>`/`<INVSELL>`) are not
-/// yet parsed — enter trades via the Stock Transaction Assistant.
+/// (Architecture §5.8a). Extracts `<STMTTRN>` (cash) entries from bank and card
+/// statements, and investment transactions — `<BUYSTOCK>`/`<SELLSTOCK>`/
+/// `<BUYMF>`/`<SELLMF>`/`<INCOME>`/`<REINVEST>` (`FR-XIO-02`) — carried on the
+/// staged row's ``StagedTransaction/investment`` detail.
 public enum OFXImporter {
 
     public static func parse(_ data: Data) -> [StagedTransaction] {
@@ -45,6 +46,40 @@ public enum OFXImporter {
                 memo: value("MEMO", in: body) ?? "",
                 reference: value("FITID", in: body) ?? ""
             ))
+        }
+        result.append(contentsOf: parseInvestments(text))
+        return result
+    }
+
+    /// OFX investment wrappers and the action each denotes.
+    private static let investmentWrappers: [(tag: String, action: InvestmentDetail.Action)] = [
+        ("BUYSTOCK", .buy), ("BUYMF", .buy), ("BUYOTHER", .buy), ("BUYDEBT", .buy),
+        ("SELLSTOCK", .sell), ("SELLMF", .sell), ("SELLOTHER", .sell), ("SELLDEBT", .sell),
+        ("REINVEST", .reinvestDividend), ("INCOME", .dividend),
+    ]
+
+    /// Extracts every investment transaction block into a staged row carrying
+    /// its ``InvestmentDetail``. Quantity/price are absent on income rows.
+    private static func parseInvestments(_ text: String) -> [StagedTransaction] {
+        var result: [StagedTransaction] = []
+        for (tag, action) in investmentWrappers {
+            for chunk in text.components(separatedBy: "<\(tag)>").dropFirst() {
+                let body = chunk.components(separatedBy: "</\(tag)>").first ?? chunk
+                guard let traded = value("DTTRADE", in: body) ?? value("DTPOSTED", in: body),
+                      let date = parseDate(traded) else { continue }
+                let units = value("UNITS", in: body).flatMap(ImportParsing.amount) ?? 0
+                let price = value("UNITPRICE", in: body).flatMap(ImportParsing.amount) ?? 0
+                let commission = value("COMMISSION", in: body).flatMap(ImportParsing.amount) ?? 0
+                let total = value("TOTAL", in: body).flatMap(ImportParsing.amount) ?? 0
+                let security = value("UNIQUEID", in: body) ?? value("SECID", in: body) ?? ""
+                result.append(StagedTransaction(
+                    date: date, amount: total, payee: security,
+                    memo: value("MEMO", in: body) ?? "",
+                    reference: value("FITID", in: body) ?? "",
+                    investment: InvestmentDetail(action: action, security: security,
+                                                 quantity: abs(units), pricePerShare: price,
+                                                 commission: commission)))
+            }
         }
         return result
     }

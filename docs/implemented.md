@@ -70,6 +70,15 @@ GnuCash-source reference where relevant:
   instead of a fixed amount; `AmountExpression` evaluates it against named
   variables prompted at post time. Imported from GnuCash's SX formula slots and
   surfaced in the Add-Scheduled sheet + the Enter-Due-Transactions prompt.
+- **QIF splits + investment actions, OFX investment statements** (FR-XIO-01/02) —
+  `StagedTransaction` grew optional `investment` detail and `splits`. The QIF
+  parser reads `!Type:Invst` records (action `N`, security `Y`, price `I`,
+  quantity `Q`, commission `O`) and `S`/`E`/`$` split legs; the OFX parser reads
+  `<BUYSTOCK>`/`<SELLSTOCK>`/`<BUYMF>`/`<SELLMF>`/`<INCOME>`/`<REINVEST>` blocks.
+  The importer routes investment rows to the Stock Assistant — the review sheet
+  matches each to a security account, picks a settlement (and dividend income)
+  account, and creates the stock transaction — while split cash rows post one leg
+  per category. Investment rows never reach the cash matcher.
 - **Billable time & mileage** (FR-PLAN-14) — a Business ▸ Time & Mileage panel
   logs hours or distance against a customer (quantity × rate, optional job +
   income account); unbilled entries gather onto a customer invoice (one line
@@ -127,11 +136,10 @@ GnuCash-source reference where relevant:
 
 Every code item above ships with unit tests (or, for the GnuCash SX/budget
 import, a real-book verification); each package suite and the full app build
-(`CODE_SIGNING_ALLOWED=NO`) are green. The remaining deferred items are either
-larger features (QIF/OFX investment import, savings goals, report→PDF
-scaffold) or
+(`CODE_SIGNING_ALLOWED=NO`) are green. The remaining deferred items are mostly
 externally blocked (Apple developer-portal provisioning, real NAS/SMB
-hardware, a physical iOS device, human translators) — see deferred.md.
+hardware, a physical iOS device, human translators) or deliberate
+divergences/non-goals — see deferred.md.
 
 ## Platform enablement — extension targets & capabilities (18 Jul 2026)
 

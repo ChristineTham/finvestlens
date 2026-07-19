@@ -9,6 +9,7 @@
 import Foundation
 import Testing
 import FinvestLensEngine
+import FinvestLensInterchange
 @testable import FinvestLensUI
 
 private func dec(_ s: String) -> Decimal { Decimal(string: s)! }
@@ -58,6 +59,53 @@ struct StockAssistantTests {
         // Typed account lists surface the right endpoints.
         #expect(model.securityAccountNodes.contains { $0.id == stock })
         #expect(model.expenseAccountNodes.contains { $0.id == fee })
+    }
+
+    @Test("A staged QIF/OFX investment row creates a stock buy (FR-XIO-01/02)")
+    func stagedInvestment() throws {
+        let (model, stock, cash, fee, _, url) = try model()
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        // The QIF/OFX parsers produce this shape; here we craft one directly.
+        let row = StagedTransaction(
+            date: day(0), amount: dec("-1009.95"), payee: "CBA",
+            investment: InvestmentDetail(action: .buy, security: "CBA",
+                                         quantity: dec("10"), pricePerShare: dec("100"),
+                                         commission: dec("9.95")))
+        // The importer keeps investment rows out of the cash matcher.
+        let cashResults = model.matchStaged([row], intoAccountID: cash)
+        #expect(cashResults.isEmpty)
+        #expect(model.investmentRows(from: [row]).count == 1)
+        // The security is matched to the "CBA" stock account by name.
+        #expect(model.matchingSecurityAccount(for: row) == stock)
+
+        // With a commission account, the fee posts separately: cost basis $1,000.
+        let withFee = try #require(try model.recordStagedInvestment(
+            row, securityID: stock, settlementID: cash, commissionID: fee))
+        let book = try #require(model.book)
+        let balancedWithFee = book.transaction(with: withFee)?.isBalanced == true
+        #expect(balancedWithFee)
+        #expect(try #require(model.capitalGains()).openCostBasis == dec("1000"))
+    }
+
+    @Test("An imported buy with a fee but no commission account folds the fee into cost (FR-XIO-02)")
+    func stagedInvestmentFoldsCommission() throws {
+        let (model, stock, cash, _, _, url) = try model()
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        let row = StagedTransaction(
+            date: day(0), amount: dec("-1009.95"), payee: "CBA",
+            investment: InvestmentDetail(action: .buy, security: "CBA",
+                                         quantity: dec("10"), pricePerShare: dec("100"),
+                                         commission: dec("9.95")))
+        // No commission account → the $9.95 fee folds into cost basis and the
+        // transaction still balances (the whole $1,009.95 leaves cash).
+        let txnID = try #require(try model.recordStagedInvestment(
+            row, securityID: stock, settlementID: cash))
+        let book = try #require(model.book)
+        let balanced = book.transaction(with: txnID)?.isBalanced == true
+        #expect(balanced)
+        #expect(try #require(model.capitalGains()).openCostBasis == dec("1009.95"))
     }
 
     @Test("Cash dividend increases income and cash")

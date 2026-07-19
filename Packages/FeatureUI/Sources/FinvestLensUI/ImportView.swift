@@ -52,6 +52,14 @@ struct ImportView: View {
     @State private var showingSaveProfile = false
     @State private var newProfileName = ""
 
+    // Investment (security) rows — imported via the Stock Assistant path.
+    @State private var investments: [StagedTransaction] = []
+    @State private var invSecurity: [UUID: GncGUID] = [:]
+    @State private var invSettlement: GncGUID?
+    @State private var invIncome: GncGUID?
+    @State private var invError: String?
+    @State private var invCreated = 0
+
     private var accounts: [AccountNode] { model.postableAccounts }
     private var importCount: Int {
         results.filter { !(skipDuplicates && $0.isDuplicate) && destination(for: $0) != nil }.count
@@ -122,6 +130,10 @@ struct ImportView: View {
                             row(result)
                         }
                     }
+                }
+
+                if !investments.isEmpty {
+                    investmentSection
                 }
             }
             .navigationTitle("Import \(payload.format.rawValue.uppercased())")
@@ -224,6 +236,115 @@ struct ImportView: View {
             ?? model.parseBankFile(payload.data, format: payload.format, csvMapping: mapping)
         results = model.matchStaged(staged, intoAccountID: targetID)
         assignments = [:]
+
+        // Security rows take the Stock-Assistant path, pre-matching each to a
+        // security account by name/ticker where one exists.
+        investments = model.investmentRows(from: staged)
+        invSecurity = [:]
+        for row in investments {
+            invSecurity[row.id] = model.matchingSecurityAccount(for: row)
+        }
+        invSettlement = targetID
+        invCreated = 0
+    }
+
+    // MARK: Investment rows (FR-XIO-01/02)
+
+    private var securityAccounts: [AccountNode] { model.securityAccountNodes }
+    private var incomeAccounts: [AccountNode] { model.incomeAccountNodes }
+    private var creatableInvestments: [StagedTransaction] {
+        investments.filter { row in
+            guard let inv = row.investment else { return false }
+            let hasSecurity = invSecurity[row.id] != nil
+            let hasIncome = invIncome != nil
+            switch inv.action {
+            case .buy, .sell: return hasSecurity && invSettlement != nil
+            case .dividend: return hasIncome && invSettlement != nil
+            case .reinvestDividend: return hasSecurity && hasIncome
+            case .other: return false
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var investmentSection: some View {
+        Section("\(investments.count) investment transactions") {
+            Picker("Settlement account", selection: $invSettlement) {
+                Text("—").tag(GncGUID?.none)
+                ForEach(model.settlementAccountNodes) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+            }
+            Picker("Dividend income account", selection: $invIncome) {
+                Text("—").tag(GncGUID?.none)
+                ForEach(incomeAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+            }
+            ForEach(investments) { row in
+                investmentRow(row)
+            }
+            if let invError {
+                Text(invError).scaledFont(.caption).foregroundStyle(.red)
+            }
+            if invCreated > 0 {
+                Label("Created \(invCreated) investment transaction\(invCreated == 1 ? "" : "s").",
+                      systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green).scaledFont(.caption)
+            }
+            Button("Create \(creatableInvestments.count) Investment Transactions") {
+                createInvestments()
+            }
+            .disabled(creatableInvestments.isEmpty)
+        }
+    }
+
+    @ViewBuilder
+    private func investmentRow(_ row: StagedTransaction) -> some View {
+        let inv = row.investment
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(row.date, format: .dateTime.year().month().day())
+                    .foregroundStyle(.secondary).frame(width: dateWidth, alignment: .leading)
+                Text(inv?.action.rawValue.capitalized ?? "—").fontWeight(.medium)
+                Text(inv?.security ?? "").foregroundStyle(.secondary)
+                Spacer()
+                Text(AmountFormat.string(row.amount, code: targetCode)).monospacedDigit()
+            }
+            if let inv, inv.quantity != 0 {
+                Text("\(inv.quantity.formatted()) @ \(AmountFormat.string(inv.pricePerShare, code: targetCode))"
+                     + (inv.commission != 0 ? " · fee \(AmountFormat.string(inv.commission, code: targetCode))" : ""))
+                    .scaledFont(.caption).foregroundStyle(.secondary)
+            }
+            if inv?.action != .dividend {
+                Picker("Security", selection: Binding(
+                    get: { invSecurity[row.id] },
+                    set: { invSecurity[row.id] = $0 })) {
+                    Text("Choose security…").tag(GncGUID?.none)
+                    ForEach(securityAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+                }
+                .scaledFont(.caption)
+            }
+        }
+    }
+
+    private func createInvestments() {
+        invError = nil
+        var created = 0
+        for row in investments {
+            guard creatableInvestments.contains(where: { $0.id == row.id }) else { continue }
+            do {
+                if try model.recordStagedInvestment(
+                    row, securityID: invSecurity[row.id], settlementID: invSettlement,
+                    incomeID: invIncome) != nil {
+                    created += 1
+                }
+            } catch {
+                invError = "Couldn't create “\(row.investment?.security ?? "")”: \(error.localizedDescription)"
+            }
+        }
+        invCreated = created
+        // Drop the ones that were created so the list reflects what's left.
+        if invError == nil {
+            let done = Set(creatableInvestments.map(\.id))
+            investments.removeAll { done.contains($0.id) }
+        }
     }
 
     /// Fills empty destinations with on-device model suggestions (`FR-AI-02`).

@@ -68,6 +68,43 @@ struct AppImportTests {
         _ = groceries
     }
 
+    @Test("A QIF split record imports as a multi-category transaction (FR-XIO-01)")
+    func splitImport() throws {
+        let url = tempURL()
+        let model = AppModel()
+        try model.newDocument(at: url)
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        let bank = try #require(model.addAccount(name: "Bank", type: .bank))
+        _ = try #require(model.addAccount(name: "Groceries", type: .expense))
+        _ = try #require(model.addAccount(name: "Household", type: .expense))
+
+        let qif = """
+        !Type:Bank
+        D01/15/2024
+        T-120.00
+        PSupermarket
+        SGroceries
+        $-90.00
+        SHousehold
+        $-30.00
+        ^
+        """
+        let staged = model.parseBankFile(Data(qif.utf8), format: .qif)
+        #expect(staged.first?.isSplit == true)
+
+        let results = model.matchStaged(staged, intoAccountID: bank)
+        #expect(model.importMatched(results, intoAccountID: bank) == 1)
+
+        // Bank −120; each category leg posted to its account.
+        let bankNode = try #require(model.accountTree.first { $0.name == "Bank" })
+        #expect(bankNode.balance == Decimal(string: "-120.00"))
+        let groceriesNode = try #require(model.accountTree.first { $0.name == "Groceries" })
+        #expect(groceriesNode.balance == Decimal(string: "90.00"))
+        let householdNode = try #require(model.accountTree.first { $0.name == "Household" })
+        #expect(householdNode.balance == Decimal(string: "30.00"))
+    }
+
     @Test("GnuCash import preserves prices, book GUID, and KVP into the saved document")
     func gnuCashImportKeepsEverything() async throws {
         let bookGUID = GncGUID.random().hexString
