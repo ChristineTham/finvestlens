@@ -41,6 +41,69 @@ struct FinancialAlertsIntent: AppIntent {
     }
 }
 
+// MARK: - Account entity (App Entity + Spotlight)
+
+/// A book account exposed to Shortcuts, Siri and Spotlight (`IndexedEntity`),
+/// so "CBA balance" or an account's name resolves in system search.
+struct AccountEntity: AppEntity, IndexedEntity {
+    let id: String
+    @Property(title: "Name") var name: String
+    @Property(title: "Balance") var balance: String
+
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Account")
+    static let defaultQuery = AccountEntityQuery()
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: "\(name)", subtitle: "\(balance)")
+    }
+
+    init(id: String, name: String, balance: String) {
+        self.id = id
+        self.name = name
+        self.balance = balance
+    }
+
+    init(_ info: IntentSupport.AccountInfo) {
+        self.init(id: info.id, name: info.name, balance: info.balance)
+    }
+}
+
+/// Resolves ``AccountEntity`` values by id, as suggestions, and by free-text
+/// (the last conformance is what lets Spotlight match on a typed name).
+struct AccountEntityQuery: EntityQuery, EntityStringQuery {
+    func entities(for identifiers: [String]) async throws -> [AccountEntity] {
+        let wanted = Set(identifiers)
+        return IntentSupport.accounts().filter { wanted.contains($0.id) }.map(AccountEntity.init)
+    }
+
+    func suggestedEntities() async throws -> [AccountEntity] {
+        IntentSupport.accounts().map(AccountEntity.init)
+    }
+
+    func entities(matching string: String) async throws -> [AccountEntity] {
+        IntentSupport.accounts()
+            .filter { $0.name.localizedCaseInsensitiveContains(string) }
+            .map(AccountEntity.init)
+    }
+}
+
+/// Reports a chosen account's balance (`FR-PLT-03`).
+struct AccountBalanceIntent: AppIntent {
+    static let title: LocalizedStringResource = "Show Account Balance"
+    static let description = IntentDescription("Reports the balance of an account in your FinvestLens book.")
+
+    @Parameter(title: "Account") var account: AccountEntity
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Show the balance of \(\.$account)")
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let balance = IntentSupport.accountBalance(id: account.id) ?? "unavailable"
+        return .result(dialog: IntentDialog(stringLiteral: "\(account.name) balance is \(balance)."))
+    }
+}
+
 /// Exposes the intents to Shortcuts / Spotlight / Siri.
 struct FinvestLensShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
@@ -55,5 +118,9 @@ struct FinvestLensShortcuts: AppShortcutsProvider {
         AppShortcut(intent: FinancialAlertsIntent(), phrases: [
             "Show my \(.applicationName) alerts",
         ], shortTitle: "Alerts", systemImageName: "bell.badge")
+        AppShortcut(intent: AccountBalanceIntent(), phrases: [
+            "Show an account balance in \(.applicationName)",
+            "\(.applicationName) account balance",
+        ], shortTitle: "Account Balance", systemImageName: "banknote")
     }
 }

@@ -63,6 +63,37 @@ public enum IntentSupport {
         return "You have \(bills.count) upcoming bill\(bills.count == 1 ? "" : "s") totalling \(money(total, currency))."
     }
 
+    // MARK: - Accounts (App Entity / Spotlight)
+
+    /// A postable account exposed to App Intents / Spotlight.
+    public struct AccountInfo: Sendable, Identifiable {
+        public let id: String       // account GUID hex
+        public let name: String     // full colon-path name
+        public let balance: String  // formatted in the account's own commodity
+    }
+
+    /// Every non-placeholder account, for `AppEntity` suggestions and Spotlight
+    /// indexing. Balances are in each account's own commodity.
+    public static func accounts() -> [AccountInfo] {
+        guard let book = lastBook() else { return [] }
+        return book.accounts
+            .filter { !$0.isPlaceholder }
+            .map { account in
+                let amount = book.balance(of: account).amount
+                return AccountInfo(id: account.guid.hexString, name: account.fullName,
+                                   balance: Money(amount, account.commodity).formatted())
+            }
+    }
+
+    /// A single account's formatted balance, by GUID hex — for a parameterized
+    /// "account balance" intent.
+    public static func accountBalance(id: String) -> String? {
+        guard let book = lastBook(),
+              let account = book.accounts.first(where: { $0.guid.hexString == id })
+        else { return nil }
+        return Money(book.balance(of: account).amount, account.commodity).formatted()
+    }
+
     /// The current alerts as a spoken/short summary.
     public static func alertsSummary() -> String {
         guard let book = lastBook() else { return "No FinvestLens book has been opened yet." }
