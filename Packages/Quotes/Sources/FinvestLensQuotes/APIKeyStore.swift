@@ -72,6 +72,9 @@ public struct KeychainAPIKeyStore: APIKeyStoring {
         guard let key, !key.isEmpty else { return }
         var insert = query
         insert[kSecValueData as String] = Data(key.utf8)
+        // Device-bound: an API key must not ride an encrypted backup to another
+        // device, and is never needed before first unlock.
+        insert[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         let status = SecItemAdd(insert as CFDictionary, nil)
         guard status == errSecSuccess else {
             throw QuoteError.providerError("Keychain write failed (\(status))")
