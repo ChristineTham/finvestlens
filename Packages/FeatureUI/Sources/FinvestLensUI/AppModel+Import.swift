@@ -176,8 +176,13 @@ extension AppModel {
                     for (leg, categoryAccount) in legs {
                         transaction.addSplit(account: categoryAccount!, value: -leg.amount, memo: leg.memo)
                     }
-                    created.append(transaction)
-                    continue
+                    // Only accept the split when the legs actually sum to the row
+                    // total; a malformed file (legs ≠ `T`) falls back to the
+                    // single-destination path rather than posting an imbalance.
+                    if transaction.isBalanced {
+                        created.append(transaction)
+                        continue
+                    }
                 }
             }
 

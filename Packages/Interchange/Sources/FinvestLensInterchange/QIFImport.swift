@@ -59,7 +59,10 @@ public enum QIFImporter {
                 // it (T/U) but gives quantity × price.
                 let mapped = investmentAction(action)
                 let qty = quantity ?? 0, unit = price ?? 0
-                let cash = amount ?? ((qty * unit) + (commission ?? 0))
+                // Commission adds to a buy's cash outlay but reduces a sell's net
+                // proceeds; derive the row total accordingly when T/U is omitted.
+                let fee = commission ?? 0
+                let cash = amount ?? ((qty * unit) + (mapped == .sell ? -fee : fee))
                 result.append(StagedTransaction(
                     date: date, amount: cash, payee: security, memo: memo,
                     reference: action, category: category,
