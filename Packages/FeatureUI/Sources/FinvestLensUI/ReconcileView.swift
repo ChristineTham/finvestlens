@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import TipKit
 import FinvestLensEngine
 
 /// The reconciliation workflow: enter a statement, tick off items until the
@@ -39,6 +40,7 @@ struct ReconcileView: View {
 
     private var setupForm: some View {
         Form {
+            TipView(ReconcileTip())
             DatePicker("Statement date", selection: $statementDate, displayedComponents: .date)
             TextField("Statement ending balance", text: $endingBalanceText)
                 .multilineTextAlignment(.trailing)

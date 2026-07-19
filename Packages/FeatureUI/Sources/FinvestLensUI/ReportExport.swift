@@ -106,10 +106,28 @@ struct PDFReportDocument: FileDocument {
     }
 }
 
+/// A report shareable as a PDF via `ShareLink`. Holds only the (Sendable)
+/// statement data; the expensive `ImageRenderer` pass is deferred until the
+/// share is actually performed, so building the item per toolbar render is cheap.
+struct ShareableReportPDF: Transferable {
+    let title: String
+    let statement: PrintableStatement
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .pdf) { item in
+            await ReportExport.pdfData(item.statement) ?? Data()
+        }
+        .suggestedFileName { "\($0.title).pdf" }
+    }
+}
+
 /// Renders a SwiftUI view to single-page PDF data via `ImageRenderer`. Use with
 /// a static, VStack-based layout (not `List`/`Table`, which virtualise).
 @MainActor
 enum ReportExport {
+    /// The statement rendered to PDF data on the main actor (for `ShareLink`).
+    static func pdfData(_ statement: PrintableStatement) -> Data? { pdf(statement) }
+
     static func pdf(_ view: some View, scale: CGFloat = 2) -> Data? {
         let renderer = ImageRenderer(content:
             view.padding(24).background(Color.white).frame(width: 560, alignment: .leading))
@@ -157,6 +175,17 @@ struct ReportPDFToolbar: ViewModifier {
                         exporting = true
                     }
                     .help("Export this report as a PDF")
+                }
+                ToolbarItem {
+                    // Share the report straight to Mail / Messages / AirDrop; the
+                    // PDF is only rendered when the share is actually performed.
+                    if let statement = makeDocument()?.printable {
+                        ShareLink(item: ShareableReportPDF(title: title, statement: statement),
+                                  preview: SharePreview("\(title).pdf")) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                        .help("Share this report as a PDF")
+                    }
                 }
             }
             .fileExporter(isPresented: $exporting, document: document,

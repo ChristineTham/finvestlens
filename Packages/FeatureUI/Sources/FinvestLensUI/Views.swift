@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import TipKit
 import UniformTypeIdentifiers
 import FinvestLensEngine
 import FinvestLensIntelligence
@@ -994,6 +995,7 @@ struct RegisterView: View {
         }
         .toggleStyle(.button)
         .help("Include this account’s subaccounts in the register")
+        .popoverTip(SubaccountsTip())
     }
 
     /// GnuCash's View ▸ Double Line: show each row's notes, memo and action

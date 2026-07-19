@@ -13,6 +13,7 @@
 //
 
 import SwiftUI
+import TipKit
 import FinvestLensEngine
 import FinvestLensInterchange
 import FinvestLensIntelligence
@@ -62,6 +63,7 @@ struct SmartImportSheet: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     Form {
+                        TipView(SmartImportTip())
                         ForEach($documents) { $document in
                             Section {
                                 SmartDocumentRow(model: model, document: $document,
