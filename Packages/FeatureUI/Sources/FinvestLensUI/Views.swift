@@ -53,6 +53,18 @@ enum MacFilePanel {
 }
 #endif
 
+extension View {
+    /// A checkbox toggle style on macOS; the platform default (a switch) on iOS,
+    /// where `.checkbox` is unavailable.
+    @ViewBuilder func checkboxToggleStyle() -> some View {
+        #if os(macOS)
+        toggleStyle(.checkbox)
+        #else
+        self
+        #endif
+    }
+}
+
 /// A GnuCash XML file for `.fileExporter` (export only).
 struct GnuCashFileDocument: FileDocument {
     static let contentType = UTType(filenameExtension: "gnucash") ?? .xml

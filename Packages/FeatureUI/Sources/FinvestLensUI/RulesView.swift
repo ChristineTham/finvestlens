@@ -97,7 +97,7 @@ struct RulesView: View {
                             set: { model.setRuleGroupActive(group.id, $0) })) {
                             Text(group.name)
                         }
-                        .toggleStyle(.checkbox)
+                        .checkboxToggleStyle()
                         Spacer()
                         Menu {
                             Button("Add Rule…") { editing = .new(groupID: group.id) }
@@ -131,7 +131,7 @@ struct RulesView: View {
                         .scaledFont(.caption).foregroundStyle(.secondary)
                 }
             }
-            .toggleStyle(.checkbox)
+            .checkboxToggleStyle()
             Spacer()
         }
         // A group that is off means none of its rules run, whatever their own

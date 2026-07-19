@@ -156,7 +156,7 @@ struct TaxOptionsView: View {
                 set: { model.setAccountTax(id: row.id, related: $0, code: row.taxCode) })) {
                     Text(row.name).scaledFont(.body)
                 }
-                .toggleStyle(.checkbox)
+                .checkboxToggleStyle()
             Spacer()
             if row.taxRelated {
                 TextField("Code", text: Binding(
