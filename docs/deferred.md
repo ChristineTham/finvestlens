@@ -33,6 +33,18 @@ Common workflows partly built; each is a bounded piece of work.
 | Item | FR / Phase | Notes |
 |---|---|---|
 | Rule actions tail | FR-RULE-01 / P4 | The engine now has an `account` trigger and set-tags / set-description / **allocate-to-goal** (`FR-GOAL-01`) actions. Remaining: **convert-type** (fuzzy in a double-entry model) and **link-to-bill** (needs bill-link infrastructure not yet built). |
+| GnuCash **credit-note** import | FR-BUS-01 / P7 | GnuCash stores a credit note as an invoice with a `credit-note` int64 in `<invoice:slots>`; we don't model credit notes, so such a document imports as an ordinary invoice with the **posting sign inverted** (A/R increased instead of reduced). A real fix is a feature — a credit-note flag on the invoice model, the posting-sign inversion, and UI — not just a parser change. Surfaced by the production review (2026-07-19). |
+
+## 2b — Production-readiness review tail (2026-07-19)
+
+Bounded items surfaced by the full-codebase review (commits `9021a2c`, `be63e62`).
+The review fixed every genuine correctness/data-loss bug; these were deferred as
+larger-than-a-fix or needing infrastructure that isn't built yet.
+
+| Item | FR / Phase | Notes |
+|---|---|---|
+| Load-time warning for non-canonical persisted data | NFR-05 / P1 | The SQLite load path defaults silently on unparseable data it never itself writes (`parseDecimal`→0, `parseKvp`→empty frame, `decodeAddress`→empty, GUID parse→random). Kept as resilience (open-what-you-can) — throwing would turn recoverable corruption into "can't open your book". The right fix is a **load-time warning channel** so these are surfaced rather than silent; that channel doesn't exist yet. |
+| GnuCash-XML round-trip fidelity tail | FR-XIO-01 / P7 | Two minor slots don't round-trip: an invoice entry's `entry:entered` timestamp is re-derived from `entry:date` (needs a separate `entered` field on `InvoiceEntry`), and a KVP `timespec` slot at exactly midnight re-exports as `gdate` (the `KvpValue` model maps both date types to one case). Negligible data impact; each needs a model change. |
 
 ## 3 — Apple Intelligence import caveats (monitor)
 
@@ -73,3 +85,17 @@ Not open work — recorded so they aren't re-raised as bugs. Detail in
   refresh spent on a full-tree rebuild is fast enough to feel instant; a
   subtree-only rebuild is a micro-optimization to do only if a future profile
   ever shows it matters.
+- **Local-time date bucketing** (production review, 2026-07-19) — reports and the
+  register bucket dates with `Calendar.current` throughout, an internally
+  consistent local-time convention. GnuCash files store dates in UTC, so an
+  imported day-only date can appear on the adjacent local day at a period edge;
+  aligning would be a project-wide canonical-timezone decision, not a local fix,
+  and changing only reports would be the regression.
+- **Quotes record the caller-specified currency** (production review) — a fetched
+  `Price` is stamped with the currency the caller asked for, not the provider's
+  reported `currencyCode` (which rides in `source` for provenance). Multi-currency
+  FX valuation is a higher layer by design.
+- **GnuCash-XML element text is whitespace-trimmed on import** (production review) —
+  leading/trailing whitespace in memos/descriptions/notes/names is dropped so XML
+  indentation can't leak into values; byte-for-byte text fidelity is sacrificed by
+  choice.
