@@ -13,6 +13,7 @@
 
 import WidgetKit
 import SwiftUI
+import AppIntents
 import FinvestLensShared
 
 // MARK: - Timeline
@@ -47,22 +48,39 @@ struct SnapshotProvider: TimelineProvider {
 // MARK: - Views
 
 struct NetWorthWidgetView: View {
+    @Environment(\.widgetFamily) private var family
     var entry: SnapshotEntry
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("Net Worth", systemImage: "chart.line.uptrend.xyaxis")
-                .font(.caption).foregroundStyle(.secondary)
-            Text(entry.snapshot.netWorth)
-                .font(.title2).fontWeight(.semibold)
-                .minimumScaleFactor(0.6).lineLimit(1)
-            Spacer(minLength: 0)
-            Text(entry.snapshot.upcomingBills)
-                .font(.caption2).foregroundStyle(.secondary)
-                .lineLimit(1).minimumScaleFactor(0.7)
+        switch family {
+        #if os(iOS)
+        case .accessoryInline:
+            // Lock Screen inline: a single glanceable line.
+            Label("Net Worth \(entry.snapshot.netWorth)", systemImage: "chart.line.uptrend.xyaxis")
+        case .accessoryRectangular:
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Net Worth").font(.caption2).foregroundStyle(.secondary)
+                Text(entry.snapshot.netWorth).font(.headline).minimumScaleFactor(0.6).lineLimit(1)
+                Text(entry.snapshot.upcomingBills).font(.caption2).foregroundStyle(.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+            .containerBackground(.clear, for: .widget)
+        #endif
+        default:
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Net Worth", systemImage: "chart.line.uptrend.xyaxis")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(entry.snapshot.netWorth)
+                    .font(.title2).fontWeight(.semibold)
+                    .minimumScaleFactor(0.6).lineLimit(1)
+                Spacer(minLength: 0)
+                Text(entry.snapshot.upcomingBills)
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .containerBackground(.fill.tertiary, for: .widget)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .containerBackground(.fill.tertiary, for: .widget)
     }
 }
 
@@ -113,7 +131,15 @@ struct NetWorthWidget: Widget {
         }
         .configurationDisplayName("Net Worth")
         .description("Your latest net worth and upcoming bills.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies(netWorthFamilies)
+    }
+
+    private var netWorthFamilies: [WidgetFamily] {
+        #if os(iOS)
+        [.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular, .accessoryInline]
+        #else
+        [.systemSmall, .systemMedium, .systemLarge]
+        #endif
     }
 }
 
@@ -126,7 +152,29 @@ struct AlertsWidget: Widget {
         }
         .configurationDisplayName("Alerts")
         .description("Bills due, over-budget spending and other alerts.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
+// MARK: - Control widget (Control Center / Lock Screen / Action button)
+
+/// Opens the app; the entry point for a one-tap Control-Center / menu-bar
+/// control. Deep routing to a specific screen can be added later.
+struct OpenFinvestLensIntent: AppIntent {
+    static let title: LocalizedStringResource = "Open FinvestLens"
+    static let openAppWhenRun = true
+    func perform() async throws -> some IntentResult { .result() }
+}
+
+struct OpenFinvestLensControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "FinvestLensOpenControl") {
+            ControlWidgetButton(action: OpenFinvestLensIntent()) {
+                Label("FinvestLens", systemImage: "australiandollarsign.circle")
+            }
+        }
+        .displayName("Open FinvestLens")
+        .description("Quickly open your book.")
     }
 }
 
@@ -135,5 +183,6 @@ struct FinvestLensWidgetBundle: WidgetBundle {
     var body: some Widget {
         NetWorthWidget()
         AlertsWidget()
+        OpenFinvestLensControl()
     }
 }
