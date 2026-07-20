@@ -382,7 +382,7 @@ public struct FinvestLensRootView: View {
             set: { if !$0 { model.editingTransactionID = nil } }
         )) {
             if let id = model.editingTransactionID {
-                TransactionEditorSheet(model: model, editingID: id)
+                TransactionEditorSheet(model: model, editingID: id, inInspector: true)
                     .id(id)
                     .inspectorColumnWidth(min: 340, ideal: 400, max: 560)
             }
@@ -1453,9 +1453,8 @@ struct JournalView: View {
                 TransactionActions(model: model, splitID: model.anySplitID(ofTransaction: row.transactionID))
             }
         }
-        .sheet(item: $model.editingTransactionID) { id in
-            TransactionEditorSheet(model: model, editingID: id)
-        }
+        // Editing an existing transaction is a trailing inspector (wired on the
+        // root split view), not a sheet — so nothing here for editingTransactionID.
         .sheet(item: $model.schedulingTransactionID) { id in
             ScheduleTransactionSheet(model: model, transactionID: id)
         }
@@ -2383,6 +2382,10 @@ struct EditableSplit: Identifiable {
 struct TransactionEditorSheet: View {
     @Bindable var model: AppModel
     var editingID: GncGUID?
+    /// True when hosted in the register's trailing inspector rather than a sheet:
+    /// closing then just clears the selection (collapsing the inspector) and must
+    /// NOT call `dismiss()`, which in that context would close the whole window.
+    var inInspector = false
     @Environment(\.dismiss) private var dismiss
 
     @State private var loaded = false
@@ -2669,12 +2672,13 @@ struct TransactionEditorSheet: View {
         }
     }
 
-    /// Closes the editor. Clearing the model's editing id also collapses the
-    /// register inspector (its binding tracks that id); `dismiss()` closes the
-    /// sheet presentations (new-transaction, journal, linked-docs).
+    /// Closes the editor. In the inspector, clearing the model's editing id
+    /// collapses the pane (its binding tracks that id) — and we must not call
+    /// `dismiss()`, which would dismiss the window scene. In a sheet, `dismiss()`
+    /// closes it.
     private func close() {
         model.editingTransactionID = nil
-        dismiss()
+        if !inInspector { dismiss() }
     }
 
     private func commit() {
