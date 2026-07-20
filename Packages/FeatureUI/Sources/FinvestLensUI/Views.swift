@@ -327,7 +327,11 @@ public struct FinvestLensRootView: View {
                 }
                 .help("Create a transaction or account")
                 Button("Reconcile", systemImage: "checkmark.seal") {
+                    #if os(macOS)
+                    if let id = model.selectedAccountID { openWindow(id: "reconcile", value: id) }
+                    #else
                     model.presentedPanel = .reconcile
+                    #endif
                 }
                 .help("Reconcile the selected account against a statement")
                 .disabled(model.selectedAccountID == nil)
@@ -838,6 +842,9 @@ struct DeleteAccountSheet: View {
 
 struct AccountsSidebar: View {
     @Bindable var model: AppModel
+    #if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+    #endif
     @State private var sheet: AccountSheet?
     @State private var filter = ""
     /// GnuCash's "show hidden accounts". `isHidden` has been settable, stored
@@ -970,7 +977,13 @@ struct AccountsSidebar: View {
         .accessibilityValue(AmountFormat.string(node.balance, code: node.currencyCode))
         .contextMenu {
             Button("Edit…") { sheet = .edit(node.id) }
-            Button("Reconcile…") { sheet = .reconcile(node.id) }
+            Button("Reconcile…") {
+                #if os(macOS)
+                openWindow(id: "reconcile", value: node.id)
+                #else
+                sheet = .reconcile(node.id)
+                #endif
+            }
             // Only where there is a subtree to cascade onto.
             if !(node.children ?? []).isEmpty {
                 Button("Cascade Properties…") { sheet = .cascade(node.id) }

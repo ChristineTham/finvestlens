@@ -24,6 +24,7 @@
 
 import SwiftUI
 import TipKit
+import FinvestLensEngine
 import FinvestLensUI
 
 #if os(macOS)
@@ -175,9 +176,15 @@ struct finvestlensApp: App {
                 Button("Import Bank File…") { model.bankImportRequested = true }
                     .keyboardShortcut("i", modifiers: [.command, .option])
                     .disabled(!model.isOpen)
-                Button("Reconcile Account…") { model.presentedPanel = .reconcile }
-                    .keyboardShortcut("r", modifiers: [.command, .shift])
-                    .disabled(!model.isOpen || model.selectedAccountID == nil)
+                Button("Reconcile Account…") {
+                    #if os(macOS)
+                    if let id = model.selectedAccountID { openWindow(id: "reconcile", value: id) }
+                    #else
+                    model.presentedPanel = .reconcile
+                    #endif
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(!model.isOpen || model.selectedAccountID == nil)
                 Divider()
                 // Inline, in the detail pane, like the dashboard — a detached
                 // window only when asked for (docs/reports.md).
@@ -266,6 +273,16 @@ struct finvestlensApp: App {
                 .finvestLensAppearance()
         }
         .defaultSize(width: 760, height: 560)
+
+        // Reconcile is a prolonged, multistep task — HIG says a dedicated window,
+        // not a sheet, so the account register stays visible behind it.
+        WindowGroup("Reconcile", id: "reconcile", for: GncGUID.self) { $accountID in
+            if let accountID {
+                ReconcileWindow(model: model, accountID: accountID)
+                    .finvestLensAppearance()
+            }
+        }
+        .defaultSize(width: 520, height: 480)
 
         Settings {
             FinvestLensSettingsView()

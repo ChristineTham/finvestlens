@@ -10,6 +10,21 @@ import SwiftUI
 import TipKit
 import FinvestLensEngine
 
+/// Public window host for the reconcile flow — a dedicated window (HIG: a
+/// prolonged multistep task isn't a sheet), so the account register stays
+/// visible in the main window behind it. Closing the window ends the flow.
+public struct ReconcileWindow: View {
+    @Bindable var model: AppModel
+    let accountID: GncGUID
+    public init(model: AppModel, accountID: GncGUID) {
+        self.model = model
+        self.accountID = accountID
+    }
+    public var body: some View {
+        ReconcileView(model: model, accountID: accountID)
+    }
+}
+
 /// The reconciliation workflow: enter a statement, tick off items until the
 /// difference is zero, then finish (`FR-REC-01`).
 struct ReconcileView: View {
