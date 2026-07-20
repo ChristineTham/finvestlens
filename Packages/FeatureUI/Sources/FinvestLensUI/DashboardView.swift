@@ -97,7 +97,10 @@ struct DashboardView: View {
     @ViewBuilder
     private func view(for panel: Panel, range: (from: Date, to: Date), portfolio: Portfolio?) -> some View {
         switch panel {
-        case .netWorth: netWorthCard(asOf: range.to)
+        // Net worth is a "right now" figure: cap the as-of at today so a period
+        // ending in the future (e.g. the current financial year) doesn't trail
+        // off into flat, dataless months.
+        case .netWorth: netWorthCard(asOf: min(range.to, Date()))
         case .incomeExpense: incomeExpenseCard(range)
         case .cashflow: cashflowCard(range)
         case .allocation: allocationCard(portfolio)
@@ -229,21 +232,40 @@ struct DashboardView: View {
 
     // MARK: Investment allocation
 
+    private struct AllocationSlice: Identifiable, Hashable {
+        var id: String { symbol }
+        let symbol: String
+        let value: Decimal
+    }
+
+    /// The largest `top` holdings by market value; everything else folded into a
+    /// single "Other" slice, so the donut and its legend stay legible for a book
+    /// that holds dozens of securities.
+    private func allocationSlices(_ portfolio: Portfolio?, top: Int = 8) -> [AllocationSlice] {
+        let valued = (portfolio?.holdings ?? [])
+            .filter { ($0.marketValue ?? 0) > 0 }
+            .sorted { ($0.marketValue ?? 0) > ($1.marketValue ?? 0) }
+        var slices = valued.prefix(top).map { AllocationSlice(symbol: $0.symbol, value: $0.marketValue ?? 0) }
+        let other = valued.dropFirst(top).reduce(Decimal(0)) { $0 + ($1.marketValue ?? 0) }
+        if other > 0 { slices.append(AllocationSlice(symbol: "Other", value: other)) }
+        return slices
+    }
+
     @ViewBuilder
     private func allocationCard(_ portfolio: Portfolio?) -> some View {
-        let holdings = (portfolio?.holdings ?? []).filter { ($0.marketValue ?? 0) > 0 }
+        let slices = allocationSlices(portfolio)
         Card("Allocation", systemImage: "chart.pie") {
-            if holdings.isEmpty {
+            if slices.isEmpty {
                 Text("No valued holdings.").scaledFont(.callout).foregroundStyle(.secondary)
             } else {
-                Chart(holdings) { holding in
-                    SectorMark(angle: .value("Value", asDouble(holding.marketValue ?? 0)),
+                Chart(slices) { slice in
+                    SectorMark(angle: .value("Value", asDouble(slice.value)),
                                innerRadius: .ratio(0.6), angularInset: 1.5)
                         .cornerRadius(3)
-                        .foregroundStyle(by: .value("Security", holding.symbol))
+                        .foregroundStyle(by: .value("Security", slice.symbol))
                 }
-                .frame(height: 200)
-                .accessibilityLabel("Investment allocation by security")
+                .frame(height: 240)
+                .accessibilityLabel("Investment allocation: top holdings by value")
             }
         }
     }
