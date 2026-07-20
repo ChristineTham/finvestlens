@@ -11,42 +11,114 @@ import Charts
 import FinvestLensEngine
 import FinvestLensReports
 
-/// The home dashboard: net-worth trend, alerts, balances, upcoming bills and
-/// budget status (`FR-PLAN-08`).
+/// The home dashboard: a responsive masonry of prioritised panels that fills the
+/// available width, all driven by one timescale selector (`FR-PLAN-08`). Narrow
+/// windows show the essentials; wider ones reveal more panels down the priority
+/// list. Investment panels appear only when the book holds securities.
 struct DashboardView: View {
     @Bindable var model: AppModel
 
+    /// The timescale that drives every panel. This financial year by default.
+    @State private var period: ReportPeriod = .currentFinancialYear
+
     private var code: String { model.reportCurrency.mnemonic }
 
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                netWorthCard
-                alertsCard
-                HStack(alignment: .top, spacing: 16) {
-                    accountsCard
-                    billsCard
-                }
-                budgetCard
+    /// Panels in priority order. `minColumns` is the layout width (in columns)
+    /// below which the panel is dropped — the essentials survive at one column.
+    private enum Panel: Hashable {
+        case netWorth, incomeExpense, cashflow, allocation, performance
+        case alerts, bills, accounts
+
+        var minColumns: Int {
+            switch self {
+            case .netWorth, .incomeExpense, .cashflow, .alerts: 1
+            case .allocation, .performance, .bills: 2
+            case .accounts: 3
             }
-            .padding(20)
-            .frame(maxWidth: 720, alignment: .leading)
-            .frame(maxWidth: .infinity)
+        }
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let columns = columnCount(for: geo.size.width)
+            let range = model.resolve(period)
+            let portfolio = model.portfolio(asOf: range.to)
+            ScrollView {
+                masonry(columns: columns, range: range, portfolio: portfolio)
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .top)
+            }
         }
         .navigationTitle("Dashboard")
+        .toolbar {
+            ToolbarItem {
+                PeriodSelector(model: model, period: $period)
+            }
+        }
+    }
+
+    private func columnCount(for width: CGFloat) -> Int {
+        max(1, min(3, Int(width / 380)))
+    }
+
+    /// The panels to show at `columns` columns: priority order, gated by
+    /// `minColumns` and by whether their data exists.
+    private func panels(columns: Int, portfolio: Portfolio?) -> [Panel] {
+        let hasInvestments = !(portfolio?.holdings.isEmpty ?? true)
+        let all: [Panel] = [.netWorth, .incomeExpense, .cashflow,
+                            .allocation, .performance, .alerts, .bills, .accounts]
+        return all.filter { panel in
+            guard panel.minColumns <= columns else { return false }
+            switch panel {
+            case .allocation, .performance: return hasInvestments
+            default: return true
+            }
+        }
+    }
+
+    /// Independent columns (masonry), so panels of different heights don't leave
+    /// the gaps a row-aligned grid would. Priority order is preserved down each
+    /// column via round-robin.
+    @ViewBuilder
+    private func masonry(columns: Int, range: (from: Date, to: Date), portfolio: Portfolio?) -> some View {
+        let shown = panels(columns: columns, portfolio: portfolio)
+        HStack(alignment: .top, spacing: 16) {
+            ForEach(0..<columns, id: \.self) { column in
+                VStack(spacing: 16) {
+                    ForEach(Array(shown.enumerated()).filter { $0.offset % columns == column }, id: \.element) { _, panel in
+                        view(for: panel, range: range, portfolio: portfolio)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func view(for panel: Panel, range: (from: Date, to: Date), portfolio: Portfolio?) -> some View {
+        switch panel {
+        case .netWorth: netWorthCard(asOf: range.to)
+        case .incomeExpense: incomeExpenseCard(range)
+        case .cashflow: cashflowCard(range)
+        case .allocation: allocationCard(portfolio)
+        case .performance: performanceCard(portfolio)
+        case .alerts: alertsCard
+        case .bills: billsCard
+        case .accounts: accountsCard
+        }
     }
 
     // MARK: Net worth
 
-    private var netWorthCard: some View {
-        let series = model.netWorthSeries(months: 12)
+    private func netWorthCard(asOf: Date) -> some View {
+        let series = model.netWorthSeries(months: 12, endingAt: asOf)
         let current = series.last?.netWorth ?? 0
         return Card("Net Worth", systemImage: "chart.line.uptrend.xyaxis") {
             Text(AmountFormat.string(current, code: code))
                 .scaledFont(.largeTitle, weight: .bold, design: .rounded).monospacedDigit()
                 .foregroundStyle(current < 0 ? .red : .primary)
                 .accessibilityLabel("Net worth")
-                .accessibilityValue(AmountFormat.string(current, code: code))
+                .accessibilityValue(AmountFormat.spoken(current, code: code))
             if series.count >= 2 {
                 Chart(series) { point in
                     AreaMark(x: .value("Month", point.date), y: .value("Net worth", asDouble(point.netWorth)))
@@ -56,6 +128,153 @@ struct DashboardView: View {
                 .frame(height: 120)
                 .chartXAxis { AxisMarks(values: .stride(by: .month, count: 3)) }
                 .accessibilityLabel("Net worth trend over the last 12 months")
+            }
+        }
+    }
+
+    // MARK: Income & loss by category
+
+    private func incomeExpenseCard(_ range: (from: Date, to: Date)) -> some View {
+        let breakdown = model.categoryBreakdown(from: range.from, to: range.to)
+        let net = (breakdown?.totalIncome ?? 0) - (breakdown?.totalExpenses ?? 0)
+        return Card("Income & Expenses", systemImage: "arrow.left.arrow.right") {
+            HStack(alignment: .firstTextBaseline) {
+                Text(net < 0 ? "Net loss" : "Net income").scaledFont(.callout).foregroundStyle(.secondary)
+                Spacer()
+                Text(AmountFormat.string(net, code: code))
+                    .scaledFont(.title2, weight: .semibold, design: .rounded).monospacedDigit()
+                    .foregroundStyle(net < 0 ? .red : .green)
+            }
+            if let breakdown, !(breakdown.incomeSlices.isEmpty && breakdown.expenseSlices.isEmpty) {
+                let rows = categoryRows(income: breakdown.incomeSlices, expense: breakdown.expenseSlices)
+                Chart(rows) { row in
+                    BarMark(x: .value("Amount", asDouble(row.amount)),
+                            y: .value("Category", row.name))
+                        .foregroundStyle(row.isIncome ? Color.green : Color.red)
+                }
+                .chartXAxis { AxisMarks(format: .currency(code: code).notation(.compactName)) }
+                .frame(height: CGFloat(rows.count) * 22 + 20)
+                .accessibilityLabel("Income and expenses by category for \(model.label(for: period))")
+            } else {
+                Text("No income or expenses in this period.")
+                    .scaledFont(.callout).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Top income (positive) and expense (negative) categories, largest first.
+    private func categoryRows(income: [ReportLine], expense: [ReportLine]) -> [CategoryRow] {
+        let inc = income.prefix(4).map { CategoryRow(name: $0.name, amount: $0.amount, isIncome: true) }
+        let exp = expense.prefix(5).map { CategoryRow(name: $0.name, amount: -$0.amount, isIncome: false) }
+        return Array(inc) + Array(exp)
+    }
+
+    private struct CategoryRow: Identifiable, Hashable {
+        var id: String { name }
+        let name: String
+        let amount: Decimal
+        let isIncome: Bool
+    }
+
+    // MARK: Cashflow vs budget / by month
+
+    @ViewBuilder
+    private func cashflowCard(_ range: (from: Date, to: Date)) -> some View {
+        if let budget = model.budgets.first {
+            let actuals = model.budgetActuals(budget)
+            Card("Cashflow vs Budget", systemImage: "chart.bar.doc.horizontal") {
+                if actuals.isEmpty {
+                    Text("No budget lines set.").scaledFont(.callout).foregroundStyle(.secondary)
+                } else {
+                    ForEach(actuals.prefix(6)) { actual in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(actual.accountName).lineLimit(1)
+                                Spacer()
+                                Text("\(AmountFormat.string(actual.actual, code: code)) / \(AmountFormat.string(actual.effectiveBudget, code: code))")
+                                    .scaledFont(.caption).monospacedDigit().foregroundStyle(.secondary)
+                            }
+                            ProgressView(value: min(1, max(0, actual.fractionUsed ?? 0)))
+                                .tint(actual.isOverBudget ? .red : .accentColor)
+                        }
+                    }
+                }
+            }
+        } else {
+            // No budget: the period's income-vs-expense flow, month by month.
+            let breakdown = model.categoryBreakdown(from: range.from, to: range.to)
+            Card("Cashflow", systemImage: "arrow.up.arrow.down") {
+                if let months = breakdown?.months, months.count >= 1 {
+                    Chart {
+                        ForEach(months) { flow in
+                            BarMark(x: .value("Month", flow.month, unit: .month),
+                                    y: .value("Income", asDouble(flow.income)))
+                                .foregroundStyle(Color.green)
+                                .position(by: .value("Kind", "Income"))
+                            BarMark(x: .value("Month", flow.month, unit: .month),
+                                    y: .value("Expenses", asDouble(flow.expenses)))
+                                .foregroundStyle(Color.red)
+                                .position(by: .value("Kind", "Expenses"))
+                        }
+                    }
+                    .chartYAxis { AxisMarks(format: .currency(code: code).notation(.compactName)) }
+                    .frame(height: 150)
+                    .accessibilityLabel("Monthly income and expenses for \(model.label(for: period))")
+                } else {
+                    Text("No cashflow in this period.").scaledFont(.callout).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    // MARK: Investment allocation
+
+    @ViewBuilder
+    private func allocationCard(_ portfolio: Portfolio?) -> some View {
+        let holdings = (portfolio?.holdings ?? []).filter { ($0.marketValue ?? 0) > 0 }
+        Card("Allocation", systemImage: "chart.pie") {
+            if holdings.isEmpty {
+                Text("No valued holdings.").scaledFont(.callout).foregroundStyle(.secondary)
+            } else {
+                Chart(holdings) { holding in
+                    SectorMark(angle: .value("Value", asDouble(holding.marketValue ?? 0)),
+                               innerRadius: .ratio(0.6), angularInset: 1.5)
+                        .cornerRadius(3)
+                        .foregroundStyle(by: .value("Security", holding.symbol))
+                }
+                .frame(height: 200)
+                .accessibilityLabel("Investment allocation by security")
+            }
+        }
+    }
+
+    // MARK: Investment performance by security
+
+    @ViewBuilder
+    private func performanceCard(_ portfolio: Portfolio?) -> some View {
+        let holdings = (portfolio?.holdings ?? []).filter { $0.gain != nil }
+            .sorted { ($0.gain ?? 0) > ($1.gain ?? 0) }
+        Card("Performance", systemImage: "chart.line.uptrend.xyaxis.circle") {
+            if holdings.isEmpty {
+                Text("No priced holdings to value.").scaledFont(.callout).foregroundStyle(.secondary)
+            } else {
+                ForEach(holdings) { holding in
+                    HStack {
+                        Text(holding.symbol).fontWeight(.medium)
+                        Spacer()
+                        if let fraction = holding.gainFraction {
+                            Text(fraction, format: .percent.precision(.fractionLength(1)))
+                                .scaledFont(.caption).monospacedDigit()
+                                .foregroundStyle((holding.gain ?? 0) < 0 ? .red : .green)
+                        }
+                        Text(AmountFormat.string(holding.gain ?? 0, code: code))
+                            .monospacedDigit()
+                            .foregroundStyle((holding.gain ?? 0) < 0 ? .red : .green)
+                            .frame(width: 90, alignment: .trailing)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(holding.symbol), \(AmountFormat.spoken(holding.gain ?? 0, code: code))")
+                }
             }
         }
     }
@@ -121,38 +340,11 @@ struct DashboardView: View {
             } else {
                 ForEach(Array(bills)) { bill in
                     HStack {
-                        Text(bill.name)
+                        Text(bill.name).lineLimit(1)
                         Spacer()
                         Text(bill.dueDate, format: .dateTime.month().day())
                             .scaledFont(.caption).foregroundStyle(.secondary)
                         Text(AmountFormat.string(bill.amount, code: code)).monospacedDigit()
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: Budget
-
-    @ViewBuilder
-    private var budgetCard: some View {
-        if let budget = model.budgets.first {
-            let actuals = model.budgetActuals(budget)
-            Card("Budget", systemImage: "chart.bar.doc.horizontal") {
-                if actuals.isEmpty {
-                    Text("No budget lines set.").scaledFont(.callout).foregroundStyle(.secondary)
-                } else {
-                    ForEach(actuals) { actual in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Text(actual.accountName)
-                                Spacer()
-                                Text("\(AmountFormat.string(actual.actual, code: code)) / \(AmountFormat.string(actual.effectiveBudget, code: code))")
-                                    .scaledFont(.caption).monospacedDigit().foregroundStyle(.secondary)
-                            }
-                            ProgressView(value: min(1, max(0, actual.fractionUsed ?? 0)))
-                                .tint(actual.isOverBudget ? .red : .accentColor)
-                        }
                     }
                 }
             }
