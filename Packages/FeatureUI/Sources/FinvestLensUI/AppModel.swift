@@ -215,6 +215,29 @@ public final class AppModel {
     @ObservationIgnored private var priceRowCache: [PriceRow]?
     @ObservationIgnored private var rateRowCache: [RateRow]?
 
+    /// Memoised results of the pure report functions (balance sheet, income
+    /// statement, portfolio, net-worth series…), keyed by a per-call signature.
+    /// The dashboard asks for several of these on every body pass, and its body
+    /// re-runs on every hover — without this, each hover recomputed a full-book
+    /// scan per panel. Dropped whenever the book changes (``derivedRevision``).
+    @ObservationIgnored private var reportCache: [String: Any] = [:]
+    @ObservationIgnored private var reportCacheRevision = -1
+
+    /// Returns the cached value for `key`, or computes and caches it. `nil`
+    /// results (no book) are not cached — they are cheap to recompute anyway.
+    /// The cache is a pure function of the book, so writing it from a getter must
+    /// not notify observers; ``derivedRevision`` is the redraw signal, not this.
+    func cachedReport<T>(_ key: String, compute: () -> T?) -> T? {
+        if reportCacheRevision != derivedRevision {
+            reportCache.removeAll(keepingCapacity: true)
+            reportCacheRevision = derivedRevision
+        }
+        if let hit = reportCache[key] as? T { return hit }
+        let value = compute()
+        if let value { reportCache[key] = value }
+        return value
+    }
+
     /// Fills both caches from **one** sort — the editor shows prices and rates
     /// together, and sorting 102,706 prices once per property would pay the
     /// dominant cost twice. The sorted array itself is not retained.

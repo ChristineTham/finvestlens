@@ -28,6 +28,13 @@ struct DashboardView: View {
 
     private var code: String { model.reportCurrency.mnemonic }
 
+    /// "As of now", pinned to the end of today so it is stable across a session:
+    /// `Date()` changes every call, which would defeat the report memo cache by
+    /// making every panel's cache key unique on each body pass.
+    private var todayCap: Date {
+        Calendar.current.startOfDay(for: Date()).addingTimeInterval(24 * 3600)
+    }
+
     private enum Panel: Hashable {
         case netWorth, income, expenses, cashflow, savingsRate, allocation, performance
         case spendingTrend, topMovers, goals, recentActivity, composition
@@ -46,7 +53,7 @@ struct DashboardView: View {
         let range = model.resolve(period)
         return GeometryReader { geo in
             let columns = columnCount(for: geo.size.width)
-            let portfolio = model.portfolio(asOf: min(range.to, Date()))
+            let portfolio = model.portfolio(asOf: min(range.to, todayCap))
             ScrollView {
                 masonry(columns: columns, range: range, portfolio: portfolio)
                     .padding(20)
@@ -99,7 +106,7 @@ struct DashboardView: View {
     @ViewBuilder
     private func view(for panel: Panel, range: (from: Date, to: Date), portfolio: Portfolio?) -> some View {
         switch panel {
-        case .netWorth: netWorthCard(asOf: min(range.to, Date()))
+        case .netWorth: netWorthCard(asOf: min(range.to, todayCap))
         case .income: incomeCard(range)
         case .expenses: expensesCard(range)
         case .cashflow: cashflowCard(range)
@@ -110,7 +117,7 @@ struct DashboardView: View {
         case .topMovers: topMoversCard(range)
         case .goals: goalsCard
         case .recentActivity: recentActivityCard
-        case .composition: compositionCard(asOf: min(range.to, Date()))
+        case .composition: compositionCard(asOf: min(range.to, todayCap))
         case .alerts: alertsCard
         case .bills: billsCard
         case .accounts: accountsCard
@@ -315,7 +322,7 @@ struct DashboardView: View {
     /// Values each holding at ~monthly points across the timescale (up to today)
     /// so the area shows each security's contribution over the period.
     private func computePerformance(_ range: (from: Date, to: Date)) async -> [PerfPoint] {
-        let end = min(range.to, Date())
+        let end = min(range.to, todayCap)
         let start = range.from == .distantPast ? end.addingTimeInterval(-365 * 86_400) : range.from
         guard end > start else { return [] }
         let samples = 12

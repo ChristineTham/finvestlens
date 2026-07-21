@@ -104,7 +104,9 @@ extension AppModel {
     /// The portfolio valuation over security accounts (`FR-RPT-02`).
     public func portfolio(asOf: Date = Date()) -> Portfolio? {
         guard let book, !securityCommodities.isEmpty else { return nil }
-        return FinancialReports.portfolio(book, currency: reportCurrency, asOf: asOf)
+        return cachedReport("pf:\(asOf.timeIntervalSinceReferenceDate)") {
+            FinancialReports.portfolio(book, currency: reportCurrency, asOf: asOf)
+        }
     }
 
     /// Realised capital gains and open lots under the selected cost-basis

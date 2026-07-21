@@ -20,12 +20,16 @@ extension AppModel {
 
     public func balanceSheet(asOf: Date = Date()) -> BalanceSheet? {
         guard let book else { return nil }
-        return FinancialReports.balanceSheet(book, asOf: asOf, currency: reportCurrency)
+        return cachedReport("bs:\(asOf.timeIntervalSinceReferenceDate)") {
+            FinancialReports.balanceSheet(book, asOf: asOf, currency: reportCurrency)
+        }
     }
 
     public func incomeStatement(from: Date, to: Date) -> IncomeStatement? {
         guard let book else { return nil }
-        return FinancialReports.incomeStatement(book, from: from, to: to, currency: reportCurrency)
+        return cachedReport("is:\(from.timeIntervalSinceReferenceDate):\(to.timeIntervalSinceReferenceDate)") {
+            FinancialReports.incomeStatement(book, from: from, to: to, currency: reportCurrency)
+        }
     }
 
     /// An account's postings over a period with a running balance (`FR-RPT-04`).
@@ -83,18 +87,22 @@ extension AppModel {
     /// Income and spending by category and by month (`FR-RPT-03`).
     public func categoryBreakdown(from: Date, to: Date) -> CategoryBreakdown? {
         guard let book else { return nil }
-        return FinancialReports.categoryBreakdown(book, from: from, to: to,
-                                                  currency: reportCurrency)
+        return cachedReport("cb:\(from.timeIntervalSinceReferenceDate):\(to.timeIntervalSinceReferenceDate)") {
+            FinancialReports.categoryBreakdown(book, from: from, to: to, currency: reportCurrency)
+        }
     }
 
     /// A monthly net-worth series across the last `months` months.
     public func netWorthSeries(months: Int = 12, endingAt end: Date = Date()) -> [NetWorthPoint] {
         guard let book else { return [] }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
-        let dates: [Date] = (0..<max(1, months)).reversed().compactMap {
-            calendar.date(byAdding: .month, value: -$0, to: end)
-        }
-        return FinancialReports.netWorthSeries(book, dates: dates, currency: reportCurrency)
+        return cachedReport("nws:\(months):\(end.timeIntervalSinceReferenceDate)") {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+            let dates: [Date] = (0..<max(1, months)).reversed().compactMap {
+                calendar.date(byAdding: .month, value: -$0, to: end)
+            }
+            let series = FinancialReports.netWorthSeries(book, dates: dates, currency: reportCurrency)
+            return series.isEmpty ? nil : series
+        } ?? []
     }
 }
