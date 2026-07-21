@@ -1444,12 +1444,23 @@ struct JournalView: View {
             .width(min: 90, ideal: 100)
             TableColumn("Transaction / Account") { row in
                 // Legs are indented under their heading, so the grouping still
-                // reads even though the rows are flat.
-                Text(row.text)
-                    .scaledFont(.body)
-                    .fontWeight(row.isHeading ? .medium : (row.isFocusAccount ? .semibold : .regular))
-                    .foregroundStyle(row.isHeading ? .primary : .secondary)
-                    .padding(.leading, row.isHeading ? 0 : 18 * appFontScale)
+                // reads even though the rows are flat. Notes (on headings) and
+                // action/memo (on legs) sit under the text — the journal styles
+                // are the detailed view, so they show unconditionally here
+                // (Basic keeps them behind its Double Line toggle).
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(row.text)
+                        .scaledFont(.body)
+                        .fontWeight(row.isHeading ? .medium : (row.isFocusAccount ? .semibold : .regular))
+                        .foregroundStyle(row.isHeading ? .primary : .secondary)
+                    if !row.detailLine.isEmpty {
+                        Text(row.detailLine)
+                            .scaledFont(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                .padding(.leading, row.isHeading ? 0 : 18 * appFontScale)
             }
             TableColumn("Amount") { row in
                 if let amount = row.amount {

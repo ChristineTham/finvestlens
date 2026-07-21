@@ -28,6 +28,27 @@ public struct JournalRow: Identifiable, Hashable, Sendable {
     public var currencyCode: String
     /// `true` when this leg posts to the register's focused account.
     public var isFocusAccount: Bool
+    /// The transaction's notes (headings only) — shown under the description in
+    /// the journal styles.
+    public var notes: String = ""
+    /// The split's memo (legs only) — shown under the account name.
+    public var memo: String = ""
+    /// The split's action (legs only) — GnuCash's per-leg Action field.
+    public var action: String = ""
+
+    /// The secondary detail line for this row: notes on a heading, action and
+    /// memo on a leg. Empty when there is nothing to say.
+    public var detailLine: String {
+        if isHeading { return notes }
+        let action = action.trimmingCharacters(in: .whitespaces)
+        let memo = memo.trimmingCharacters(in: .whitespaces)
+        switch (action.isEmpty, memo.isEmpty) {
+        case (false, false): return "\(action) · \(memo)"
+        case (false, true): return action
+        case (true, false): return memo
+        case (true, true): return ""
+        }
+    }
 }
 
 /// How the register presents transactions (`FR-REG-01`).
@@ -61,13 +82,15 @@ extension AppModel {
             rows.append(JournalRow(
                 id: txn.guid, transactionID: txn.guid, isHeading: true,
                 date: txn.datePosted, text: txn.transactionDescription,
-                amount: nil, currencyCode: txn.currency.mnemonic, isFocusAccount: false))
+                amount: nil, currencyCode: txn.currency.mnemonic, isFocusAccount: false,
+                notes: txn.notes))
             for split in txn.splits {
                 rows.append(JournalRow(
                     id: split.guid, transactionID: txn.guid, isHeading: false,
                     date: nil, text: split.account?.name ?? "—",
                     amount: split.value, currencyCode: txn.currency.mnemonic,
-                    isFocusAccount: focus != nil && split.account === focus))
+                    isFocusAccount: focus != nil && split.account === focus,
+                    memo: split.memo, action: split.action))
             }
         }
         journalRowCache[accountID] = rows
