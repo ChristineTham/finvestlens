@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import FinvestLensQuotes
 
 /// The Documents preferences: where linked documents (invoices, dividend
 /// statements) are stored and how relative links resolve — GnuCash calls
@@ -94,8 +95,94 @@ public struct FinvestLensSettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }
             AppearanceSettingsView()
                 .tabItem { Label("Appearance", systemImage: "paintpalette") }
+            PricingSettingsView()
+                .tabItem { Label("Pricing", systemImage: "chart.line.uptrend.xyaxis") }
             DocumentSettingsView()
                 .tabItem { Label("Documents", systemImage: "paperclip") }
         }
+    }
+}
+
+/// Price-provider API keys. Keys live in the system Keychain — app-wide and
+/// device-only, independent of any open book — so this pane owns its own store
+/// rather than needing the document model.
+public struct PricingSettingsView: View {
+    private let store = KeychainAPIKeyStore()
+    @State private var drafts: [QuoteProviderKind: String] = [:]
+    /// Whether a key is currently saved, cached so the Keychain isn't read on
+    /// every redraw.
+    @State private var present: [QuoteProviderKind: Bool] = [:]
+
+    public init() {}
+
+    public var body: some View {
+        Form {
+            Section {
+                Text("Some price providers need a free API key to fetch quotes. Keys are stored in your Keychain on this device only — never in the book file.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Providers") {
+                ForEach(QuoteProviderKind.allCases) { kind in
+                    if kind.requiresAPIKey {
+                        keyRow(kind)
+                    } else {
+                        LabeledContent(kind.displayName) {
+                            Text("No key required").foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(minWidth: 440, minHeight: 340)
+        .onAppear(perform: reload)
+    }
+
+    private func keyRow(_ kind: QuoteProviderKind) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(kind.displayName)
+                if present[kind] == true {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(.green).help("A key is saved")
+                }
+                Spacer()
+                if let url = kind.signupURL {
+                    Link("Get key", destination: url).font(.caption)
+                }
+            }
+            HStack {
+                SecureField("API key", text: Binding(
+                    get: { drafts[kind] ?? "" },
+                    set: { drafts[kind] = $0 }))
+                    .textFieldStyle(.roundedBorder)
+                Button("Save") { save(kind) }
+                    .disabled((drafts[kind] ?? "").isEmpty && present[kind] != true)
+                if present[kind] == true {
+                    Button("Clear", role: .destructive) { clear(kind) }
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func reload() {
+        for kind in QuoteProviderKind.allCases where kind.requiresAPIKey {
+            let key = store.key(for: kind)
+            drafts[kind] = key ?? ""
+            present[kind] = (key?.isEmpty == false)
+        }
+    }
+
+    private func save(_ kind: QuoteProviderKind) {
+        let value = drafts[kind]?.isEmpty == false ? drafts[kind] : nil
+        try? store.setKey(value, for: kind)
+        present[kind] = (value != nil)
+    }
+
+    private func clear(_ kind: QuoteProviderKind) {
+        try? store.setKey(nil, for: kind)
+        drafts[kind] = ""
+        present[kind] = false
     }
 }
