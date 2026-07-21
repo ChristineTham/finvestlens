@@ -148,6 +148,89 @@ extension AppModel {
             : .failure("Added \(added). Failed — " + failures.joined(separator: "; "))
     }
 
+    /// Brings **every** held security's price history up to date (`FR-INV-03e`):
+    /// for each, fetches daily history from the day after its most recent stored
+    /// price (or its first holding date when it has none) through today, adding
+    /// only dates not already present. Providers without history fall back to a
+    /// single latest quote. When this finishes, no security has a gap up to today.
+    public func updatePriceHistory(using kind: QuoteProviderKind) async {
+        let commodities = pricableSecurities
+        guard !commodities.isEmpty else {
+            quoteStatus = .failure("No securities to price.")
+            return
+        }
+        let service = service()
+        let calendar = Calendar.current
+        let today = Date()
+        let todayStart = calendar.startOfDay(for: today)
+
+        // The dates we already hold per commodity — built once, so a big price
+        // database isn't rescanned per security.
+        var existing: [Commodity: Set<Date>] = [:]
+        for price in book?.prices ?? [] {
+            existing[price.commodity, default: []].insert(calendar.startOfDay(for: price.date))
+        }
+
+        var toAdd: [Price] = []
+        var failures: [String] = []
+        var alreadyCurrent = 0
+
+        for (index, commodity) in commodities.enumerated() {
+            quoteStatus = .fetching("prices \(index + 1) of \(commodities.count) — \(commodity.mnemonic)")
+            let have = existing[commodity] ?? []
+            let start: Date
+            if let last = have.max() {
+                start = calendar.date(byAdding: .day, value: 1, to: last) ?? last
+            } else {
+                start = firstHoldingDate(for: commodity)
+                    ?? calendar.date(byAdding: .year, value: -5, to: today) ?? today
+            }
+            guard calendar.startOfDay(for: start) <= todayStart else { alreadyCurrent += 1; continue }
+
+            do {
+                let novel: [Price]
+                if kind.supportsHistory {
+                    novel = try await service.historicalPrices(
+                        for: commodity, in: reportCurrency, from: start, to: today, using: kind,
+                        symbolOverride: quoteSymbol(for: commodity))
+                        .filter { !have.contains(calendar.startOfDay(for: $0.date)) }
+                } else {
+                    // No history endpoint: at least bring the latest price current.
+                    let price = try await service.latestPrice(
+                        for: commodity, in: reportCurrency, using: kind,
+                        symbolOverride: quoteSymbol(for: commodity))
+                    novel = have.contains(calendar.startOfDay(for: price.date)) ? [] : [price]
+                }
+                if novel.isEmpty { alreadyCurrent += 1 } else { toAdd.append(contentsOf: novel) }
+            } catch {
+                failures.append("\(commodity.mnemonic): \(Self.describe(error))")
+            }
+        }
+
+        let added = toAdd.count
+        if added > 0 {
+            editingWholeBook(named: "Update Price History") {
+                for price in toAdd { book?.addPrice(price) }
+            }
+        }
+        if failures.isEmpty {
+            quoteStatus = .success(added)
+        } else {
+            quoteStatus = .failure("Added \(added). Failed — " + failures.joined(separator: "; "))
+        }
+    }
+
+    /// The earliest date any account denominated in `commodity` was posted to —
+    /// where a security with no prices yet should start its history.
+    private func firstHoldingDate(for commodity: Commodity) -> Date? {
+        guard let book else { return nil }
+        return book.accounts
+            .filter { $0.commodity == commodity }
+            .flatMap { book.splits(for: $0) }
+            .compactMap { $0.transaction?.datePosted }
+            .min()
+    }
+
     /// Backfills daily history for `commodity` over `[from, to]`, adding a price
     /// per observation (`FR-INV-03e`).
     public func backfillHistory(for commodity: Commodity, from: Date, to: Date,

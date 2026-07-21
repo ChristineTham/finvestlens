@@ -41,17 +41,17 @@ struct QuotesView: View {
     // MARK: Fetch
 
     private var fetchSection: some View {
-        Section("Fetch Prices") {
+        Section {
             Picker("Provider", selection: $selectedProvider) {
                 ForEach(model.availableProviders) { Text($0.displayName).tag($0) }
             }
             Button {
-                fetchLatest()
+                updatePrices()
             } label: {
                 if isFetching {
                     HStack { ProgressView().controlSize(.small); Text("Fetching…") }
                 } else {
-                    Label("Fetch Latest Prices", systemImage: "arrow.down.circle")
+                    Label("Update Prices to Today", systemImage: "arrow.down.circle")
                 }
             }
             .disabled(isFetching || model.pricableSecurities.isEmpty)
@@ -61,6 +61,10 @@ struct QuotesView: View {
                 set: { model.autoRefreshQuotes = $0 }))
 
             statusRow
+        } header: {
+            Text("Fetch Prices")
+        } footer: {
+            Text("Fills each security's price history from its last stored price through today, so every holding is current when the fetch finishes.")
         }
     }
 
@@ -133,11 +137,11 @@ struct QuotesView: View {
         }
     }
 
-    private func fetchLatest() {
+    private func updatePrices() {
         isFetching = true
         let provider = selectedProvider
         Task {
-            await model.fetchLatestQuotes(using: provider)
+            await model.updatePriceHistory(using: provider)
             isFetching = false
         }
     }
