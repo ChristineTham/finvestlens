@@ -25,6 +25,7 @@ extension AppModel {
         public var id: GncGUID { transactionID }
         public let transactionID: GncGUID
         public let date: Date
+        /// The transaction's current description (usually the raw bank narrative).
         public let transactionDescription: String
         public let currencyCode: String
         /// The categorised legs to post (in place of the uncategorised legs).
@@ -33,6 +34,17 @@ extension AppModel {
         public let templateDescription: String
         /// How closely the descriptions matched (0…1), for surfacing confidence.
         public let confidence: Double
+        /// The friendly description to rename the transaction to (the template's),
+        /// when the template is a cleaner label than the raw narrative. `nil`
+        /// leaves the description untouched.
+        public let newDescription: String?
+        /// The anchor (bank) legs whose memo should receive the raw narrative when
+        /// renaming, so the imported detail is preserved rather than lost.
+        public let anchorSplitIDs: [GncGUID]
+
+        /// What the transaction will read as after applying: the friendly rename
+        /// if any, else its current description.
+        public var displayDescription: String { newDescription ?? transactionDescription }
 
         public struct PlannedLeg: Sendable, Identifiable {
             public let id = UUID()
@@ -109,6 +121,18 @@ extension AppModel {
         editing(Array(touched), named: "Categorise Transactions") {
             for plan in validPlans {
                 guard let txn = book.transaction(with: plan.transactionID) else { continue }
+                // Rename to the friendly description, moving the raw narrative into
+                // the bank leg's memo (only when that memo is empty, so nothing the
+                // user typed is overwritten).
+                if let friendly = plan.newDescription, friendly != txn.transactionDescription {
+                    let narrative = txn.transactionDescription
+                    for id in plan.anchorSplitIDs {
+                        guard let split = book.split(with: id),
+                              split.memo.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+                        split.memo = narrative
+                    }
+                    txn.transactionDescription = friendly
+                }
                 for split in txn.splits where split.account?.isImbalanceOrOrphan ?? false {
                     txn.removeSplit(split)
                 }
@@ -174,12 +198,16 @@ extension AppModel {
         }
         guard let match = best else { return nil }
         return buildPlan(for: target, from: match.template.transaction,
-                         anchorAccounts: anchorAccounts, anchorValue: anchorValue,
+                         anchorSplits: anchorSplits, anchorAccounts: anchorAccounts,
+                         anchorValue: anchorValue, targetTokens: targetTokens,
+                         templateTokens: match.template.tokens,
                          confidence: match.score, book: book)
     }
 
     private func buildPlan(for target: Transaction, from template: Transaction,
-                           anchorAccounts: Set<GncGUID>, anchorValue: Decimal,
+                           anchorSplits: [Split], anchorAccounts: Set<GncGUID>,
+                           anchorValue: Decimal, targetTokens: Set<String>,
+                           templateTokens: Set<String>,
                            confidence: Double, book: Book) -> CategoryPlan? {
         let templateAnchor = template.splits.filter { anchorAccounts.contains($0.account?.guid ?? .random()) }
         let templateAnchorValue = templateAnchor.reduce(Decimal(0)) { $0 + $1.value }
@@ -210,11 +238,21 @@ extension AppModel {
                                                     value: leg.value + residual, memo: leg.memo)
         }
 
+        // Adopt the template's friendlier description when it is a distilled form
+        // of the raw narrative — its significant tokens are a strict subset of the
+        // target's (e.g. "Sydney Water" ⊂ "Direct Debit 651323 Sydney Water …").
+        // The raw narrative is then preserved in the bank leg's memo rather than
+        // discarded, matching how the user hand-categorises these.
+        let friendly = template.transactionDescription.trimmingCharacters(in: .whitespaces)
+        let newDescription: String? = (!friendly.isEmpty && templateTokens.isStrictSubset(of: targetTokens))
+            ? friendly : nil
+
         return CategoryPlan(
             transactionID: target.guid, date: target.datePosted,
             transactionDescription: target.transactionDescription,
             currencyCode: currency.mnemonic, legs: legs,
-            templateDescription: template.transactionDescription, confidence: confidence)
+            templateDescription: template.transactionDescription, confidence: confidence,
+            newDescription: newDescription, anchorSplitIDs: anchorSplits.map(\.guid))
     }
 
     // MARK: - Description similarity

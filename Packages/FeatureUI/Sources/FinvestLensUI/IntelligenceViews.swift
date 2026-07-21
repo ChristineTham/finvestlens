@@ -150,7 +150,11 @@ struct AutoCategorizeSheet: View {
                     Text(plan.date, format: .dateTime.year().month().day())
                         .foregroundStyle(.secondary)
                         .frame(width: dateWidth, alignment: .leading)
-                    Text(plan.transactionDescription).fontWeight(.medium)
+                    Text(plan.displayDescription).fontWeight(.medium)
+                }
+                if plan.newDescription != nil {
+                    Text("Renamed from “\(plan.transactionDescription)” (kept in memo)")
+                        .scaledFont(.caption).foregroundStyle(.tertiary)
                 }
                 ForEach(plan.legs) { leg in
                     HStack {
