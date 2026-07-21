@@ -109,6 +109,14 @@ extension AppModel {
         }
     }
 
+    /// The market unit price of the security in `accountID`, in the report
+    /// currency, nearest in time to `date` — the price series that drives a
+    /// holding's return regardless of how many shares were held then.
+    public func securityUnitPrice(accountID: GncGUID, on date: Date) -> Decimal? {
+        guard let book, let account = book.account(with: accountID) else { return nil }
+        return book.securityUnitValue(account.commodity, in: reportCurrency, on: date)
+    }
+
     /// Realised capital gains and open lots under the selected cost-basis
     /// method (`FR-RPT-03`).
     public func capitalGains(from: Date = .distantPast, to: Date = .distantFuture) -> CapitalGainsReport? {

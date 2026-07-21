@@ -303,52 +303,69 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: Investment performance over the timescale (stacked area, hover)
+    // MARK: Investment performance over the timescale (rebased return lines, hover)
 
+    /// One holding's (or the portfolio's) return at a sample date, rebased so the
+    /// start of the timescale reads 0%.
     struct PerfPoint: Identifiable, Hashable {
         let id = UUID()
         let date: Date
-        let symbol: String
-        let value: Double
-        let returnPct: Double?
+        let series: String       // security symbol, or "Portfolio"
+        let returnPct: Double     // fraction: 0.12 == +12%
+        let isPortfolio: Bool
     }
+    /// The date the cursor is over; the tooltip reads every series at that date.
     struct PerfHover: Equatable {
-        let symbol: String
-        let returnPct: Double?
-        let value: Double
+        let date: Date
         let at: CGPoint
     }
 
-    /// Values each holding at ~monthly points across the timescale (up to today)
-    /// so the area shows each security's contribution over the period.
+    private static let portfolioSeries = "Portfolio"
+
+    /// Each currently-held security's price return relative to the start of the
+    /// timescale (0% at the start), plus the value-weighted portfolio return in
+    /// which each holding's move contributes by its current weight. Driven purely
+    /// by price history, so it shows exactly how prices moved over the period.
     private func computePerformance(_ range: (from: Date, to: Date)) async -> [PerfPoint] {
         let end = min(range.to, todayCap)
         let start = range.from == .distantPast ? end.addingTimeInterval(-365 * 86_400) : range.from
-        guard end > start else { return [] }
-        let samples = 12
+        guard end > start, let endPf = model.portfolio(asOf: end) else { return [] }
+
+        // The basket: securities held now, each with a valid price at the start of
+        // the window (so a return can be rebased) — and their current weights.
+        struct Holding { let id: GncGUID; let symbol: String; let startPrice: Double; let weight: Double }
+        let totalEnd = endPf.holdings.reduce(0.0) { $0 + asDouble($1.marketValue ?? 0) }
+        guard totalEnd > 0 else { return [] }
+        let basket: [Holding] = endPf.holdings.compactMap { h in
+            guard (h.marketValue ?? 0) > 0,
+                  let sp = model.securityUnitPrice(accountID: h.id, on: start),
+                  sp > 0 else { return nil }
+            return Holding(id: h.id, symbol: h.symbol, startPrice: asDouble(sp),
+                           weight: asDouble(h.marketValue ?? 0) / totalEnd)
+        }
+        guard !basket.isEmpty else { return [] }
+
+        let samples = 26
         var points: [PerfPoint] = []
         for step in 0...samples {
             let fraction = Double(step) / Double(samples)
             let date = start.addingTimeInterval(end.timeIntervalSince(start) * fraction)
-            if let pf = model.portfolio(asOf: date) {
-                for holding in pf.holdings where (holding.marketValue ?? 0) > 0 {
-                    points.append(PerfPoint(date: date, symbol: holding.symbol,
-                                            value: asDouble(holding.marketValue ?? 0),
-                                            returnPct: holding.gainFraction))
-                }
+            var overall = 0.0
+            for h in basket {
+                guard let price = model.securityUnitPrice(accountID: h.id, on: date) else { continue }
+                let ret = asDouble(price) / h.startPrice - 1
+                points.append(PerfPoint(date: date, series: h.symbol, returnPct: ret, isPortfolio: false))
+                overall += h.weight * ret
             }
+            points.append(PerfPoint(date: date, series: Self.portfolioSeries,
+                                    returnPct: overall, isPortfolio: true))
             await Task.yield()
         }
         return points
     }
 
-    /// Stacking order (largest holdings at the bottom), so the hover band lookup
-    /// matches how the chart stacks the areas.
-    private var perfOrder: [String] {
-        let totals = Dictionary(grouping: perfSeries, by: \.symbol)
-            .mapValues { $0.map(\.value).max() ?? 0 }
-        return totals.sorted { $0.value > $1.value }.map(\.key)
-    }
+    private var perfHoldingPoints: [PerfPoint] { perfSeries.filter { !$0.isPortfolio } }
+    private var perfPortfolioPoints: [PerfPoint] { perfSeries.filter(\.isPortfolio) }
 
     @ViewBuilder
     private func performanceCard() -> some View {
@@ -357,23 +374,38 @@ struct DashboardView: View {
                 Text("No priced holdings to value over this period.")
                     .scaledFont(.callout).foregroundStyle(.secondary)
             } else {
-                Chart(perfSeries) { point in
-                    AreaMark(x: .value("Date", point.date),
-                             y: .value("Value", point.value))
-                        .foregroundStyle(by: .value("Security", point.symbol))
+                Chart {
+                    // Individual holdings: thin, de-emphasised — the divergence is
+                    // the story, identity comes from the hover tooltip.
+                    ForEach(perfHoldingPoints) { p in
+                        LineMark(x: .value("Date", p.date), y: .value("Return", p.returnPct),
+                                 series: .value("Security", p.series))
+                            .foregroundStyle(by: .value("Security", p.series))
+                            .lineStyle(StrokeStyle(lineWidth: 1))
+                            .opacity(0.45)
+                    }
+                    // The portfolio: bold, on top, in the foreground colour.
+                    ForEach(perfPortfolioPoints) { p in
+                        LineMark(x: .value("Date", p.date), y: .value("Return", p.returnPct),
+                                 series: .value("Series", Self.portfolioSeries))
+                            .foregroundStyle(.primary)
+                            .lineStyle(StrokeStyle(lineWidth: 3))
+                    }
+                    RuleMark(y: .value("Zero", 0)).foregroundStyle(.secondary.opacity(0.3))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
                 }
-                .chartForegroundStyleScale(domain: perfOrder)
                 .chartLegend(.hidden)
-                .chartYAxis { AxisMarks(format: .currency(code: code).notation(.compactName)) }
+                .chartYAxis { AxisMarks(format: FloatingPointFormatStyle<Double>.Percent.percent.precision(.fractionLength(0))) }
                 .frame(height: 220)
                 .chartOverlay { proxy in perfHoverOverlay(proxy) }
                 .overlay(alignment: .topLeading) {
                     if let perfHover {
-                        perfTooltip(perfHover)
-                            .offset(x: perfHover.at.x + 8, y: perfHover.at.y - 8)
+                        perfTooltip(at: perfHover.date)
+                            .fixedSize()
+                            .offset(x: min(perfHover.at.x + 8, 40), y: 8)
                     }
                 }
-                .accessibilityLabel("Each holding's value over \(model.label(for: period)); hover for its return")
+                .accessibilityLabel("Each holding's return over \(model.label(for: period)), rebased to the start; hover for all holdings and the portfolio")
             }
         }
     }
@@ -383,52 +415,58 @@ struct DashboardView: View {
             Rectangle().fill(.clear).contentShape(Rectangle())
                 .onContinuousHover { phase in
                     guard case let .active(location) = phase,
-                          let frame = proxy.plotFrame.map({ geo[$0] }) else {
+                          let frame = proxy.plotFrame.map({ geo[$0] }),
+                          let date: Date = proxy.value(atX: location.x - frame.minX),
+                          let nearest = nearestPerfDate(to: date) else {
                         perfHover = nil
                         return
                     }
-                    let x = location.x - frame.minX
-                    let y = location.y - frame.minY
-                    guard let date: Date = proxy.value(atX: x),
-                          let yValue: Double = proxy.value(atY: y) else { perfHover = nil; return }
-                    perfHover = band(at: date, yValue: yValue, location: location)
+                    perfHover = PerfHover(date: nearest, at: location)
                 }
         }
     }
 
-    /// The stacked band the cursor is over: at the nearest sampled date, walk
-    /// holdings in stacking order accumulating value until the cursor's y falls
-    /// inside a band.
-    private func band(at date: Date, yValue: Double, location: CGPoint) -> PerfHover? {
-        guard yValue >= 0 else { return nil }
-        let dates = Set(perfSeries.map(\.date))
-        guard let nearest = dates.min(by: { abs($0.timeIntervalSince(date)) < abs($1.timeIntervalSince(date)) })
-        else { return nil }
-        var cumulative = 0.0
-        for symbol in perfOrder {
-            guard let point = perfSeries.first(where: { $0.date == nearest && $0.symbol == symbol }) else { continue }
-            if yValue >= cumulative && yValue < cumulative + point.value {
-                return PerfHover(symbol: symbol, returnPct: point.returnPct, value: point.value, at: location)
-            }
-            cumulative += point.value
-        }
-        return nil
+    private func nearestPerfDate(to date: Date) -> Date? {
+        Set(perfSeries.map(\.date))
+            .min { abs($0.timeIntervalSince(date)) < abs($1.timeIntervalSince(date)) }
     }
 
-    private func perfTooltip(_ hover: PerfHover) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(hover.symbol).fontWeight(.semibold)
-            if let pct = hover.returnPct {
-                Text(pct, format: .percent.precision(.fractionLength(1)))
-                    .foregroundStyle(pct < 0 ? .red : .green)
+    /// Every series' return at the hovered date: the portfolio first (bold), then
+    /// each holding sorted best-to-worst.
+    private func perfTooltip(at date: Date) -> some View {
+        let atDate = perfSeries.filter { $0.date == date }
+        let portfolio = atDate.first(where: \.isPortfolio)
+        let holdings = atDate.filter { !$0.isPortfolio }.sorted { $0.returnPct > $1.returnPct }
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(date, format: .dateTime.year().month().day())
+                .scaledFont(.caption2).foregroundStyle(.secondary)
+            if let portfolio {
+                perfRow(name: "Portfolio", pct: portfolio.returnPct, bold: true)
             }
-            Text(AmountFormat.string(Decimal(hover.value), code: code)).monospacedDigit()
+            Divider()
+            let columns = holdings.count > 12 ? 2 : 1
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: columns),
+                      alignment: .leading, spacing: 1) {
+                ForEach(holdings) { p in perfRow(name: p.series, pct: p.returnPct, bold: false) }
+            }
         }
-        .scaledFont(.caption)
-        .padding(6)
-        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 6))
-        .shadow(radius: 3)
+        .scaledFont(.caption2)
+        .padding(8)
+        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .shadow(radius: 4)
         .allowsHitTesting(false)
+    }
+
+    private func perfRow(name: String, pct: Double, bold: Bool) -> some View {
+        HStack(spacing: 6) {
+            Text(name).fontWeight(bold ? .bold : .regular)
+            Spacer(minLength: 8)
+            Text(pct, format: .percent.precision(.fractionLength(1)))
+                .fontWeight(bold ? .bold : .regular)
+                .monospacedDigit()
+                .foregroundStyle(pct < 0 ? .red : .green)
+        }
+        .frame(minWidth: 96)
     }
 
     // MARK: Savings rate

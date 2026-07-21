@@ -70,8 +70,8 @@ public extension Book {
     /// The value of one unit of a security `commodity` in `currency`, priced
     /// directly when possible, otherwise via its quote currency and an FX hop
     /// (`FR-CUR-04`). Returns `nil` when neither path is available.
-    func securityUnitValue(_ commodity: Commodity, in currency: Commodity,
-                           on date: Date? = nil) -> Decimal? {
+    public func securityUnitValue(_ commodity: Commodity, in currency: Commodity,
+                                  on date: Date? = nil) -> Decimal? {
         if let direct = nearestPrice(of: commodity, in: currency, on: date) {
             return direct.value
         }
