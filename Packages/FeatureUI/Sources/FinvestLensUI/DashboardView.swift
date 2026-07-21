@@ -29,14 +29,15 @@ struct DashboardView: View {
     private var code: String { model.reportCurrency.mnemonic }
 
     private enum Panel: Hashable {
-        case netWorth, income, expenses, cashflow, allocation, performance
+        case netWorth, income, expenses, cashflow, savingsRate, allocation, performance
+        case spendingTrend, topMovers, goals, recentActivity, composition
         case alerts, bills, accounts
 
         var minColumns: Int {
             switch self {
-            case .netWorth, .income, .expenses, .cashflow, .alerts: 1
-            case .allocation, .performance, .bills: 2
-            case .accounts: 3
+            case .netWorth, .income, .expenses, .cashflow, .savingsRate, .alerts: 1
+            case .allocation, .performance, .spendingTrend, .topMovers, .goals, .recentActivity, .bills: 2
+            case .composition, .accounts: 3
             }
         }
     }
@@ -67,12 +68,14 @@ struct DashboardView: View {
 
     private func panels(columns: Int, portfolio: Portfolio?) -> [Panel] {
         let hasInvestments = !(portfolio?.holdings.isEmpty ?? true)
-        let all: [Panel] = [.netWorth, .income, .expenses, .cashflow,
-                            .allocation, .performance, .alerts, .bills, .accounts]
+        let all: [Panel] = [.netWorth, .income, .expenses, .cashflow, .savingsRate,
+                            .allocation, .performance, .spendingTrend, .topMovers,
+                            .goals, .recentActivity, .composition, .alerts, .bills, .accounts]
         return all.filter { panel in
             guard panel.minColumns <= columns else { return false }
             switch panel {
             case .allocation, .performance: return hasInvestments
+            case .goals: return !model.savingsGoals.isEmpty
             default: return true
             }
         }
@@ -100,8 +103,14 @@ struct DashboardView: View {
         case .income: incomeCard(range)
         case .expenses: expensesCard(range)
         case .cashflow: cashflowCard(range)
+        case .savingsRate: savingsRateCard(range)
         case .allocation: allocationCard(portfolio)
         case .performance: performanceCard()
+        case .spendingTrend: spendingTrendCard(range)
+        case .topMovers: topMoversCard(range)
+        case .goals: goalsCard
+        case .recentActivity: recentActivityCard
+        case .composition: compositionCard(asOf: min(range.to, Date()))
         case .alerts: alertsCard
         case .bills: billsCard
         case .accounts: accountsCard
@@ -413,6 +422,163 @@ struct DashboardView: View {
         .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 6))
         .shadow(radius: 3)
         .allowsHitTesting(false)
+    }
+
+    // MARK: Savings rate
+
+    private func savingsRateCard(_ range: (from: Date, to: Date)) -> some View {
+        let statement = model.incomeStatement(from: range.from, to: range.to)
+        let income = statement?.totalIncome ?? 0
+        let net = statement?.netIncome ?? 0
+        let rate = income > 0 ? asDouble(net) / asDouble(income) : 0
+        return Card("Savings Rate", systemImage: "percent") {
+            if income <= 0 {
+                Text("No income in this period.").scaledFont(.callout).foregroundStyle(.secondary)
+            } else {
+                Gauge(value: max(0, min(1, rate))) {
+                    EmptyView()
+                } currentValueLabel: {
+                    Text(rate, format: .percent.precision(.fractionLength(0)))
+                        .foregroundStyle(rate < 0 ? .red : .primary)
+                }
+                .gaugeStyle(.accessoryCircularCapacity)
+                .tint(rate < 0 ? .red : .green)
+                .frame(maxWidth: .infinity)
+                Text("Kept \(AmountFormat.string(net, code: code)) of \(AmountFormat.string(income, code: code))")
+                    .scaledFont(.caption).foregroundStyle(.secondary).monospacedDigit()
+            }
+        }
+    }
+
+    // MARK: Spending trend
+
+    private func spendingTrendCard(_ range: (from: Date, to: Date)) -> some View {
+        let months = model.categoryBreakdown(from: range.from, to: range.to)?.months ?? []
+        let average = months.isEmpty ? Decimal(0)
+            : months.reduce(Decimal(0)) { $0 + $1.expenses } / Decimal(months.count)
+        return Card("Spending Trend", systemImage: "chart.xyaxis.line") {
+            if months.count < 2 {
+                Text("Not enough data to trend.").scaledFont(.callout).foregroundStyle(.secondary)
+            } else {
+                Chart {
+                    ForEach(months) { flow in
+                        BarMark(x: .value("Month", flow.month, unit: .month),
+                                y: .value("Spent", asDouble(flow.expenses)))
+                            .foregroundStyle(Color.red.opacity(0.7))
+                    }
+                    RuleMark(y: .value("Average", asDouble(average)))
+                        .foregroundStyle(.secondary)
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4]))
+                        .annotation(position: .top, alignment: .leading) {
+                            Text("avg \(AmountFormat.string(average, code: code))")
+                                .scaledFont(.caption2).foregroundStyle(.secondary)
+                        }
+                }
+                .chartYAxis { AxisMarks(format: .currency(code: code).notation(.compactName)) }
+                .frame(height: 150)
+                .accessibilityLabel("Monthly spending versus the period average")
+            }
+        }
+    }
+
+    // MARK: Top movers
+
+    private func topMoversCard(_ range: (from: Date, to: Date)) -> some View {
+        let statement = model.incomeStatement(from: range.from, to: range.to)
+        let income = (statement?.income ?? []).sorted { $0.amount > $1.amount }.prefix(3)
+        let expenses = (statement?.expenses ?? []).sorted { $0.amount > $1.amount }.prefix(4)
+        return Card("Top Movers", systemImage: "arrow.up.arrow.down.circle") {
+            if income.isEmpty && expenses.isEmpty {
+                Text("No activity in this period.").scaledFont(.callout).foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(income)) { line in moverRow(line.name, line.amount, isIncome: true) }
+                ForEach(Array(expenses)) { line in moverRow(line.name, line.amount, isIncome: false) }
+            }
+        }
+    }
+
+    private func moverRow(_ name: String, _ amount: Decimal, isIncome: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: isIncome ? "arrow.down.left" : "arrow.up.right")
+                .foregroundStyle(isIncome ? .green : .red).imageScale(.small)
+            Text(name).lineLimit(1)
+            Spacer()
+            Text(AmountFormat.string(amount, code: code))
+                .monospacedDigit().foregroundStyle(isIncome ? .green : .primary)
+        }
+    }
+
+    // MARK: Savings goals
+
+    private var goalsCard: some View {
+        Card("Savings Goals", systemImage: "target") {
+            ForEach(model.savingsGoals) { goal in
+                let fraction = goal.targetAmount > 0
+                    ? asDouble(goal.savedAmount) / asDouble(goal.targetAmount) : 0
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(goal.name).lineLimit(1)
+                        Spacer()
+                        Text("\(AmountFormat.string(goal.savedAmount, code: code)) / \(AmountFormat.string(goal.targetAmount, code: code))")
+                            .scaledFont(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    ProgressView(value: min(1, max(0, fraction)))
+                        .tint(fraction >= 1 ? .green : .accentColor)
+                }
+            }
+        }
+    }
+
+    // MARK: Recent activity
+
+    private var recentActivityCard: some View {
+        let recent = model.journalRows(forAccountID: nil)
+            .filter { $0.isHeading && $0.date != nil }
+            .sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+            .prefix(7)
+        return Card("Recent Activity", systemImage: "clock") {
+            if recent.isEmpty {
+                Text("No transactions yet.").scaledFont(.callout).foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(recent)) { row in
+                    HStack(spacing: 8) {
+                        Text(row.date ?? Date(), format: .dateTime.month().day())
+                            .scaledFont(.caption).foregroundStyle(.secondary)
+                            .frame(width: 52, alignment: .leading)
+                        Text(row.text.isEmpty ? "—" : row.text).lineLimit(1)
+                        Spacer()
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Net worth composition
+
+    private func compositionCard(asOf: Date) -> some View {
+        let sheet = model.balanceSheet(asOf: asOf)
+        return Card("Net Worth Composition", systemImage: "chart.bar.fill") {
+            if let sheet {
+                let rows: [(String, Decimal, Color)] = [
+                    ("Assets", sheet.totalAssets, .green),
+                    ("Liabilities", sheet.totalLiabilities, .red),
+                    ("Equity", sheet.totalEquity, .blue),
+                ]
+                Chart(rows, id: \.0) { row in
+                    BarMark(x: .value("Amount", asDouble(row.1)), y: .value("Kind", row.0))
+                        .foregroundStyle(row.2)
+                        .annotation(position: .trailing, alignment: .leading) {
+                            Text(AmountFormat.string(row.1, code: code))
+                                .scaledFont(.caption2).monospacedDigit().foregroundStyle(.secondary)
+                        }
+                }
+                .chartXAxis { AxisMarks(format: .currency(code: code).notation(.compactName)) }
+                .frame(height: 130)
+                .accessibilityLabel("Assets, liabilities and equity")
+            } else {
+                Text("No data.").scaledFont(.callout).foregroundStyle(.secondary)
+            }
+        }
     }
 
     // MARK: Alerts
