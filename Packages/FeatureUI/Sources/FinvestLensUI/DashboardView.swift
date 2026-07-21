@@ -20,18 +20,21 @@ struct DashboardView: View {
 
     /// The timescale that drives every panel. This financial year by default.
     @State private var period: ReportPeriod = .currentFinancialYear
+    /// Selected sector value for the allocation donut's hover tooltip.
+    @State private var allocationValue: Double?
+    /// Per-holding value over the timescale, for the performance area.
+    @State private var perfSeries: [PerfPoint] = []
+    @State private var perfHover: PerfHover?
 
     private var code: String { model.reportCurrency.mnemonic }
 
-    /// Panels in priority order. `minColumns` is the layout width (in columns)
-    /// below which the panel is dropped — the essentials survive at one column.
     private enum Panel: Hashable {
-        case netWorth, incomeExpense, cashflow, allocation, performance
+        case netWorth, income, expenses, cashflow, allocation, performance
         case alerts, bills, accounts
 
         var minColumns: Int {
             switch self {
-            case .netWorth, .incomeExpense, .cashflow, .alerts: 1
+            case .netWorth, .income, .expenses, .cashflow, .alerts: 1
             case .allocation, .performance, .bills: 2
             case .accounts: 3
             }
@@ -39,10 +42,10 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
+        let range = model.resolve(period)
+        return GeometryReader { geo in
             let columns = columnCount(for: geo.size.width)
-            let range = model.resolve(period)
-            let portfolio = model.portfolio(asOf: range.to)
+            let portfolio = model.portfolio(asOf: min(range.to, Date()))
             ScrollView {
                 masonry(columns: columns, range: range, portfolio: portfolio)
                     .padding(20)
@@ -51,9 +54,10 @@ struct DashboardView: View {
         }
         .navigationTitle("Dashboard")
         .toolbar {
-            ToolbarItem {
-                PeriodSelector(model: model, period: $period)
-            }
+            ToolbarItem { PeriodSelector(model: model, period: $period) }
+        }
+        .task(id: RangeKey(from: range.from, to: range.to)) {
+            perfSeries = await computePerformance(range)
         }
     }
 
@@ -61,11 +65,9 @@ struct DashboardView: View {
         max(1, min(3, Int(width / 380)))
     }
 
-    /// The panels to show at `columns` columns: priority order, gated by
-    /// `minColumns` and by whether their data exists.
     private func panels(columns: Int, portfolio: Portfolio?) -> [Panel] {
         let hasInvestments = !(portfolio?.holdings.isEmpty ?? true)
-        let all: [Panel] = [.netWorth, .incomeExpense, .cashflow,
+        let all: [Panel] = [.netWorth, .income, .expenses, .cashflow,
                             .allocation, .performance, .alerts, .bills, .accounts]
         return all.filter { panel in
             guard panel.minColumns <= columns else { return false }
@@ -76,9 +78,6 @@ struct DashboardView: View {
         }
     }
 
-    /// Independent columns (masonry), so panels of different heights don't leave
-    /// the gaps a row-aligned grid would. Priority order is preserved down each
-    /// column via round-robin.
     @ViewBuilder
     private func masonry(columns: Int, range: (from: Date, to: Date), portfolio: Portfolio?) -> some View {
         let shown = panels(columns: columns, portfolio: portfolio)
@@ -97,14 +96,12 @@ struct DashboardView: View {
     @ViewBuilder
     private func view(for panel: Panel, range: (from: Date, to: Date), portfolio: Portfolio?) -> some View {
         switch panel {
-        // Net worth is a "right now" figure: cap the as-of at today so a period
-        // ending in the future (e.g. the current financial year) doesn't trail
-        // off into flat, dataless months.
         case .netWorth: netWorthCard(asOf: min(range.to, Date()))
-        case .incomeExpense: incomeExpenseCard(range)
+        case .income: incomeCard(range)
+        case .expenses: expensesCard(range)
         case .cashflow: cashflowCard(range)
         case .allocation: allocationCard(portfolio)
-        case .performance: performanceCard(portfolio)
+        case .performance: performanceCard()
         case .alerts: alertsCard
         case .bills: billsCard
         case .accounts: accountsCard
@@ -135,48 +132,47 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: Income & loss by category
+    // MARK: Income & Expense treemaps
 
-    private func incomeExpenseCard(_ range: (from: Date, to: Date)) -> some View {
-        let breakdown = model.categoryBreakdown(from: range.from, to: range.to)
-        let net = (breakdown?.totalIncome ?? 0) - (breakdown?.totalExpenses ?? 0)
-        return Card("Income & Expenses", systemImage: "arrow.left.arrow.right") {
-            HStack(alignment: .firstTextBaseline) {
-                Text(net < 0 ? "Net loss" : "Net income").scaledFont(.callout).foregroundStyle(.secondary)
-                Spacer()
-                Text(AmountFormat.string(net, code: code))
-                    .scaledFont(.title2, weight: .semibold, design: .rounded).monospacedDigit()
-                    .foregroundStyle(net < 0 ? .red : .green)
+    private func incomeCard(_ range: (from: Date, to: Date)) -> some View {
+        let statement = model.incomeStatement(from: range.from, to: range.to)
+        return treemapCard(title: "Income", systemImage: "arrow.down.circle",
+                           lines: statement?.income ?? [], total: statement?.totalIncome ?? 0,
+                           empty: "No income in this period.")
+    }
+
+    private func expensesCard(_ range: (from: Date, to: Date)) -> some View {
+        let statement = model.incomeStatement(from: range.from, to: range.to)
+        return treemapCard(title: "Expenses", systemImage: "arrow.up.circle",
+                           lines: statement?.expenses ?? [], total: statement?.totalExpenses ?? 0,
+                           empty: "No expenses in this period.")
+    }
+
+    private func treemapCard(title: String, systemImage: String,
+                             lines: [ReportLine], total: Decimal, empty: String) -> some View {
+        let items = lines
+            .filter { $0.amount > 0 }
+            .sorted { $0.amount > $1.amount }
+            .map { line in
+                TreemapItem(id: line.id.hexString, name: line.name,
+                            value: asDouble(line.amount),
+                            detail: AmountFormat.string(line.amount, code: code))
             }
-            if let breakdown, !(breakdown.incomeSlices.isEmpty && breakdown.expenseSlices.isEmpty) {
-                let rows = categoryRows(income: breakdown.incomeSlices, expense: breakdown.expenseSlices)
-                Chart(rows) { row in
-                    BarMark(x: .value("Amount", asDouble(row.amount)),
-                            y: .value("Category", row.name))
-                        .foregroundStyle(row.isIncome ? Color.green : Color.red)
-                }
-                .chartXAxis { AxisMarks(format: .currency(code: code).notation(.compactName)) }
-                .frame(height: CGFloat(rows.count) * 22 + 20)
-                .accessibilityLabel("Income and expenses by category for \(model.label(for: period))")
+        return Card(title, systemImage: systemImage) {
+            HStack {
+                Text("Total").scaledFont(.callout).foregroundStyle(.secondary)
+                Spacer()
+                Text(AmountFormat.string(total, code: code))
+                    .scaledFont(.title3, weight: .semibold, design: .rounded).monospacedDigit()
+            }
+            if items.isEmpty {
+                Text(empty).scaledFont(.callout).foregroundStyle(.secondary)
             } else {
-                Text("No income or expenses in this period.")
-                    .scaledFont(.callout).foregroundStyle(.secondary)
+                Treemap(items: items)
+                    .frame(height: 220)
+                    .accessibilityLabel("\(title) by account for \(model.label(for: period))")
             }
         }
-    }
-
-    /// Top income (positive) and expense (negative) categories, largest first.
-    private func categoryRows(income: [ReportLine], expense: [ReportLine]) -> [CategoryRow] {
-        let inc = income.prefix(4).map { CategoryRow(name: $0.name, amount: $0.amount, isIncome: true) }
-        let exp = expense.prefix(5).map { CategoryRow(name: $0.name, amount: -$0.amount, isIncome: false) }
-        return Array(inc) + Array(exp)
-    }
-
-    private struct CategoryRow: Identifiable, Hashable {
-        var id: String { name }
-        let name: String
-        let amount: Decimal
-        let isIncome: Bool
     }
 
     // MARK: Cashflow vs budget / by month
@@ -204,10 +200,9 @@ struct DashboardView: View {
                 }
             }
         } else {
-            // No budget: the period's income-vs-expense flow, month by month.
             let breakdown = model.categoryBreakdown(from: range.from, to: range.to)
             Card("Cashflow", systemImage: "arrow.up.arrow.down") {
-                if let months = breakdown?.months, months.count >= 1 {
+                if let months = breakdown?.months, !months.isEmpty {
                     Chart {
                         ForEach(months) { flow in
                             BarMark(x: .value("Month", flow.month, unit: .month),
@@ -230,75 +225,194 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: Investment allocation
+    // MARK: Investment allocation (all holdings, hover for detail)
 
     private struct AllocationSlice: Identifiable, Hashable {
         var id: String { symbol }
         let symbol: String
         let value: Decimal
+        let start: Double   // cumulative value where this slice begins
     }
 
-    /// The largest `top` holdings by market value; everything else folded into a
-    /// single "Other" slice, so the donut and its legend stay legible for a book
-    /// that holds dozens of securities.
-    private func allocationSlices(_ portfolio: Portfolio?, top: Int = 8) -> [AllocationSlice] {
+    private func allocationSlices(_ portfolio: Portfolio?) -> (slices: [AllocationSlice], total: Double) {
         let valued = (portfolio?.holdings ?? [])
             .filter { ($0.marketValue ?? 0) > 0 }
             .sorted { ($0.marketValue ?? 0) > ($1.marketValue ?? 0) }
-        var slices = valued.prefix(top).map { AllocationSlice(symbol: $0.symbol, value: $0.marketValue ?? 0) }
-        let other = valued.dropFirst(top).reduce(Decimal(0)) { $0 + ($1.marketValue ?? 0) }
-        if other > 0 { slices.append(AllocationSlice(symbol: "Other", value: other)) }
-        return slices
+        var cumulative = 0.0
+        let slices = valued.map { holding -> AllocationSlice in
+            let slice = AllocationSlice(symbol: holding.symbol, value: holding.marketValue ?? 0, start: cumulative)
+            cumulative += asDouble(holding.marketValue ?? 0)
+            return slice
+        }
+        return (slices, cumulative)
     }
 
     @ViewBuilder
     private func allocationCard(_ portfolio: Portfolio?) -> some View {
-        let slices = allocationSlices(portfolio)
+        let (slices, total) = allocationSlices(portfolio)
+        let selected = allocationValue.flatMap { value in
+            slices.first { value >= $0.start && value < $0.start + asDouble($0.value) }
+        }
         Card("Allocation", systemImage: "chart.pie") {
             if slices.isEmpty {
                 Text("No valued holdings.").scaledFont(.callout).foregroundStyle(.secondary)
             } else {
                 Chart(slices) { slice in
                     SectorMark(angle: .value("Value", asDouble(slice.value)),
-                               innerRadius: .ratio(0.6), angularInset: 1.5)
-                        .cornerRadius(3)
+                               innerRadius: .ratio(0.62), angularInset: 1)
+                        .cornerRadius(2)
                         .foregroundStyle(by: .value("Security", slice.symbol))
+                        .opacity(selected == nil || selected?.symbol == slice.symbol ? 1 : 0.35)
                 }
+                .chartLegend(.hidden)
+                .chartAngleSelection(value: $allocationValue)
                 .frame(height: 240)
-                .accessibilityLabel("Investment allocation: top holdings by value")
+                // Selected holding's detail sits in the donut hole.
+                .overlay {
+                    if let selected, total > 0 {
+                        VStack(spacing: 2) {
+                            Text(selected.symbol).fontWeight(.semibold).lineLimit(1)
+                            Text(asDouble(selected.value) / total, format: .percent.precision(.fractionLength(1)))
+                                .foregroundStyle(.secondary)
+                            Text(AmountFormat.string(selected.value, code: code))
+                                .monospacedDigit().scaledFont(.caption)
+                        }
+                        .padding(6)
+                    } else {
+                        Text("Hover a slice").scaledFont(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+                .accessibilityLabel("Investment allocation by security; hover a slice for its share and value")
             }
         }
     }
 
-    // MARK: Investment performance by security
+    // MARK: Investment performance over the timescale (stacked area, hover)
 
-    @ViewBuilder
-    private func performanceCard(_ portfolio: Portfolio?) -> some View {
-        let holdings = (portfolio?.holdings ?? []).filter { $0.gain != nil }
-            .sorted { ($0.gain ?? 0) > ($1.gain ?? 0) }
-        Card("Performance", systemImage: "chart.line.uptrend.xyaxis.circle") {
-            if holdings.isEmpty {
-                Text("No priced holdings to value.").scaledFont(.callout).foregroundStyle(.secondary)
-            } else {
-                ForEach(holdings) { holding in
-                    HStack {
-                        Text(holding.symbol).fontWeight(.medium)
-                        Spacer()
-                        if let fraction = holding.gainFraction {
-                            Text(fraction, format: .percent.precision(.fractionLength(1)))
-                                .scaledFont(.caption).monospacedDigit()
-                                .foregroundStyle((holding.gain ?? 0) < 0 ? .red : .green)
-                        }
-                        Text(AmountFormat.string(holding.gain ?? 0, code: code))
-                            .monospacedDigit()
-                            .foregroundStyle((holding.gain ?? 0) < 0 ? .red : .green)
-                            .frame(width: 90, alignment: .trailing)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(holding.symbol), \(AmountFormat.spoken(holding.gain ?? 0, code: code))")
+    struct PerfPoint: Identifiable, Hashable {
+        let id = UUID()
+        let date: Date
+        let symbol: String
+        let value: Double
+        let returnPct: Double?
+    }
+    struct PerfHover: Equatable {
+        let symbol: String
+        let returnPct: Double?
+        let value: Double
+        let at: CGPoint
+    }
+
+    /// Values each holding at ~monthly points across the timescale (up to today)
+    /// so the area shows each security's contribution over the period.
+    private func computePerformance(_ range: (from: Date, to: Date)) async -> [PerfPoint] {
+        let end = min(range.to, Date())
+        let start = range.from == .distantPast ? end.addingTimeInterval(-365 * 86_400) : range.from
+        guard end > start else { return [] }
+        let samples = 12
+        var points: [PerfPoint] = []
+        for step in 0...samples {
+            let fraction = Double(step) / Double(samples)
+            let date = start.addingTimeInterval(end.timeIntervalSince(start) * fraction)
+            if let pf = model.portfolio(asOf: date) {
+                for holding in pf.holdings where (holding.marketValue ?? 0) > 0 {
+                    points.append(PerfPoint(date: date, symbol: holding.symbol,
+                                            value: asDouble(holding.marketValue ?? 0),
+                                            returnPct: holding.gainFraction))
                 }
             }
+            await Task.yield()
         }
+        return points
+    }
+
+    /// Stacking order (largest holdings at the bottom), so the hover band lookup
+    /// matches how the chart stacks the areas.
+    private var perfOrder: [String] {
+        let totals = Dictionary(grouping: perfSeries, by: \.symbol)
+            .mapValues { $0.map(\.value).max() ?? 0 }
+        return totals.sorted { $0.value > $1.value }.map(\.key)
+    }
+
+    @ViewBuilder
+    private func performanceCard() -> some View {
+        Card("Performance", systemImage: "chart.line.uptrend.xyaxis.circle") {
+            if perfSeries.isEmpty {
+                Text("No priced holdings to value over this period.")
+                    .scaledFont(.callout).foregroundStyle(.secondary)
+            } else {
+                Chart(perfSeries) { point in
+                    AreaMark(x: .value("Date", point.date),
+                             y: .value("Value", point.value))
+                        .foregroundStyle(by: .value("Security", point.symbol))
+                }
+                .chartForegroundStyleScale(domain: perfOrder)
+                .chartLegend(.hidden)
+                .chartYAxis { AxisMarks(format: .currency(code: code).notation(.compactName)) }
+                .frame(height: 220)
+                .chartOverlay { proxy in perfHoverOverlay(proxy) }
+                .overlay(alignment: .topLeading) {
+                    if let perfHover {
+                        perfTooltip(perfHover)
+                            .offset(x: perfHover.at.x + 8, y: perfHover.at.y - 8)
+                    }
+                }
+                .accessibilityLabel("Each holding's value over \(model.label(for: period)); hover for its return")
+            }
+        }
+    }
+
+    private func perfHoverOverlay(_ proxy: ChartProxy) -> some View {
+        GeometryReader { geo in
+            Rectangle().fill(.clear).contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    guard case let .active(location) = phase,
+                          let frame = proxy.plotFrame.map({ geo[$0] }) else {
+                        perfHover = nil
+                        return
+                    }
+                    let x = location.x - frame.minX
+                    let y = location.y - frame.minY
+                    guard let date: Date = proxy.value(atX: x),
+                          let yValue: Double = proxy.value(atY: y) else { perfHover = nil; return }
+                    perfHover = band(at: date, yValue: yValue, location: location)
+                }
+        }
+    }
+
+    /// The stacked band the cursor is over: at the nearest sampled date, walk
+    /// holdings in stacking order accumulating value until the cursor's y falls
+    /// inside a band.
+    private func band(at date: Date, yValue: Double, location: CGPoint) -> PerfHover? {
+        guard yValue >= 0 else { return nil }
+        let dates = Set(perfSeries.map(\.date))
+        guard let nearest = dates.min(by: { abs($0.timeIntervalSince(date)) < abs($1.timeIntervalSince(date)) })
+        else { return nil }
+        var cumulative = 0.0
+        for symbol in perfOrder {
+            guard let point = perfSeries.first(where: { $0.date == nearest && $0.symbol == symbol }) else { continue }
+            if yValue >= cumulative && yValue < cumulative + point.value {
+                return PerfHover(symbol: symbol, returnPct: point.returnPct, value: point.value, at: location)
+            }
+            cumulative += point.value
+        }
+        return nil
+    }
+
+    private func perfTooltip(_ hover: PerfHover) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(hover.symbol).fontWeight(.semibold)
+            if let pct = hover.returnPct {
+                Text(pct, format: .percent.precision(.fractionLength(1)))
+                    .foregroundStyle(pct < 0 ? .red : .green)
+            }
+            Text(AmountFormat.string(Decimal(hover.value), code: code)).monospacedDigit()
+        }
+        .scaledFont(.caption)
+        .padding(6)
+        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: 6))
+        .shadow(radius: 3)
+        .allowsHitTesting(false)
     }
 
     // MARK: Alerts
@@ -374,6 +488,8 @@ struct DashboardView: View {
     }
 
     // MARK: Helpers
+
+    private struct RangeKey: Hashable { let from: Date; let to: Date }
 
     private func asDouble(_ d: Decimal) -> Double { NSDecimalNumber(decimal: d).doubleValue }
     private func icon(for s: AlertSeverity) -> String {
