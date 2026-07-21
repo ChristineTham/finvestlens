@@ -1,11 +1,12 @@
 name: CI
 
-# Builds and tests the Swift packages on every push / PR (NFR-08). The
-# correctness-critical packages (engine, persistence, interchange, quotes,
-# rules, reports, shared) target macOS 14 and run on GitHub's macOS runners.
-# The app target and the Intelligence package need Xcode 26 (FoundationModels /
-# macOS 26) and are built in a separate, allowed-to-fail job until the hosted
-# runners ship that toolchain.
+# Builds and tests the Swift packages on every push / PR (NFR-08). Every package
+# declares swift-tools-version 6.2, which ships with Xcode 26, so all jobs select
+# it explicitly rather than relying on the runner's default Xcode. The
+# correctness-critical packages (engine, persistence, interchange, quotes, rules,
+# reports, shared) build and test on their own; the full app target and the
+# Intelligence package additionally need the macOS 26 SDK (FoundationModels) and
+# are built in a separate, allowed-to-fail job.
 
 on:
   push:
@@ -20,7 +21,7 @@ concurrency:
 jobs:
   packages:
     name: Test SPM packages
-    runs-on: macos-14
+    runs-on: macos-15
     strategy:
       fail-fast: false
       matrix:
@@ -34,8 +35,16 @@ jobs:
           - Shared
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app || true
+      - name: Select Xcode 26 (Swift 6.2)
+        run: |
+          app=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$app" ]; then
+            echo "::error::No Xcode 26 found on the runner; packages need Swift tools 6.2."
+            ls -d /Applications/Xcode_*.app 2>/dev/null || true
+            exit 1
+          fi
+          echo "Selecting $app"
+          sudo xcode-select -s "$app"
       - name: Swift version
         run: swift --version
       - name: Build
@@ -63,11 +72,23 @@ jobs:
           exit $missing
 
   app:
-    name: Build app (Xcode 26 — allowed to fail until hosted)
+    name: Build app (macOS 26 SDK — allowed to fail)
     runs-on: macos-15
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      - name: Select Xcode 26 (Swift 6.2 / macOS 26 SDK)
+        run: |
+          app=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$app" ]; then
+            echo "::error::No Xcode 26 found on the runner; the app needs the macOS 26 SDK."
+            ls -d /Applications/Xcode_*.app 2>/dev/null || true
+            exit 1
+          fi
+          echo "Selecting $app"
+          sudo xcode-select -s "$app"
+      - name: Swift version
+        run: swift --version
       - name: Build app + extensions (unsigned)
         run: |
           xcodebuild build \
