@@ -128,13 +128,16 @@ extension AppModel {
         public let currencyCode: String
     }
 
-    /// All splits currently posted to Imbalance/Orphan accounts.
-    public func uncategorizedItems() -> [UncategorizedItem] {
+    /// All splits currently posted to Imbalance/Orphan accounts. When
+    /// `transactions` is supplied, only splits belonging to those transactions
+    /// are returned — used to scope Auto-Categorise to the register selection.
+    public func uncategorizedItems(limitedTo transactions: Set<GncGUID>? = nil) -> [UncategorizedItem] {
         guard let book else { return [] }
         let holders = book.accounts.filter(\.isImbalanceOrOrphan)
         return holders.flatMap { holder in
             book.splits(for: holder).compactMap { split -> UncategorizedItem? in
                 guard let transaction = split.transaction else { return nil }
+                if let transactions, !transactions.contains(transaction.guid) { return nil }
                 return UncategorizedItem(
                     id: UUID(),
                     splitID: split.guid,

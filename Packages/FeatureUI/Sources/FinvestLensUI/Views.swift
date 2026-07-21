@@ -1315,7 +1315,10 @@ struct RegisterView: View {
         .sheet(item: $model.schedulingTransactionID) { id in
             ScheduleTransactionSheet(model: model, transactionID: id)
         }
-        .onChange(of: selection) { model.selectedSplitID = selection.first }
+        .onChange(of: selection) {
+            model.selectedSplitID = selection.first
+            model.selectedSplitIDs = selection
+        }
     }
 
     /// Rows are ordered oldest first, so the newest posting is the last row.

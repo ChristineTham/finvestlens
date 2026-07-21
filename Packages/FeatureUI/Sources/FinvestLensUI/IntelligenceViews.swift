@@ -25,13 +25,26 @@ struct AutoCategorizeSheet: View {
 
     @State private var items: [AppModel.UncategorizedItem] = []
     @State private var assignments: [GncGUID: GncGUID] = [:]  // splitID → account
+    @State private var plans: [GncGUID: AppModel.CategoryPlan] = [:]  // txnID → plan
+    @State private var acceptedPlans: Set<GncGUID> = []
+    @State private var scopeCount: Int?
     @State private var loaded = false
     @State private var suggesting = false
     @State private var progress: (done: Int, total: Int)?
     @State private var errorMessage: String?
 
+    /// Uncategorised splits with no smart-match plan — the ones needing a manual
+    /// or AI single-category choice.
+    private var pickerItems: [AppModel.UncategorizedItem] {
+        items.filter { plans[$0.transactionID] == nil }
+    }
+
+    private var planList: [AppModel.CategoryPlan] {
+        plans.values.sorted { $0.date < $1.date }
+    }
+
     private var applyCount: Int {
-        items.filter { assignments[$0.splitID] != nil }.count
+        acceptedPlans.count + pickerItems.filter { assignments[$0.splitID] != nil }.count
     }
 
     var body: some View {
@@ -42,30 +55,48 @@ struct AutoCategorizeSheet: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if items.isEmpty {
                     ContentUnavailableView("Nothing to categorise", systemImage: "checkmark.seal",
-                                           description: Text("Every transaction already has a category."))
+                                           description: Text(emptyMessage))
                 } else {
                     // A lazy List (not a Form): a book with large Imbalance /
                     // Unspecified accounts can have thousands of uncategorised
                     // splits, and a Form materialises every row's account Picker
                     // at once, overflowing SwiftUI's attribute graph and crashing.
                     List {
-                        Section {
-                            Button {
-                                suggest()
-                            } label: {
-                                Label(suggesting ? suggestingLabel : "Suggest Categories",
-                                      systemImage: "sparkles")
-                            }
-                            .disabled(suggesting || !model.isIntelligenceAvailable)
-                            .help(model.intelligenceUnavailableReason
-                                  ?? "Let Apple Intelligence propose a category for each transaction")
-                            if let errorMessage {
-                                Text(errorMessage).scaledFont(.caption).foregroundStyle(.red)
+                        if let scopeCount {
+                            Section {
+                                Label("Categorising \(scopeCount) selected transaction\(scopeCount == 1 ? "" : "s").",
+                                      systemImage: "line.3.horizontal.decrease.circle")
+                                    .foregroundStyle(.secondary)
                             }
                         }
-                        Section("\(items.count) uncategorised") {
-                            ForEach(items) { item in
-                                row(item)
+                        if !plans.isEmpty {
+                            Section {
+                                ForEach(planList) { planRow($0) }
+                            } header: {
+                                Text("Matched from similar transactions")
+                            } footer: {
+                                Text("Learned from an existing transaction with the same description, including its split breakdown (e.g. salary or dividend components).")
+                            }
+                        }
+                        if !pickerItems.isEmpty {
+                            Section {
+                                Button {
+                                    suggest()
+                                } label: {
+                                    Label(suggesting ? suggestingLabel : "Suggest Categories",
+                                          systemImage: "sparkles")
+                                }
+                                .disabled(suggesting || !model.isIntelligenceAvailable)
+                                .help(model.intelligenceUnavailableReason
+                                      ?? "Let Apple Intelligence propose a category for each transaction")
+                                if let errorMessage {
+                                    Text(errorMessage).scaledFont(.caption).foregroundStyle(.red)
+                                }
+                            }
+                            Section("\(pickerItems.count) to review") {
+                                ForEach(pickerItems) { item in
+                                    row(item)
+                                }
                             }
                         }
                     }
@@ -79,18 +110,65 @@ struct AutoCategorizeSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Apply \(applyCount)") {
-                        model.applyCategoryAssignments(assignments)
+                        let accepted = planList.filter { acceptedPlans.contains($0.transactionID) }
+                        model.applyCategorization(plans: accepted, assignments: assignments)
                         dismiss()
                     }
                     .disabled(applyCount == 0)
                 }
             }
             .task {
-                items = model.uncategorizedItems()
+                let scope = model.selectedTransactionIDs
+                scopeCount = scope.isEmpty ? nil : scope.count
+                items = model.uncategorizedItems(limitedTo: scope.isEmpty ? nil : scope)
+                plans = model.smartCategoryPlans(for: items)
+                acceptedPlans = Set(plans.keys)
                 loaded = true
             }
         }
         .frame(minWidth: 620, minHeight: 460)
+    }
+
+    private var emptyMessage: String {
+        scopeCount == nil
+            ? "Every transaction already has a category."
+            : "The selected transactions already have a category."
+    }
+
+    /// A read-only summary of a learned split plan, with a checkbox to accept it.
+    @ViewBuilder
+    private func planRow(_ plan: AppModel.CategoryPlan) -> some View {
+        let accepted = Binding(
+            get: { acceptedPlans.contains(plan.transactionID) },
+            set: { isOn in
+                if isOn { acceptedPlans.insert(plan.transactionID) }
+                else { acceptedPlans.remove(plan.transactionID) }
+            })
+        Toggle(isOn: accepted) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(plan.date, format: .dateTime.year().month().day())
+                        .foregroundStyle(.secondary)
+                        .frame(width: dateWidth, alignment: .leading)
+                    Text(plan.transactionDescription).fontWeight(.medium)
+                }
+                ForEach(plan.legs) { leg in
+                    HStack {
+                        Text("→ \(leg.accountName)").scaledFont(.callout)
+                        Spacer()
+                        Text(AmountFormat.string(leg.value, code: plan.currencyCode))
+                            .scaledFont(.callout)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text("Matched “\(plan.templateDescription)”")
+                    .scaledFont(.caption).foregroundStyle(.tertiary)
+            }
+        }
+        #if os(macOS)
+        .toggleStyle(.checkbox)
+        #endif
     }
 
     private var suggestingLabel: String {

@@ -520,6 +520,16 @@ public final class AppModel {
     /// Edit and nothing else.
     public var selectedSplitID: GncGUID?
 
+    /// Every selected register row (split GUIDs). `selectedSplitID` is the first
+    /// of these; this full set lets commands like Auto-Categorise act on a
+    /// multi-row selection.
+    public var selectedSplitIDs: Set<GncGUID> = []
+
+    /// The transactions the current register selection belongs to.
+    public var selectedTransactionIDs: Set<GncGUID> {
+        Set(selectedSplitIDs.compactMap { transactionID(ofSplit: $0) })
+    }
+
     /// The transaction whose editor should be open, if any. Set by the register
     /// or by a menu command; the register presents the sheet.
     public var editingTransactionID: GncGUID?
