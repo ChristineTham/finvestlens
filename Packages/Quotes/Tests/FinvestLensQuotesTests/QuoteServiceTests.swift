@@ -93,3 +93,25 @@ struct APIKeyStoreTests {
         #expect(QuoteProviderKind.allCases.count == 6)
     }
 }
+
+@Suite("Provider symbol mapping")
+struct ProviderSymbolTests {
+    @Test("EODHD exchange-qualifies: Yahoo .AX becomes .AU, bare US becomes .US")
+    func eodhd() {
+        #expect(QuoteProviderKind.eodhd.providerSymbol(for: "CBA.AX") == "CBA.AU")
+        #expect(QuoteProviderKind.eodhd.providerSymbol(for: "AAPL") == "AAPL.US")
+        #expect(QuoteProviderKind.eodhd.providerSymbol(for: "CBA.NZ") == "CBA.NZ")
+    }
+
+    @Test("Stooq is lowercase with .au / .us")
+    func stooq() {
+        #expect(QuoteProviderKind.stooq.providerSymbol(for: "CBA.AX") == "cba.au")
+        #expect(QuoteProviderKind.stooq.providerSymbol(for: "AAPL") == "aapl.us")
+    }
+
+    @Test("Yahoo passes the canonical symbol through unchanged")
+    func yahoo() {
+        #expect(QuoteProviderKind.yahoo.providerSymbol(for: "CBA.AX") == "CBA.AX")
+        #expect(QuoteProviderKind.yahoo.providerSymbol(for: "AAPL") == "AAPL")
+    }
+}

@@ -44,7 +44,11 @@ struct AutoCategorizeSheet: View {
                     ContentUnavailableView("Nothing to categorise", systemImage: "checkmark.seal",
                                            description: Text("Every transaction already has a category."))
                 } else {
-                    Form {
+                    // A lazy List (not a Form): a book with large Imbalance /
+                    // Unspecified accounts can have thousands of uncategorised
+                    // splits, and a Form materialises every row's account Picker
+                    // at once, overflowing SwiftUI's attribute graph and crashing.
+                    List {
                         Section {
                             Button {
                                 suggest()

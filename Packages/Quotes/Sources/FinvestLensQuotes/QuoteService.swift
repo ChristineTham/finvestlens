@@ -52,7 +52,7 @@ public struct QuoteService: Sendable {
         symbolOverride: String? = nil
     ) async throws -> Price {
         let provider = try provider(kind)
-        let symbol = Self.symbol(for: commodity, override: symbolOverride)
+        let symbol = kind.providerSymbol(for: Self.symbol(for: commodity, override: symbolOverride))
         let quote = try await provider.latestQuote(symbol: symbol)
         return Self.price(from: quote, commodity: commodity, currency: currency, kind: kind)
     }
@@ -67,7 +67,7 @@ public struct QuoteService: Sendable {
         symbolOverride: String? = nil
     ) async throws -> [Price] {
         let provider = try provider(kind)
-        let symbol = Self.symbol(for: commodity, override: symbolOverride)
+        let symbol = kind.providerSymbol(for: Self.symbol(for: commodity, override: symbolOverride))
         let quotes = try await provider.history(symbol: symbol, from: from, to: to)
         return quotes.map { Self.price(from: $0, commodity: commodity, currency: currency, kind: kind) }
     }

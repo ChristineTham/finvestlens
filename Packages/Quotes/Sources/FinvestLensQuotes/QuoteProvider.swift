@@ -63,6 +63,47 @@ public enum QuoteProviderKind: String, CaseIterable, Codable, Sendable, Identifi
         case .twelveData: return URL(string: "https://twelvedata.com/pricing")
         }
     }
+
+    /// Rewrites a canonical (Yahoo-style) ticker into this provider's expected
+    /// form. Commodities are stored Yahoo-style — a bare ticker for US symbols,
+    /// `TICKER.EXCHANGE` elsewhere (e.g. `CBA.AX` for the ASX). Providers disagree
+    /// on the exchange suffix (EODHD wants `CBA.AU`, Stooq `cba.au`), which is why
+    /// a symbol that works on Yahoo returns "no data" on EODHD. A per-security
+    /// override, when set, is assumed already correct and passed through.
+    public func providerSymbol(for canonical: String) -> String {
+        let trimmed = canonical.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return trimmed }
+        let parts = trimmed.split(separator: ".", maxSplits: 1)
+        let ticker = String(parts[0])
+        let suffix = parts.count > 1 ? String(parts[1]).uppercased() : nil
+
+        switch self {
+        case .yahoo, .alphaVantage, .finnhub, .twelveData:
+            // Canonical is Yahoo-style; these accept it (Alpha Vantage/Finnhub/
+            // Twelve Data are US-centric — use an override for odd exchanges).
+            return trimmed
+        case .eodhd:
+            // EODHD always exchange-qualifies, incl. US: AAPL.US, CBA.AU.
+            let exchange = suffix.map { Self.eodhdExchange[$0] ?? $0 } ?? "US"
+            return "\(ticker).\(exchange)"
+        case .stooq:
+            // Stooq is lowercase and .us / .au / .uk …
+            let exchange = suffix.map { Self.stooqExchange[$0] ?? $0.lowercased() } ?? "us"
+            return "\(ticker.lowercased()).\(exchange)"
+        }
+    }
+
+    /// Yahoo exchange suffix → EODHD exchange code (the confident, common ones;
+    /// unknown suffixes pass through unchanged).
+    private static let eodhdExchange: [String: String] = [
+        "AX": "AU", "NZ": "NZ", "L": "LSE", "TO": "TO", "V": "V", "HK": "HK",
+        "T": "TSE", "SI": "SG", "PA": "PA", "AS": "AS", "SW": "SW", "DE": "XETRA",
+    ]
+
+    /// Yahoo exchange suffix → Stooq exchange code.
+    private static let stooqExchange: [String: String] = [
+        "AX": "au", "L": "uk", "TO": "ca", "HK": "hk", "T": "jp", "DE": "de",
+    ]
 }
 
 /// A source of security prices — latest and (optionally) historical.

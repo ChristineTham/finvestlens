@@ -17,14 +17,13 @@ struct QuotesView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedProvider: QuoteProviderKind = .yahoo
-    @State private var keyDrafts: [QuoteProviderKind: String] = [:]
     @State private var isFetching = false
 
     var body: some View {
         NavigationStack {
             Form {
                 fetchSection
-                providersSection
+                keysHintSection
                 securitiesSection
             }
             .formStyle(.grouped)
@@ -34,7 +33,7 @@ struct QuotesView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .onAppear(perform: loadDrafts)
+            .onAppear(perform: ensureValidProvider)
         }
         .frame(minWidth: 520, minHeight: 520)
     }
@@ -82,49 +81,17 @@ struct QuotesView: View {
         }
     }
 
-    // MARK: Providers / API keys
+    // MARK: Keys (managed in Settings)
 
-    private var providersSection: some View {
-        Section("Providers") {
-            ForEach(QuoteProviderKind.allCases) { kind in
-                if kind.requiresAPIKey {
-                    keyRow(for: kind)
-                } else {
-                    LabeledContent(kind.displayName) {
-                        Text("No key required").foregroundStyle(.secondary)
-                    }
-                }
+    private var keysHintSection: some View {
+        Section {
+            #if os(macOS)
+            SettingsLink {
+                Label("Manage API keys in Settings…", systemImage: "key")
             }
-        }
-    }
-
-    private func keyRow(for kind: QuoteProviderKind) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(kind.displayName)
-                if model.apiKey(for: kind)?.isEmpty == false {
-                    Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
-                }
-                Spacer()
-                if let url = kind.signupURL {
-                    Link("Get key", destination: url).scaledFont(.caption)
-                }
-            }
-            HStack {
-                SecureField("API key", text: Binding(
-                    get: { keyDrafts[kind] ?? "" },
-                    set: { keyDrafts[kind] = $0 }))
-                Button("Save") {
-                    model.setAPIKey(keyDrafts[kind], for: kind)
-                }
-                .disabled((keyDrafts[kind] ?? "") == (model.apiKey(for: kind) ?? ""))
-                if model.apiKey(for: kind)?.isEmpty == false {
-                    Button("Clear", role: .destructive) {
-                        model.setAPIKey(nil, for: kind)
-                        keyDrafts[kind] = ""
-                    }
-                }
-            }
+            #endif
+        } footer: {
+            Text("Price-provider API keys — EODHD, Alpha Vantage, Finnhub, Twelve Data — are managed in Settings ▸ Pricing (⌘,). Yahoo and Stooq need no key.")
         }
     }
 
@@ -159,10 +126,7 @@ struct QuotesView: View {
 
     // MARK: Actions
 
-    private func loadDrafts() {
-        for kind in QuoteProviderKind.allCases where kind.requiresAPIKey {
-            keyDrafts[kind] = model.apiKey(for: kind) ?? ""
-        }
+    private func ensureValidProvider() {
         if !model.availableProviders.contains(selectedProvider),
            let first = model.availableProviders.first {
             selectedProvider = first
