@@ -479,6 +479,10 @@ public final class AppModel {
     /// Progress/result of the most recent quote fetch, for the UI.
     public internal(set) var quoteStatus: QuoteFetchStatus = .idle
 
+    /// Fraction complete (0…1) of a running multi-security fetch, or `nil` when
+    /// no determinate-progress fetch is in flight. Drives the Quotes progress bar.
+    public internal(set) var quoteProgress: Double?
+
     /// Cost-basis method used by the capital-gains / lots reports.
     public var costBasisMethod: CostBasisMethod = .fifo
     /// How brokerage fees affect cost basis in the investment reports. Defaults

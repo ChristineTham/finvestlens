@@ -143,6 +143,15 @@ public final class Book {
         prices.removeAll { $0.guid == guid }
     }
 
+    /// Removes every price matching `predicate` in a single pass. Used to wipe a
+    /// security's history before rebuilding it (a per-GUID loop would be O(n²)).
+    @discardableResult
+    public func removePrices(where predicate: (Price) -> Bool) -> Int {
+        let before = prices.count
+        prices.removeAll(where: predicate)
+        return before - prices.count
+    }
+
     // MARK: Price index
 
     /// A quoted pair: what is priced, and what it is priced in.

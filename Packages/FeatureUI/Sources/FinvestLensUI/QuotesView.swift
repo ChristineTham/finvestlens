@@ -18,6 +18,8 @@ struct QuotesView: View {
 
     @State private var selectedProvider: QuoteProviderKind = .yahoo
     @State private var isFetching = false
+    @State private var selection: Set<Commodity> = []
+    @State private var confirmRefetch = false
 
     var body: some View {
         NavigationStack {
@@ -34,8 +36,17 @@ struct QuotesView: View {
                 }
             }
             .onAppear(perform: ensureValidProvider)
+            .confirmationDialog(
+                "Replace price history for \(selection.count) selected securit\(selection.count == 1 ? "y" : "ies")?",
+                isPresented: $confirmRefetch, titleVisibility: .visible
+            ) {
+                Button("Replace History", role: .destructive) { refetchSelected() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Existing prices for the selected securities are replaced with a freshly fetched series. If a fetch fails, that security keeps its current prices.")
+            }
         }
-        .frame(minWidth: 520, minHeight: 520)
+        .frame(minWidth: 520, minHeight: 560)
     }
 
     // MARK: Fetch
@@ -60,11 +71,27 @@ struct QuotesView: View {
                 get: { model.autoRefreshQuotes },
                 set: { model.autoRefreshQuotes = $0 }))
 
+            progressRow
             statusRow
         } header: {
             Text("Fetch Prices")
         } footer: {
-            Text("Fills each security's price history from its last stored price through today, so every holding is current when the fetch finishes.")
+            Text("Fills each security's history — including any gaps between existing prices — from its first holding through today, so every holding is current when the fetch finishes.")
+        }
+    }
+
+    /// A determinate bar shown while a multi-security fetch runs.
+    @ViewBuilder
+    private var progressRow: some View {
+        if let progress = model.quoteProgress {
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView(value: progress)
+                if case .fetching(let what) = model.quoteStatus {
+                    Text("Fetching \(what)…")
+                        .scaledFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
@@ -74,7 +101,10 @@ struct QuotesView: View {
         case .idle:
             EmptyView()
         case .fetching(let what):
-            Label("Fetching \(what)…", systemImage: "clock").foregroundStyle(.secondary)
+            // While a determinate fetch runs, the progress bar shows this instead.
+            if model.quoteProgress == nil {
+                Label("Fetching \(what)…", systemImage: "clock").foregroundStyle(.secondary)
+            }
         case .success(let count):
             Label("Added \(count) price\(count == 1 ? "" : "s").", systemImage: "checkmark.circle")
                 .foregroundStyle(.green)
@@ -107,24 +137,58 @@ struct QuotesView: View {
                 Text("No securities held yet.").foregroundStyle(.secondary)
             } else {
                 ForEach(model.pricableSecurities, id: \.self) { commodity in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(commodity.mnemonic).fontWeight(.medium)
-                            Text(commodity.fullName).scaledFont(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        TextField(commodity.mnemonic, text: Binding(
-                            get: { model.quoteSymbol(for: commodity) ?? "" },
-                            set: { model.setQuoteSymbol($0, for: commodity) }))
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 140)
-                    }
+                    securityRow(commodity)
                 }
             }
         } header: {
-            Text("Ticker Symbols")
+            HStack {
+                Text("Ticker Symbols")
+                Spacer()
+                if !model.pricableSecurities.isEmpty {
+                    Button(selection.isEmpty ? "Select All" : "Clear") {
+                        selection = selection.isEmpty ? Set(model.pricableSecurities) : []
+                    }
+                    .buttonStyle(.borderless)
+                    .scaledFont(.caption)
+                }
+            }
         } footer: {
-            Text("Override the ticker sent to the provider (e.g. CBA → CBA.AX for Yahoo).")
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    confirmRefetch = true
+                } label: {
+                    Label("Refetch Selected (Replace History)", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .disabled(isFetching || selection.isEmpty)
+
+                Text("Select securities above, then refetch to rebuild their price history from scratch. Override the ticker sent to the provider (e.g. CBA → CBA.AX for Yahoo).")
+            }
+        }
+    }
+
+    private func securityRow(_ commodity: Commodity) -> some View {
+        let isSelected = selection.contains(commodity)
+        return HStack(spacing: 10) {
+            Button {
+                if isSelected { selection.remove(commodity) } else { selection.insert(commodity) }
+            } label: {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .imageScale(.large)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isSelected ? "Deselect \(commodity.mnemonic)" : "Select \(commodity.mnemonic)")
+
+            VStack(alignment: .leading) {
+                Text(commodity.mnemonic).fontWeight(.medium)
+                Text(commodity.fullName).scaledFont(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            TextField(commodity.mnemonic, text: Binding(
+                get: { model.quoteSymbol(for: commodity) ?? "" },
+                set: { model.setQuoteSymbol($0, for: commodity) }))
+            .multilineTextAlignment(.trailing)
+            .frame(maxWidth: 140)
         }
     }
 
@@ -142,6 +206,16 @@ struct QuotesView: View {
         let provider = selectedProvider
         Task {
             await model.updatePriceHistory(using: provider)
+            isFetching = false
+        }
+    }
+
+    private func refetchSelected() {
+        isFetching = true
+        let provider = selectedProvider
+        let commodities = model.pricableSecurities.filter { selection.contains($0) }
+        Task {
+            await model.refetchPriceHistory(for: commodities, using: provider)
             isFetching = false
         }
     }

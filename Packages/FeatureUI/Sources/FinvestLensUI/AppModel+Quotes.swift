@@ -148,68 +148,98 @@ extension AppModel {
             : .failure("Added \(added). Failed — " + failures.joined(separator: "; "))
     }
 
-    /// Brings **every** held security's price history up to date (`FR-INV-03e`):
-    /// for each, fetches daily history from the day after its most recent stored
-    /// price (or its first holding date when it has none) through today, adding
-    /// only dates not already present. Providers without history fall back to a
-    /// single latest quote. When this finishes, no security has a gap up to today.
+    /// Brings **every** held security's price history up to date (`FR-INV-03e`),
+    /// filling gaps anywhere in the series — not just the trailing gap. For each
+    /// security it fetches daily history spanning from the earliest date it cares
+    /// about (the first holding date, or the earliest stored price if that is
+    /// earlier) through today, then adds only the dates it does not already hold.
+    /// That closes interior holes (a missing week mid-series) as well as the gap
+    /// from the last price to today. Non-trading days (weekends/holidays) simply
+    /// have no observation and are not treated as gaps. Providers without a
+    /// history endpoint (Finnhub) fall back to a single latest quote.
     public func updatePriceHistory(using kind: QuoteProviderKind) async {
-        let commodities = pricableSecurities
+        await fetchHistory(for: pricableSecurities, using: kind, replacing: false,
+                           label: "Update Price History")
+    }
+
+    /// Rebuilds price history for `commodities` from scratch (`FR-INV-03e`): for
+    /// each, fetches the full daily series from its first holding date through
+    /// today and, **only if that fetch returns data**, replaces the security's
+    /// existing prices with the fresh set. A failed or empty fetch leaves the
+    /// existing prices untouched, so a bad network run can never wipe good data.
+    public func refetchPriceHistory(for commodities: [Commodity],
+                                    using kind: QuoteProviderKind) async {
+        await fetchHistory(for: commodities, using: kind, replacing: true,
+                           label: "Refetch Price History")
+    }
+
+    /// Shared engine for both update (merge) and refetch (replace). Fetches per
+    /// security into a staging buffer first; the single book edit at the end only
+    /// touches securities whose fetch succeeded, so failures never mutate the book.
+    private func fetchHistory(for commodities: [Commodity], using kind: QuoteProviderKind,
+                              replacing: Bool, label: String) async {
         guard !commodities.isEmpty else {
-            quoteStatus = .failure("No securities to price.")
+            quoteStatus = .failure(replacing ? "No securities selected." : "No securities to price.")
             return
         }
         let service = service()
         let calendar = Calendar.current
         let today = Date()
-        let todayStart = calendar.startOfDay(for: today)
 
-        // The dates we already hold per commodity — built once, so a big price
-        // database isn't rescanned per security.
+        // Dates already held per commodity — built once, so a big price database
+        // is not rescanned per security.
         var existing: [Commodity: Set<Date>] = [:]
         for price in book?.prices ?? [] {
             existing[price.commodity, default: []].insert(calendar.startOfDay(for: price.date))
         }
 
+        // Staged edits: commodities to wipe first (replace mode), and prices to add.
+        var toReplace: Set<Commodity> = []
         var toAdd: [Price] = []
         var failures: [String] = []
-        var alreadyCurrent = 0
+
+        quoteProgress = 0
+        defer { quoteProgress = nil }
 
         for (index, commodity) in commodities.enumerated() {
-            quoteStatus = .fetching("prices \(index + 1) of \(commodities.count) — \(commodity.mnemonic)")
-            let have = existing[commodity] ?? []
-            let start: Date
-            if let last = have.max() {
-                start = calendar.date(byAdding: .day, value: 1, to: last) ?? last
-            } else {
-                start = firstHoldingDate(for: commodity)
-                    ?? calendar.date(byAdding: .year, value: -5, to: today) ?? today
-            }
-            guard calendar.startOfDay(for: start) <= todayStart else { alreadyCurrent += 1; continue }
+            quoteStatus = .fetching("\(commodity.mnemonic) (\(index + 1) of \(commodities.count))")
+            let have = replacing ? [] : (existing[commodity] ?? [])
+
+            // Span the whole holding period so interior gaps get filled, not just
+            // the tail. In replace mode we always rebuild from the first holding.
+            let anchors = [replacing ? nil : existing[commodity]?.min(),
+                           firstHoldingDate(for: commodity)].compactMap { $0 }
+            let start = anchors.min()
+                ?? calendar.date(byAdding: .year, value: -5, to: today) ?? today
 
             do {
-                let novel: [Price]
+                let fetched: [Price]
                 if kind.supportsHistory {
-                    novel = try await service.historicalPrices(
+                    fetched = try await service.historicalPrices(
                         for: commodity, in: reportCurrency, from: start, to: today, using: kind,
                         symbolOverride: quoteSymbol(for: commodity))
-                        .filter { !have.contains(calendar.startOfDay(for: $0.date)) }
                 } else {
                     // No history endpoint: at least bring the latest price current.
-                    let price = try await service.latestPrice(
+                    fetched = [try await service.latestPrice(
                         for: commodity, in: reportCurrency, using: kind,
-                        symbolOverride: quoteSymbol(for: commodity))
-                    novel = have.contains(calendar.startOfDay(for: price.date)) ? [] : [price]
+                        symbolOverride: quoteSymbol(for: commodity))]
                 }
-                if novel.isEmpty { alreadyCurrent += 1 } else { toAdd.append(contentsOf: novel) }
+                // Refetch only overwrites when the fetch actually returned data.
+                if replacing && !fetched.isEmpty { toReplace.insert(commodity) }
+                let novel = fetched.filter { !have.contains(calendar.startOfDay(for: $0.date)) }
+                toAdd.append(contentsOf: novel)
             } catch {
                 failures.append("\(commodity.mnemonic): \(Self.describe(error))")
             }
+            quoteProgress = Double(index + 1) / Double(commodities.count)
         }
 
         let added = toAdd.count
-        if added > 0 {
-            editingWholeBook(named: "Update Price History") {
+        if !toReplace.isEmpty || added > 0 {
+            editingWholeBook(named: label) {
+                if !toReplace.isEmpty {
+                    book?.removePrices { toReplace.contains($0.commodity) }
+                }
                 for price in toAdd { book?.addPrice(price) }
             }
         }
