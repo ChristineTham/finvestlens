@@ -68,25 +68,32 @@ extension AppModel {
         let targets = targetIDs.compactMap { book.transaction(with: $0) }
         guard !targets.isEmpty else { return [:] }
 
-        // Index every categorised transaction by the accounts it touches, so a
-        // target only scores against transactions sharing its (bank) account —
-        // both a strong signal and a big reduction in comparisons.
-        var templates: [Template] = []
-        var byAccount: [GncGUID: [Int]] = [:]
+        // Build a per-account corpus of "how this payee was categorised before".
+        // Each money leg of a categorised transaction contributes an entry under
+        // its account, tokenised from its memo — where the original bank/card
+        // narrative is preserved — so a raw import can be matched raw-to-raw
+        // rather than against the friendly label (which often shares no words with
+        // it, e.g. "Digidirect" ← "…PAYPAL AUSTRALIA…"). Within an account we also
+        // count how many entries each token appears in, to weight a distinctive
+        // token (a payee name) far above a ubiquitous one ("direct", "australia").
+        var corpus: [GncGUID: AccountCorpus] = [:]
         for transaction in book.transactions where Self.isTemplate(transaction) {
-            let index = templates.count
-            let tokens = Self.significantTokens(transaction.transactionDescription)
-            guard !tokens.isEmpty else { continue }
-            templates.append(Template(transaction: transaction, tokens: tokens))
             for split in transaction.splits {
-                if let id = split.account?.guid { byAccount[id, default: []].append(index) }
+                guard let account = split.account, Self.isMoneyAnchor(account.type) else { continue }
+                let raw = split.memo.isEmpty ? transaction.transactionDescription : split.memo
+                let tokens = Self.significantTokens(raw)
+                guard !tokens.isEmpty else { continue }
+                corpus[account.guid, default: AccountCorpus()].add(Entry(
+                    transaction: transaction, rawTokens: tokens,
+                    friendly: transaction.transactionDescription,
+                    cleaned: !split.memo.isEmpty && split.memo != transaction.transactionDescription))
             }
         }
-        guard !templates.isEmpty else { return [:] }
+        guard !corpus.isEmpty else { return [:] }
 
         var plans: [GncGUID: CategoryPlan] = [:]
         for target in targets {
-            if let plan = bestPlan(for: target, templates: templates, byAccount: byAccount, book: book) {
+            if let plan = bestPlan(for: target, corpus: corpus, book: book) {
                 plans[target.guid] = plan
             }
         }
@@ -149,10 +156,60 @@ extension AppModel {
 
     // MARK: - Matching internals
 
-    private struct Template {
+    /// One learned example: a categorised transaction seen through the money leg
+    /// posted to a particular account.
+    private struct Entry {
         let transaction: Transaction
-        let tokens: Set<String>
+        /// Tokens of the raw narrative (the money-leg memo, or the description
+        /// when there is no memo yet).
+        let rawTokens: Set<String>
+        /// The transaction's description — the friendly label to adopt.
+        let friendly: String
+        /// Whether this example carries a distinct raw narrative in its memo, i.e.
+        /// the label really is a cleaned-up rename (so adopting it is meaningful).
+        let cleaned: Bool
     }
+
+    /// Every learned example for one account, with token document-frequencies for
+    /// weighting distinctive tokens over ubiquitous ones.
+    private struct AccountCorpus {
+        var entries: [Entry] = []
+        var documentFrequency: [String: Int] = [:]
+
+        mutating func add(_ entry: Entry) {
+            entries.append(entry)
+            for token in entry.rawTokens { documentFrequency[token, default: 0] += 1 }
+        }
+
+        /// Inverse document frequency: ~0 for a token in most entries, larger for
+        /// a rare, distinctive one.
+        func idf(_ token: String) -> Double {
+            let df = documentFrequency[token] ?? 0
+            return max(0, log(Double(entries.count + 1) / Double(df + 1)))
+        }
+    }
+
+    /// A balance-sheet account a register is opened on — the kind that carries the
+    /// bank/card narrative — as opposed to an income/expense category.
+    private static func isMoneyAnchor(_ type: AccountType) -> Bool {
+        switch type {
+        case .bank, .cash, .credit, .asset, .liability, .receivable, .payable, .stock, .mutualFund:
+            return true
+        case .income, .expense, .equity, .trading, .root:
+            return false
+        }
+    }
+
+    /// A match must clear this share of a template's distinctive content…
+    private static let scoreThreshold = 0.6
+    /// …and win by this factor over the next distinct payee, or it is ambiguous…
+    private static let ambiguityMargin = 1.25
+    /// …and be carried by at least one token this distinctive (roughly: present in
+    /// under ~60% of the account's entries)…
+    private static let distinctiveIdf = 0.5
+    /// …with the shared tokens carrying at least this much total weight, so a lone
+    /// weak token can't anchor a match.
+    private static let minSharedWeight = 1.0
 
     /// A candidate to learn from: balanced, at least two legs, every leg posting
     /// to a real (non-Imbalance/Orphan) account, and single-currency throughout
@@ -166,10 +223,10 @@ extension AppModel {
         return true
     }
 
-    private func bestPlan(for target: Transaction, templates: [Template],
-                          byAccount: [GncGUID: [Int]], book: Book) -> CategoryPlan? {
-        // The target's real (anchor) legs — usually the single bank/asset leg —
-        // and the value they net to. The uncategorised legs will be replaced.
+    private func bestPlan(for target: Transaction, corpus: [GncGUID: AccountCorpus],
+                          book: Book) -> CategoryPlan? {
+        // The target's real (anchor) legs — usually the single bank/card leg — and
+        // the value they net to. The uncategorised legs will be replaced.
         let anchorSplits = target.splits.filter { !($0.account?.isImbalanceOrOrphan ?? true) }
         let anchorAccounts = Set(anchorSplits.compactMap { $0.account?.guid })
         let anchorValue = anchorSplits.reduce(Decimal(0)) { $0 + $1.value }
@@ -177,38 +234,54 @@ extension AppModel {
         // Single-currency only, matching the template requirement.
         guard anchorSplits.allSatisfy({ $0.account?.commodity == target.currency }) else { return nil }
 
-        let targetTokens = Self.significantTokens(target.transactionDescription)
+        // The target's raw text: its description plus any narrative already sitting
+        // in its own money-leg memos.
+        var targetTokens = Self.significantTokens(target.transactionDescription)
+        for split in anchorSplits { targetTokens.formUnion(Self.significantTokens(split.memo)) }
         guard !targetTokens.isEmpty else { return nil }
 
-        // Only templates that share one of the target's anchor accounts.
-        var candidateIndices = Set<Int>()
-        for account in anchorAccounts { candidateIndices.formUnion(byAccount[account] ?? []) }
-
-        var best: (template: Template, score: Double)?
-        for index in candidateIndices {
-            let template = templates[index]
-            guard template.transaction !== target else { continue }
-            guard template.transaction.currency == target.currency else { continue }
-            let score = Self.overlap(targetTokens, template.tokens)
-            guard score >= 0.67 else { continue }
-            if best == nil || score > best!.score
-                || (score == best!.score && template.transaction.datePosted > best!.template.transaction.datePosted) {
-                best = (template, score)
+        // Score every learned example in the target's anchor account(s): the share
+        // of that example's distinctive (idf-weighted) content the target covers.
+        // A match must be carried by at least one distinctive token, never by
+        // ubiquitous ones alone.
+        var scored: [(entry: Entry, score: Double)] = []
+        for accountID in anchorAccounts {
+            guard let account = corpus[accountID] else { continue }
+            for entry in account.entries where entry.transaction !== target {
+                guard entry.transaction.currency == target.currency else { continue }
+                let shared = targetTokens.intersection(entry.rawTokens)
+                guard shared.contains(where: { account.idf($0) >= Self.distinctiveIdf }) else { continue }
+                let sharedWeight = shared.reduce(0.0) { $0 + account.idf($1) }
+                // An absolute floor as well as the ratio: a single weak shared
+                // token (e.g. just "anz") shouldn't carry a match on its own.
+                guard sharedWeight >= Self.minSharedWeight else { continue }
+                let entryWeight = entry.rawTokens.reduce(0.0) { $0 + account.idf($1) }
+                guard entryWeight > 0 else { continue }
+                scored.append((entry, sharedWeight / entryWeight))
             }
         }
-        guard let match = best else { return nil }
-        return buildPlan(for: target, from: match.template.transaction,
-                         anchorSplits: anchorSplits, anchorAccounts: anchorAccounts,
-                         anchorValue: anchorValue, targetTokens: targetTokens,
-                         templateTokens: match.template.tokens,
-                         confidence: match.score, book: book)
+
+        // Best score per distinct payee, then the ambiguity guard: only propose
+        // when one payee clearly wins. A narrative that fits several payees equally
+        // (every PayPal debit reads the same bar the reference) is left to the user.
+        var bestByFriendly: [String: (score: Double, entry: Entry)] = [:]
+        for item in scored where item.score >= Self.scoreThreshold {
+            if let existing = bestByFriendly[item.entry.friendly], existing.score >= item.score { continue }
+            bestByFriendly[item.entry.friendly] = (item.score, item.entry)
+        }
+        let ranked = bestByFriendly.values.sorted { $0.score > $1.score }
+        guard let winner = ranked.first else { return nil }
+        if ranked.count > 1, ranked[1].score * Self.ambiguityMargin > winner.score { return nil }
+
+        return buildPlan(for: target, from: winner.entry, anchorSplits: anchorSplits,
+                         anchorAccounts: anchorAccounts, anchorValue: anchorValue,
+                         confidence: winner.score, book: book)
     }
 
-    private func buildPlan(for target: Transaction, from template: Transaction,
+    private func buildPlan(for target: Transaction, from entry: Entry,
                            anchorSplits: [Split], anchorAccounts: Set<GncGUID>,
-                           anchorValue: Decimal, targetTokens: Set<String>,
-                           templateTokens: Set<String>,
-                           confidence: Double, book: Book) -> CategoryPlan? {
+                           anchorValue: Decimal, confidence: Double, book: Book) -> CategoryPlan? {
+        let template = entry.transaction
         let templateAnchor = template.splits.filter { anchorAccounts.contains($0.account?.guid ?? .random()) }
         let templateAnchorValue = templateAnchor.reduce(Decimal(0)) { $0 + $1.value }
         // Scale must be positive: a deposit-shaped template shouldn't categorise
@@ -238,20 +311,19 @@ extension AppModel {
                                                     value: leg.value + residual, memo: leg.memo)
         }
 
-        // Adopt the template's friendlier description when it is a distilled form
-        // of the raw narrative — its significant tokens are a strict subset of the
-        // target's (e.g. "Sydney Water" ⊂ "Direct Debit 651323 Sydney Water …").
-        // The raw narrative is then preserved in the bank leg's memo rather than
-        // discarded, matching how the user hand-categorises these.
-        let friendly = template.transactionDescription.trimmingCharacters(in: .whitespaces)
-        let newDescription: String? = (!friendly.isEmpty && templateTokens.isStrictSubset(of: targetTokens))
-            ? friendly : nil
+        // Adopt the learned friendly label when this example is a genuine rename
+        // (its raw narrative lives in the money-leg memo, distinct from the label).
+        // The target's own raw narrative is then preserved in its money-leg memo
+        // rather than discarded, matching how the user hand-categorises these.
+        let friendly = entry.friendly.trimmingCharacters(in: .whitespaces)
+        let newDescription: String? = (entry.cleaned && !friendly.isEmpty
+                                        && friendly != target.transactionDescription) ? friendly : nil
 
         return CategoryPlan(
             transactionID: target.guid, date: target.datePosted,
             transactionDescription: target.transactionDescription,
             currencyCode: currency.mnemonic, legs: legs,
-            templateDescription: template.transactionDescription, confidence: confidence,
+            templateDescription: entry.friendly, confidence: confidence,
             newDescription: newDescription, anchorSplitIDs: anchorSplits.map(\.guid))
     }
 
@@ -265,20 +337,25 @@ extension AppModel {
         }
         let tokens = String(scalars).split(separator: " ").map(String.init)
         return Set(tokens.filter { token in
-            token.count >= 2 && !token.allSatisfy(\.isNumber) && !Self.fillerTokens.contains(token)
+            token.count >= 2 && !token.allSatisfy(\.isNumber)
+                && !Self.fillerTokens.contains(token) && !Self.isDateToken(token)
         })
     }
 
-    /// Overlap coefficient: shared tokens over the smaller set. Tolerant of one
-    /// description carrying extra words the other lacks (e.g. a branch or city).
-    static func overlap(_ a: Set<String>, _ b: Set<String>) -> Double {
-        let shared = a.intersection(b).count
-        guard shared > 0 else { return 0 }
-        return Double(shared) / Double(min(a.count, b.count))
+    /// A month abbreviation, optionally with a trailing year (`jan`, `jan23`,
+    /// `apr2023`). These sit in statement narratives ("VAP DST JAN23") and would
+    /// otherwise let same-month payments of different securities cross-match.
+    private static func isDateToken(_ token: String) -> Bool {
+        guard token.count >= 3, Self.monthPrefixes.contains(String(token.prefix(3))) else { return false }
+        return token.dropFirst(3).allSatisfy(\.isNumber)
     }
 
-    private static let fillerTokens: Set<String> = [
-        "the", "and", "pty", "ltd", "inc", "llc", "payment", "pmt", "to", "from",
-        "for", "ref", "eftpos", "visa", "purchase", "card", "debit", "credit",
+    private static let monthPrefixes: Set<String> = [
+        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
     ]
+
+    // Only structural stopwords: idf already drives down domain-ubiquitous words
+    // ("direct", "debit", "visa", "australia") per account, and an over-eager
+    // filler list collapses narratives like "ANZ CREDIT CARD" to a single token.
+    private static let fillerTokens: Set<String> = ["the", "and", "to", "from", "for", "of", "at"]
 }
