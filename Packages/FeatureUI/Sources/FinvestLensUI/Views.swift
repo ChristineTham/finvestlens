@@ -1048,23 +1048,45 @@ enum RegisterColumns {
 /// nothing reaches the book until the commit.
 struct InlineTextCell: View {
     let value: String
+    var placeholder = ""
     var trailing = false
     let commit: (String) -> Void
     @State private var draft: String
 
-    init(value: String, trailing: Bool = false, commit: @escaping (String) -> Void) {
+    init(value: String, placeholder: String = "", trailing: Bool = false,
+         commit: @escaping (String) -> Void) {
         self.value = value
+        self.placeholder = placeholder
         self.trailing = trailing
         self.commit = commit
         _draft = State(initialValue: value)
     }
 
     var body: some View {
-        TextField("", text: $draft)
+        TextField(placeholder, text: $draft)
             .textFieldStyle(.plain)
             .scaledFont(.body)
             .multilineTextAlignment(trailing ? .trailing : .leading)
             .onSubmit { commit(draft) }
+    }
+}
+
+/// Account picker for a journal / expanded Auto-Split leg — moves that split in
+/// place (same-currency destinations; richer moves belong in the editor).
+struct LegAccountPicker: View {
+    @Bindable var model: AppModel
+    let splitID: GncGUID
+
+    var body: some View {
+        Picker("", selection: Binding(
+            get: { model.accountID(ofSplit: splitID) },
+            set: { if let id = $0 { model.inlineSetLegAccount(splitID: splitID, to: id) } }
+        )) {
+            ForEach(model.postableAccounts) { node in
+                Text(node.fullName).tag(GncGUID?.some(node.id))
+            }
+        }
+        .labelsHidden()
     }
 }
 
@@ -1375,10 +1397,11 @@ struct RegisterView: View {
     private var showsBalance: Bool { RegisterColumns.showsBalance(registerWidth, appFontScale) }
     private var showsDate: Bool { RegisterColumns.showsDate(registerWidth, appFontScale) }
 
-    /// The row whose fields edit in place: the single selected transaction row
-    /// (GnuCash edits the current row; a multi-selection is for bulk actions).
+    /// The row whose fields edit in place: the single selected row — a
+    /// transaction row or an expanded leg (GnuCash edits the current row; a
+    /// multi-selection is for bulk actions).
     private func isEditingRow(_ row: AutoSplitRow) -> Bool {
-        row.main != nil && selection.count == 1 && selection.first == row.id
+        selection.count == 1 && selection.first == row.id
     }
 
     private var registerTableBody: some View {
@@ -1436,28 +1459,49 @@ struct RegisterView: View {
                                 .scaledFont(.caption)
                                 .foregroundStyle(.tertiary)
                         }
-                        // Only when there is something to say: an empty second line
-                        // on every row would add height to show nothing.
-                        if doubleLine, !main.secondLine.isEmpty {
-                            Text(main.secondLine)
-                                .scaledFont(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
+                        // Double Line: the memo/notes detail. On the editing row
+                        // the fields edit in place; elsewhere the composed line
+                        // shows only when there is something to say.
+                        if doubleLine {
+                            if isEditingRow(row) {
+                                InlineTextCell(value: main.memo, placeholder: "Memo") {
+                                    model.inlineSetMemo(splitID: row.id, to: $0)
+                                }
+                                .id(row.id)
+                                InlineTextCell(value: main.notes, placeholder: "Notes") {
+                                    model.inlineSetNotes(splitID: row.id, to: $0)
+                                }
+                                .id(row.id)
+                            } else if !main.secondLine.isEmpty {
+                                Text(main.secondLine)
+                                    .scaledFont(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
                         }
                     }
                 } else {
                     // An expanded leg: the account it posts to, indented under
                     // its transaction, with action · memo beneath — composed the
-                    // same way the journal styles compose their leg detail.
+                    // same way the journal styles compose their leg detail. The
+                    // selected leg edits in place: its account and memo.
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(row.legAccount)
-                            .scaledFont(.body)
-                            .foregroundStyle(.secondary)
-                        if !row.legDetailLine.isEmpty {
-                            Text(row.legDetailLine)
-                                .scaledFont(.caption)
+                        if isEditingRow(row) {
+                            LegAccountPicker(model: model, splitID: row.id)
+                            InlineTextCell(value: row.legMemo, placeholder: "Memo") {
+                                model.inlineSetMemo(splitID: row.id, to: $0)
+                            }
+                            .id(row.id)
+                        } else {
+                            Text(row.legAccount)
+                                .scaledFont(.body)
                                 .foregroundStyle(.secondary)
-                                .lineLimit(2)
+                            if !row.legDetailLine.isEmpty {
+                                Text(row.legDetailLine)
+                                    .scaledFont(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
                         }
                     }
                     .padding(.leading, 18 * appFontScale)
@@ -1711,6 +1755,11 @@ struct JournalView: View {
     private var showsBalance: Bool { RegisterColumns.showsBalance(tableWidth, appFontScale) }
     private var showsDate: Bool { RegisterColumns.showsDate(tableWidth, appFontScale) }
 
+    /// The single selected row edits in place — same rule as the Basic table.
+    private func isEditingRow(_ row: JournalRow) -> Bool {
+        selection.count == 1 && selection.first == row.id
+    }
+
     private func table(_ rows: [JournalRow]) -> some View {
         // The column skeleton mirrors the Basic register — Date | text | R |
         // Amount | Balance, at the same computed widths — so switching styles
@@ -1719,8 +1768,17 @@ struct JournalView: View {
             if showsDate {
                 TableColumn("Date") { row in
                     if let date = row.date {
-                        Text(dateFormat.short(date))
-                            .scaledFont(.body).fontWeight(.medium)
+                        if row.isHeading, isEditingRow(row) {
+                            DatePicker("", selection: Binding(
+                                get: { date },
+                                set: { model.inlineSetDate(transactionID: row.transactionID, to: $0) }
+                            ), displayedComponents: .date)
+                            .labelsHidden()
+                            .scaledFont(.body)
+                        } else {
+                            Text(dateFormat.short(date))
+                                .scaledFont(.body).fontWeight(.medium)
+                        }
                     }
                 }
                 .width(RegisterColumns.date(tableWidth, appFontScale))
@@ -1729,22 +1787,44 @@ struct JournalView: View {
                 // Legs are indented under their heading, so the grouping still
                 // reads even though the rows are flat. Double Line shows the
                 // detail beneath the text: notes on headings, action · memo on
-                // legs — the same toggle the Basic-table styles use.
+                // legs — the same toggle the Basic-table styles use. The single
+                // selected row edits in place, as in the Basic table.
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(row.text)
-                        .scaledFont(.body)
-                        .fontWeight(row.isHeading ? .medium : (row.isFocusAccount ? .semibold : .regular))
-                        .foregroundStyle(row.isHeading ? .primary : .secondary)
-                    if !showsDate, row.isHeading, let date = row.date {
-                        Text(dateFormat.short(date))
-                            .scaledFont(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    if doubleLine, !row.detailLine.isEmpty {
-                        Text(row.detailLine)
-                            .scaledFont(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                    if isEditingRow(row) {
+                        if row.isHeading {
+                            InlineTextCell(value: row.text) {
+                                model.inlineSetDescription(transactionID: row.transactionID, to: $0)
+                            }
+                            .id(row.id)
+                            if doubleLine {
+                                InlineTextCell(value: row.notes, placeholder: "Notes") {
+                                    model.inlineSetNotes(transactionID: row.transactionID, to: $0)
+                                }
+                                .id(row.id)
+                            }
+                        } else {
+                            LegAccountPicker(model: model, splitID: row.id)
+                            InlineTextCell(value: row.memo, placeholder: "Memo") {
+                                model.inlineSetMemo(splitID: row.id, to: $0)
+                            }
+                            .id(row.id)
+                        }
+                    } else {
+                        Text(row.text)
+                            .scaledFont(.body)
+                            .fontWeight(row.isHeading ? .medium : (row.isFocusAccount ? .semibold : .regular))
+                            .foregroundStyle(row.isHeading ? .primary : .secondary)
+                        if !showsDate, row.isHeading, let date = row.date {
+                            Text(dateFormat.short(date))
+                                .scaledFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if doubleLine, !row.detailLine.isEmpty {
+                            Text(row.detailLine)
+                                .scaledFont(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
                     }
                 }
                 .padding(.leading, row.isHeading ? 0 : 18 * appFontScale)
