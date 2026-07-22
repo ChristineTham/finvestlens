@@ -190,7 +190,7 @@ struct ImportView: View {
         let staged = result.staged
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(appDateFormat.string(staged.date))
+                Text(appDateFormat.short(staged.date))
                     .foregroundStyle(.secondary)
                     .frame(width: dateWidth, alignment: .leading)
                 Text(staged.payee.isEmpty ? staged.memo : staged.payee)
@@ -301,7 +301,7 @@ struct ImportView: View {
         let inv = row.investment
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(appDateFormat.string(row.date))
+                Text(appDateFormat.short(row.date))
                     .foregroundStyle(.secondary).frame(width: dateWidth, alignment: .leading)
                 Text(inv?.action.rawValue.capitalized ?? "—").fontWeight(.medium)
                 Text(inv?.security ?? "").foregroundStyle(.secondary)

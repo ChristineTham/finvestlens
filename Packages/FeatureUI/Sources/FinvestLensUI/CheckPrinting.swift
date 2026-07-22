@@ -77,7 +77,7 @@ struct PrintableCheck: View {
                     }
                 }
                 Spacer()
-                labelled("Date", AppDateFormat.current.string(check.date))
+                labelled("Date", AppDateFormat.current.short(check.date))
             }
 
             // Pay to the order of … numeric amount in a box.

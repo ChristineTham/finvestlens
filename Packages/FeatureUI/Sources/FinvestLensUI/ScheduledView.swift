@@ -34,7 +34,7 @@ struct ScheduledView: View {
                             HStack {
                                 billBadge(bill.status)
                                 Text(bill.name)
-                                Text(dateFormat.string(bill.dueDate))
+                                Text(dateFormat.short(bill.dueDate))
                                     .scaledFont(.caption).foregroundStyle(.secondary)
                                 Spacer()
                                 Text(AmountFormat.string(bill.amount, code: model.reportCurrency.mnemonic))
@@ -50,7 +50,7 @@ struct ScheduledView: View {
                             HStack {
                                 Text(instance.name)
                                 Spacer()
-                                Text(dateFormat.string(instance.date))
+                                Text(dateFormat.short(instance.date))
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -142,7 +142,7 @@ struct ScheduledView: View {
     }
 
     private func recurrenceSummary(_ recurrence: Recurrence) -> String {
-        let from = dateFormat.string(recurrence.startDate)
+        let from = dateFormat.long(recurrence.startDate)
         if recurrence.period == .once { return "Once, on \(from)" }
         let unit = recurrence.period.unitNoun
         let every = recurrence.interval == 1 ? "Every \(unit)" : "Every \(recurrence.interval) \(unit)s"

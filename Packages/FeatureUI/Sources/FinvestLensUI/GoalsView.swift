@@ -121,7 +121,7 @@ private struct GoalRow: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let date = goal.targetDate {
-                    Text("by \(dateFormat.string(date))")
+                    Text("by \(dateFormat.long(date))")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

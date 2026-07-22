@@ -172,7 +172,6 @@ public struct AppearanceModifier: ViewModifier {
     @AppStorage(AppearanceKey.accent) private var accentRaw = AppAccent.lavender.rawValue
     @AppStorage(AppearanceKey.textStep) private var textStep = TextSize.defaultStep
     @AppStorage(AppDateFormat.orderKey) private var dateOrderRaw = DateOrder.dmy.rawValue
-    @AppStorage(AppDateFormat.styleKey) private var dateStyleRaw = DateDisplayStyle.short.rawValue
 
     public init() {}
 
@@ -181,8 +180,7 @@ public struct AppearanceModifier: ViewModifier {
     private var fontScale: CGFloat { TextSize.scale(textStep) }
 
     private var dateFormat: AppDateFormat {
-        AppDateFormat(order: DateOrder(rawValue: dateOrderRaw) ?? .dmy,
-                      style: DateDisplayStyle(rawValue: dateStyleRaw) ?? .short)
+        AppDateFormat(order: DateOrder(rawValue: dateOrderRaw) ?? .dmy)
     }
 
     public func body(content: Content) -> some View {

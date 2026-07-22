@@ -1239,7 +1239,7 @@ struct RegisterView: View {
     private var registerTableBody: some View {
         Table(model.registerRows, selection: $selection, sortOrder: tableSortOrder) {
             TableColumn("Date", value: \.date) { row in
-                Text(dateFormat.string(row.date))
+                Text(dateFormat.short(row.date))
                     .scaledFont(.body)
             }
             TableColumn("Description", value: \.description) { row in
@@ -1439,7 +1439,7 @@ struct JournalView: View {
         Table(rows, selection: $selection) {
             TableColumn("Date") { row in
                 if let date = row.date {
-                    Text(dateFormat.string(date))
+                    Text(dateFormat.short(date))
                         .scaledFont(.body).fontWeight(.medium)
                 }
             }
@@ -2052,7 +2052,7 @@ struct SearchResultsView: View {
     var body: some View {
         Table(model.searchResults, selection: $selection) {
             TableColumn("Date") { row in
-                Text(dateFormat.string(row.date))
+                Text(dateFormat.short(row.date))
                     .scaledFont(.body)
             }
             TableColumn("Description") { row in

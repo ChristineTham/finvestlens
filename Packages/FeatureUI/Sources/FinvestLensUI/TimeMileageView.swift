@@ -105,7 +105,7 @@ struct TimeMileageView: View {
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(entry.detail.isEmpty ? entry.kind.rawValue.capitalized : entry.detail)
-                    Text("\(customer?.name ?? "—") · \(dateFormat.string(entry.date))")
+                    Text("\(customer?.name ?? "—") · \(dateFormat.short(entry.date))")
                         .scaledFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()

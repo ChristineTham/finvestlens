@@ -411,9 +411,9 @@ struct InvoiceDetailSheet: View {
                     LabeledContent("Document", value: invoice.id)
                     LabeledContent(invoice.kind == .invoice ? "Customer" : "Vendor",
                                    value: invoice.owner.displayName)
-                    LabeledContent("Opened", value: dateFormat.string(invoice.dateOpened))
+                    LabeledContent("Opened", value: dateFormat.long(invoice.dateOpened))
                     if let due = invoice.dueDate {
-                        LabeledContent("Due", value: dateFormat.string(due))
+                        LabeledContent("Due", value: dateFormat.long(due))
                     }
                     Section("Lines") {
                         ForEach(invoice.entries) { entry in
@@ -541,12 +541,12 @@ struct PrintableInvoice: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    labelled("Opened", AppDateFormat.current.string(invoice.dateOpened))
+                    labelled("Opened", AppDateFormat.current.long(invoice.dateOpened))
                     if let posted = invoice.datePosted {
-                        labelled("Posted", AppDateFormat.current.string(posted))
+                        labelled("Posted", AppDateFormat.current.long(posted))
                     }
                     if let due = invoice.dueDate {
-                        labelled("Due", AppDateFormat.current.string(due))
+                        labelled("Due", AppDateFormat.current.long(due))
                     }
                 }
             }

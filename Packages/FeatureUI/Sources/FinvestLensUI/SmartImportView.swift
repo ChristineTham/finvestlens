@@ -323,11 +323,11 @@ private struct SmartDocumentRow: View {
                     .scaledFont(.caption).foregroundStyle(.orange)
             }
             if let match {
-                Label("Matches “\(match.transactionDescription)” of \(dateFormat.string(match.datePosted)) from \(match.fundingAccountName).",
+                Label("Matches “\(match.transactionDescription)” of \(dateFormat.short(match.datePosted)) from \(match.fundingAccountName).",
                       systemImage: "link")
                     .scaledFont(.callout)
                 if let proposed = match.proposedDate {
-                    Toggle("Set date to invoice date (\(dateFormat.string(proposed))) — the bank’s date is kept for matching",
+                    Toggle("Set date to invoice date (\(dateFormat.long(proposed))) — the bank’s date is kept for matching",
                            isOn: $adjustDate)
                         .scaledFont(.caption)
                 }
@@ -416,7 +416,7 @@ private struct CreateFromInvoiceSheet: View {
                     LabeledContent("Vendor", value: analysis.vendor.isEmpty ? "—" : analysis.vendor)
                     LabeledContent("Total", value: AmountFormat.string(analysis.total, code: code))
                     if let date = analysis.date {
-                        LabeledContent("Date", value: dateFormat.string(date))
+                        LabeledContent("Date", value: dateFormat.long(date))
                     }
                 }
                 Section("Pay from") {

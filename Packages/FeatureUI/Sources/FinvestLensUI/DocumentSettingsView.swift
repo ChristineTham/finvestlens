@@ -54,12 +54,12 @@ public struct GeneralSettingsView: View {
     @AppStorage("finvestlens.autosaveIntervalSeconds") private var autosaveSeconds = 300
     @AppStorage(AppModel.reopenLastBookDefaultsKey) private var reopenLastBook = true
     @AppStorage(AppDateFormat.orderKey) private var dateOrderRaw = DateOrder.dmy.rawValue
-    @AppStorage(AppDateFormat.styleKey) private var dateStyleRaw = DateDisplayStyle.short.rawValue
 
     public init() {}
 
-    private var dateOrder: DateOrder { DateOrder(rawValue: dateOrderRaw) ?? .dmy }
-    private var dateStyle: DateDisplayStyle { DateDisplayStyle(rawValue: dateStyleRaw) ?? .short }
+    private var dateFormat: AppDateFormat {
+        AppDateFormat(order: DateOrder(rawValue: dateOrderRaw) ?? .dmy)
+    }
 
     public var body: some View {
         Form {
@@ -70,24 +70,23 @@ public struct GeneralSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section("Dates") {
-                Picker("Order", selection: $dateOrderRaw) {
+                Picker("Date format", selection: $dateOrderRaw) {
                     ForEach(DateOrder.allCases) { order in
-                        Text(order.displayName).tag(order.rawValue)
+                        // Each option shows today's date in that order, so the
+                        // choice is concrete.
+                        Text("\(order.displayName)  (\(AppDateFormat(order: order).short(Date())))")
+                            .tag(order.rawValue)
                     }
                 }
-                Picker("Style", selection: $dateStyleRaw) {
-                    ForEach(DateDisplayStyle.allCases) { style in
-                        // Each option shows today in that style (in the chosen
-                        // order), so the choice is concrete.
-                        Text("\(style.displayName) — \(AppDateFormat(order: dateOrder, style: style).string(Date()))")
-                            .tag(style.rawValue)
+                LabeledContent("Examples") {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(dateFormat.short(Date()))
+                        Text(dateFormat.long(Date()))
+                        Text(dateFormat.full(Date()))
                     }
+                    .foregroundStyle(.secondary)
                 }
-                LabeledContent("Example") {
-                    Text(AppDateFormat(order: dateOrder, style: dateStyle).string(Date()))
-                        .foregroundStyle(.secondary)
-                }
-                Text("Applies to every date shown in the app. Compact spots (dashboards, month columns) keep the same day/month order without the year.")
+                Text("Applies to every date shown in the app. Compact tables use the short form, labels and documents spell out the month, and headline dates include the weekday — always in your chosen order.")
                     .scaledFont(.caption)
                     .foregroundStyle(.secondary)
             }

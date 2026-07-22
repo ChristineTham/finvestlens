@@ -148,7 +148,7 @@ struct AutoCategorizeSheet: View {
         Toggle(isOn: accepted) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(dateFormat.string(plan.date))
+                    Text(dateFormat.short(plan.date))
                         .foregroundStyle(.secondary)
                         .frame(width: dateWidth, alignment: .leading)
                     Text(plan.displayDescription).fontWeight(.medium)
@@ -185,7 +185,7 @@ struct AutoCategorizeSheet: View {
     private func row(_ item: AppModel.UncategorizedItem) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(dateFormat.string(item.date))
+                Text(dateFormat.short(item.date))
                     .foregroundStyle(.secondary)
                     .frame(width: dateWidth, alignment: .leading)
                 Text(item.transactionDescription)

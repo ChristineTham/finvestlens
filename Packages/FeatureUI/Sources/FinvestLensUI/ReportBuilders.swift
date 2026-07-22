@@ -56,7 +56,7 @@ extension AppModel {
               kind.usesScaffold else { return nil }
 
         let (from, to) = resolve(configuration.period)
-        let asOfLabel = "As of \(AppDateFormat.current.string(to))"
+        let asOfLabel = "As of \(AppDateFormat.current.full(to))"
         let periodLabel = kind.isAsOf ? asOfLabel : label(for: configuration.period)
 
         switch kind {
@@ -369,7 +369,7 @@ extension AppModel {
                     columns: columns,
                     columnTotals: ("Total", amounts(totals)))],
                 notes: ["Open invoices are aged by their due date as of "
-                        + AppDateFormat.current.string(to)
+                        + AppDateFormat.current.long(to)
                         + " into 0–30 (current), 31–60, 61–90 and 91+ day buckets."],
                 facts: ReportFactsSource(
                     headline: [("Total", totals.total), ("Current", totals.current),
@@ -450,7 +450,7 @@ extension AppModel {
                 columnTotals: ("Total",
                                [totalCharged, totalCharged - totalOutstanding, totalOutstanding]))],
             notes: ["Totals cover posted documents only, as of "
-                    + AppDateFormat.current.string(to)
+                    + AppDateFormat.current.long(to)
                     + ". \"Paid\" is \(chargedNoun.lowercased()) less what is still outstanding."],
             facts: ReportFactsSource(
                 headline: [(chargedNoun, totalCharged), ("Paid", totalCharged - totalOutstanding),
@@ -461,7 +461,7 @@ extension AppModel {
     /// A short label for one average-balance interval — the start date, since
     /// intervals abut (each ends the day before the next begins).
     private func intervalLabel(_ interval: AverageBalanceInterval) -> String {
-        AppDateFormat.current.string(interval.start)
+        AppDateFormat.current.long(interval.start)
     }
 
     // MARK: Comparative statements
@@ -505,7 +505,7 @@ extension AppModel {
         if stride.month == 1 {
             return AppDateFormat.current.monthYear(from)
         }
-        return AppDateFormat.current.string(to)
+        return AppDateFormat.current.long(to)
     }
 
     /// Aligns report lines from several periods into comparative rows, keyed by
@@ -635,7 +635,7 @@ extension AppModel {
 
     private func valuationNote(_ date: Date) -> String {
         "Security holdings are valued at market using the latest price on or before "
-        + AppDateFormat.current.string(date)
+        + AppDateFormat.current.long(date)
         + "; foreign currencies convert at that date's rate. Accounts with no available "
         + "price are omitted."
     }

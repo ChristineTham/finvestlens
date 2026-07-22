@@ -57,7 +57,7 @@ struct LinkedDocumentsView: View {
                 Text(doc.description.isEmpty ? "(no description)" : doc.description)
                     .scaledFont(.body)
                 HStack(spacing: 6) {
-                    Text(dateFormat.string(doc.date))
+                    Text(dateFormat.short(doc.date))
                     Text("·")
                     Text(doc.displayName).lineLimit(1).truncationMode(.middle)
                     if !doc.exists && !doc.isWeb {

@@ -332,7 +332,7 @@ struct ReconcileReportView: View {
             } else {
                 ForEach(rows) { row in
                     HStack {
-                        Text(dateFormat.string(row.date))
+                        Text(dateFormat.short(row.date))
                             .foregroundStyle(.secondary)
                             .frame(width: dateWidth, alignment: .leading)
                         VStack(alignment: .leading) {
@@ -396,7 +396,7 @@ struct TransactionReportView: View {
                     List {
                         ForEach(report.rows) { row in
                             HStack {
-                                Text(dateFormat.string(row.date))
+                                Text(dateFormat.short(row.date))
                                     .foregroundStyle(.secondary).frame(width: dateWidth, alignment: .leading)
                                 VStack(alignment: .leading) {
                                     Text(row.description)
@@ -453,7 +453,7 @@ struct InvestmentLotsView: View {
                             HStack {
                                 Text(lot.symbol).fontWeight(.medium)
                                 if let date = lot.acquisitionDate {
-                                    Text(dateFormat.string(date))
+                                    Text(dateFormat.short(date))
                                         .scaledFont(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -554,7 +554,7 @@ struct CapitalGainsView: View {
                                         .foregroundStyle(line.gain < 0 ? .red : .green)
                                 }
                                 HStack {
-                                    Text("\(line.quantity.formatted()) sold \(dateFormat.string(line.disposalDate))")
+                                    Text("\(line.quantity.formatted()) sold \(dateFormat.short(line.disposalDate))")
                                         .scaledFont(.caption).foregroundStyle(.secondary)
                                     Spacer()
                                     Text("proceeds \(AmountFormat.string(line.proceeds, code: report.currencyCode)) − cost \(AmountFormat.string(line.costBasis, code: report.currencyCode))")
@@ -585,7 +585,7 @@ struct CapitalGainsView: View {
                             HStack {
                                 Text(lot.symbol).fontWeight(.medium)
                                 if let date = lot.acquisitionDate {
-                                    Text(dateFormat.string(date))
+                                    Text(dateFormat.short(date))
                                         .scaledFont(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -666,7 +666,7 @@ struct CashFlowView: View {
                     }
                     List(events) { event in
                         HStack {
-                            Text(dateFormat.string(event.date))
+                            Text(dateFormat.short(event.date))
                                 .foregroundStyle(.secondary)
                                 .frame(width: dateWidth, alignment: .leading)
                             Text(event.label)
@@ -721,7 +721,7 @@ struct CashFlowView: View {
                     }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .accessibilityLabel("Remove what-if event \(event.label)")
-                    Text("\(event.label): \(AmountFormat.string(event.amount, code: model.reportCurrency.mnemonic)) on \(dateFormat.string(event.date))")
+                    Text("\(event.label): \(AmountFormat.string(event.amount, code: model.reportCurrency.mnemonic)) on \(dateFormat.short(event.date))")
                         .scaledFont(.caption2).foregroundStyle(.secondary)
                 }
             }

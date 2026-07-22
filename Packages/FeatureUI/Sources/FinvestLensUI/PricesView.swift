@@ -35,7 +35,7 @@ struct PricesView: View {
                                 ForEach(model.priceRows) { row in
                                     HStack {
                                         Text(row.symbol).fontWeight(.medium)
-                                        Text(dateFormat.string(row.date))
+                                        Text(dateFormat.short(row.date))
                                             .foregroundStyle(.secondary)
                                         Spacer()
                                         Text(AmountFormat.string(row.value, code: row.currencyCode))
@@ -52,7 +52,7 @@ struct PricesView: View {
                                 ForEach(model.rateRows) { row in
                                     HStack {
                                         Text("\(row.from) → \(row.to)").fontWeight(.medium)
-                                        Text(dateFormat.string(row.date))
+                                        Text(dateFormat.short(row.date))
                                             .foregroundStyle(.secondary)
                                         Spacer()
                                         Text(row.value.formatted(.number.precision(.fractionLength(0...6))))

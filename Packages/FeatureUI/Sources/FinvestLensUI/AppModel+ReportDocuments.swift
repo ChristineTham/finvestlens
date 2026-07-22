@@ -19,7 +19,7 @@ import FinvestLensReports
 extension AppModel {
 
     private func shortDate(_ date: Date) -> String {
-        AppDateFormat.current.string(date)
+        AppDateFormat.current.long(date)
     }
 
     /// A period label "1 Jan 2026 – 31 Mar 2026".

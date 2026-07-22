@@ -69,7 +69,7 @@ struct ReconcileView: View {
                             ? "Re-opened \(reverted) reconciled split\(reverted == 1 ? "" : "s") — they're now cleared and can be reconciled again."
                             : "Nothing to re-open."
                     }
-                    Text("The most recent reconciliation was \(dateFormat.string(last)). Re-opening reverts those splits to cleared so you can reconcile the statement again (FR-REC-03).")
+                    Text("The most recent reconciliation was \(dateFormat.long(last)). Re-opening reverts those splits to cleared so you can reconcile the statement again (FR-REC-03).")
                         .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -110,7 +110,7 @@ struct ReconcileView: View {
                             Image(systemName: item.isCleared ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(item.isCleared ? Color.accentColor : Color.secondary)
                                 .accessibilityHidden(true)
-                            Text(dateFormat.string(item.date))
+                            Text(dateFormat.short(item.date))
                                 .foregroundStyle(.secondary)
                                 .frame(width: dateWidth, alignment: .leading)
                             Text(item.description)

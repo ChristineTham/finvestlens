@@ -439,7 +439,7 @@ struct DashboardView: View {
         let portfolio = atDate.first(where: \.isPortfolio)
         let holdings = atDate.filter { !$0.isPortfolio }.sorted { $0.returnPct > $1.returnPct }
         return VStack(alignment: .leading, spacing: 2) {
-            Text(dateFormat.string(date))
+            Text(dateFormat.full(date))
                 .scaledFont(.caption2).foregroundStyle(.secondary)
             if let portfolio {
                 perfRow(name: "Portfolio", pct: portfolio.returnPct, bold: true)
