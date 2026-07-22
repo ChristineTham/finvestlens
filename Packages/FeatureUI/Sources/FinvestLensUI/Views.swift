@@ -1506,7 +1506,7 @@ struct RegisterView: View {
             }
         }
         .contextMenu(forSelectionType: GncGUID.self) { ids in
-            TransactionActions(model: model, splitID: ids.first)
+            TransactionActions(model: model, splitID: ids.first, selectionSplitIDs: ids)
         }
         // The transaction editor is now a trailing inspector (see RootHost) so
         // the register stays visible while editing (HIG).
@@ -1725,7 +1725,15 @@ struct JournalView: View {
             // own, so act on the transaction's first leg — the same transaction
             // either way, which is what the operations are about.
             if let id = ids.first, let row = rows.first(where: { $0.id == id }) {
-                TransactionActions(model: model, splitID: model.anySplitID(ofTransaction: row.transactionID))
+                // Multi-selection actions want split GUIDs: a leg's id already is
+                // one; a heading's is its transaction's, so borrow its first leg.
+                let splitIDs = Set(ids.compactMap { id -> GncGUID? in
+                    guard let row = rows.first(where: { $0.id == id }) else { return nil }
+                    return row.isHeading ? model.anySplitID(ofTransaction: row.transactionID) : id
+                })
+                TransactionActions(model: model,
+                                   splitID: model.anySplitID(ofTransaction: row.transactionID),
+                                   selectionSplitIDs: splitIDs)
             }
         }
         // Editing an existing transaction is a trailing inspector (wired on the
@@ -1755,11 +1763,15 @@ public struct TransactionActions: View {
     /// The split the row stands for. `nil` when nothing is selected, which is
     /// what disables the menu-bar copy.
     var splitID: GncGUID?
+    /// Every selected row (split GUIDs) — what multi-selection actions like
+    /// Auto-Categorise act on. Empty falls back to `splitID` alone.
+    var selectionSplitIDs: Set<GncGUID> = []
     @State private var pasteError: String?
 
-    public init(model: AppModel, splitID: GncGUID?) {
+    public init(model: AppModel, splitID: GncGUID?, selectionSplitIDs: Set<GncGUID> = []) {
         self.model = model
         self.splitID = splitID
+        self.selectionSplitIDs = selectionSplitIDs
     }
 
     private var txnID: GncGUID? { splitID.flatMap { model.transactionID(ofSplit: $0) } }
@@ -1779,6 +1791,17 @@ public struct TransactionActions: View {
                 if let splitID { model.jumpToOtherAccount(ofSplit: splitID) }
             }
             .keyboardShortcut("j", modifiers: .command)
+            .disabled(needsRow)
+            Button("Auto-Categorise…", systemImage: "sparkles") {
+                // Scope the sheet to exactly the rows this menu was opened on —
+                // the full selection, or just this row when invoked on one.
+                let ids = selectionSplitIDs.isEmpty
+                    ? (splitID.map { Set([$0]) } ?? [])
+                    : selectionSplitIDs
+                model.selectedSplitIDs = ids
+                model.selectedSplitID = ids.first
+                model.presentedPanel = .autoCategorize
+            }
             .disabled(needsRow)
             Button("Attach File…", systemImage: "paperclip") {
                 if let txnID { model.attachDocumentRequestTxnID = txnID }

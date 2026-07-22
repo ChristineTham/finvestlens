@@ -153,7 +153,8 @@ struct finvestlensApp: App {
             // all. `TransactionActions` is the same view the context menus use,
             // so the menu bar cannot drift out of step with them.
             CommandMenu("Transaction") {
-                TransactionActions(model: model, splitID: model.selectedSplitID)
+                TransactionActions(model: model, splitID: model.selectedSplitID,
+                                   selectionSplitIDs: model.selectedSplitIDs)
                     .disabled(!model.isOpen)
             }
             // Book: every tool panel, so all functionality is reachable (and
