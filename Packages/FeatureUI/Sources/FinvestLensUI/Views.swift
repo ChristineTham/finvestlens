@@ -1004,14 +1004,68 @@ enum RegisterEnd {
     case oldest, newest
 }
 
+/// The reconcile state as a glanceable symbol, shared by the Basic register and
+/// the journal styles so the column reads identically everywhere. Activating it
+/// cycles the state (n → c → y), as the letter button always did.
+struct ReconcileBadge: View {
+    let glyph: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: Self.symbol(glyph))
+                .foregroundStyle(Self.color(glyph))
+                .imageScale(.small)
+        }
+        .buttonStyle(.plain)
+        .help(Self.word(glyph))
+        .accessibilityLabel("Reconciliation status")
+        .accessibilityValue(Self.word(glyph))
+        .accessibilityHint("Activate to change")
+    }
+
+    static func symbol(_ glyph: String) -> String {
+        switch glyph {
+        case "c": "checkmark.circle"
+        case "y": "checkmark.circle.fill"
+        case "f": "snowflake"
+        case "v": "xmark.circle"
+        default: "circle.dotted"
+        }
+    }
+
+    static func color(_ glyph: String) -> Color {
+        switch glyph {
+        case "c": .accentColor
+        case "y": .green
+        case "f": .cyan
+        case "v": .red
+        default: .secondary
+        }
+    }
+
+    static func word(_ glyph: String) -> String {
+        switch glyph {
+        case "c": "Cleared"
+        case "y": "Reconciled"
+        case "f": "Frozen"
+        case "v": "Voided"
+        default: "Not reconciled"
+        }
+    }
+}
+
 struct RegisterView: View {
     @Environment(\.appDateFormat) private var dateFormat
+    @Environment(\.appFontScale) private var appFontScale
     @Bindable var model: AppModel
     @State private var selection: Set<GncGUID> = []
     @State private var editingTransactionID: GncGUID?
     @State private var style: RegisterStyle = .basic
     @State private var filterShown = false
     @State private var goToDateShown = false
+    /// The register's current width, for folding side columns on narrow windows.
+    @State private var registerWidth: CGFloat = 800
     /// GnuCash's View ▸ Double Line. A preference rather than per-register
     /// state, as in GnuCash, so it survives moving between accounts.
     @AppStorage("registerDoubleLine") private var doubleLine = false
@@ -1173,6 +1227,7 @@ struct RegisterView: View {
                     jump = nil
                 }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { registerWidth = $0 }
         // GnuCash's blank transaction row, at the foot of the register where
         // GnuCash keeps it. Not in the subtree view: an entry needs to know
         // which single account it is entering into.
@@ -1236,15 +1291,34 @@ struct RegisterView: View {
             })
     }
 
+    /// Below this, the Account/Transfer columns fold into a second description
+    /// line so Description keeps readable width.
+    private var compact: Bool { registerWidth < 640 * appFontScale }
+
     private var registerTableBody: some View {
         Table(model.registerRows, selection: $selection, sortOrder: tableSortOrder) {
             TableColumn("Date", value: \.date) { row in
                 Text(dateFormat.short(row.date))
                     .scaledFont(.body)
             }
+            .width(min: 72 * appFontScale, ideal: 80 * appFontScale, max: 112 * appFontScale)
+            // Description is the flexible column: everything else is pinned near
+            // its content width, so spare width lands here.
             TableColumn("Description", value: \.description) { row in
                 VStack(alignment: .leading, spacing: 1) {
                     Text(row.description).scaledFont(.body)
+                    // Narrow window: the folded Transfer (and subtree Account)
+                    // columns surface here instead of vanishing.
+                    if compact, !row.transfer.isEmpty {
+                        Text("→ \(row.transfer)")
+                            .scaledFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if compact, model.registerIncludesSubaccounts, !row.accountName.isEmpty {
+                        Text(row.accountName)
+                            .scaledFont(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
                     // Only when there is something to say: an empty second line
                     // on every row would add height to show nothing.
                     if doubleLine, !row.secondLine.isEmpty {
@@ -1258,26 +1332,34 @@ struct RegisterView: View {
             // Which account a row posted to, which only a subtree register has
             // to answer — in a single-account register every row is the same
             // account and the column would say nothing.
-            TableColumn("Account") { row in
-                Text(row.accountName).scaledFont(.body).foregroundStyle(.secondary)
+            if !compact, model.registerIncludesSubaccounts {
+                TableColumn("Account") { row in
+                    Text(row.accountName).scaledFont(.body).foregroundStyle(.secondary)
+                }
+                .width(min: 70 * appFontScale, ideal: 120 * appFontScale, max: 240 * appFontScale)
             }
-            TableColumn("Transfer") { row in
-                Text(row.transfer).scaledFont(.body)
+            if !compact {
+                TableColumn("Transfer") { row in
+                    Text(row.transfer).scaledFont(.body).foregroundStyle(.secondary)
+                }
+                .width(min: 80 * appFontScale, ideal: 140 * appFontScale, max: 280 * appFontScale)
             }
             TableColumn("R") { row in
-                Button(row.reconcile) { model.cycleReconcileState(splitID: row.id) }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Reconciliation status")
-                    .accessibilityValue(reconcileWord(row.reconcile))
-                    .accessibilityHint("Activate to change")
+                ReconcileBadge(glyph: row.reconcile) {
+                    model.cycleReconcileState(splitID: row.id)
+                }
             }
+            .width(24 * appFontScale)
             TableColumn("Amount", value: \.amount) { row in
                 Text(AmountFormat.string(row.amount, code: currencyCode))
                     .scaledFont(.body)
                     .monospacedDigit()
                     .foregroundStyle(row.amount < 0 ? .red : .primary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                     .accessibilityLabel(AmountFormat.spoken(row.amount, code: currencyCode))
             }
+            .width(min: 80 * appFontScale, ideal: 92 * appFontScale, max: 150 * appFontScale)
+            .alignment(.numeric)
             // Balance has no sort on purpose: each row's balance is the
             // account's balance *as of that posting*, computed in date order —
             // ordering by it would order by an artefact.
@@ -1288,12 +1370,16 @@ struct RegisterView: View {
                     Text(AmountFormat.string(balance, code: currencyCode))
                         .scaledFont(.body)
                         .monospacedDigit()
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                         .accessibilityLabel("Balance \(AmountFormat.spoken(balance, code: currencyCode))")
                 } else {
                     Text("—").foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                         .accessibilityLabel("No running balance")
                 }
             }
+            .width(min: 88 * appFontScale, ideal: 100 * appFontScale, max: 160 * appFontScale)
+            .alignment(.numeric)
         }
         .tableColumnHeaders(.visible)
         // A dense financial table reads better with a crisp cutoff where rows
@@ -1303,7 +1389,7 @@ struct RegisterView: View {
         // long ledger, rather than swiping through every row.
         .accessibilityRotor("Unreconciled") {
             ForEach(model.registerRows) { row in
-                if reconcileWord(row.reconcile) == "Not reconciled" {
+                if ReconcileBadge.word(row.reconcile) == "Not reconciled" {
                     AccessibilityRotorEntry(row.description, id: row.id)
                 }
             }
@@ -1364,16 +1450,6 @@ struct RegisterView: View {
     private var currencyCode: String {
         model.postableAccounts.first { $0.id == model.selectedAccountID }?.currencyCode ?? "AUD"
     }
-
-    private func reconcileWord(_ glyph: String) -> String {
-        switch glyph {
-        case "c": "Cleared"
-        case "y": "Reconciled"
-        case "f": "Frozen"
-        case "v": "Voided"
-        default: "Not reconciled"
-        }
-    }
 }
 
 /// Journal / general-ledger register: each transaction with all its legs.
@@ -1417,25 +1493,34 @@ struct JournalView: View {
         } else {
             ScrollViewReader { proxy in
                 table(rows)
-                    .onAppear { scroll(proxy, to: .newest) }
-                    .onChange(of: accountID) { scroll(proxy, to: .newest) }
+                    // Deferred a tick: scrolling during the same pass that builds
+                    // the table can land before AppKit has row geometry, which is
+                    // why the journal styles used to open at the top. Like the
+                    // Basic register, they open on the newest transaction.
+                    .onAppear { Task { scroll(proxy, to: .newest, rows: rows) } }
+                    .onChange(of: accountID) { Task { scroll(proxy, to: .newest, rows: rows) } }
                     .onChange(of: jump) { _, target in
                         guard let target else { return }
-                        scroll(proxy, to: target)
+                        scroll(proxy, to: target, rows: rows)
                         jump = nil
                     }
             }
         }
     }
 
-    /// Jumps to the oldest or newest row. Bounded work whatever the distance.
-    private func scroll(_ proxy: ScrollViewProxy, to end: RegisterEnd) {
-        guard let target = model.journalEdgeRowID(forAccountID: accountID,
-                                                  newest: end == .newest) else { return }
+    /// Jumps to the oldest or newest **visible** row. Targeting the displayed
+    /// rows matters in Auto-Split, where an unexpanded transaction's legs are
+    /// not on screen — the old whole-journal edge row didn't exist there, so
+    /// the scroll silently did nothing.
+    private func scroll(_ proxy: ScrollViewProxy, to end: RegisterEnd, rows: [JournalRow]) {
+        guard let target = (end == .newest ? rows.last?.id : rows.first?.id) else { return }
         proxy.scrollTo(target, anchor: end == .newest ? .bottom : .top)
     }
 
     private func table(_ rows: [JournalRow]) -> some View {
+        // Column widths mirror the Basic register so switching styles doesn't
+        // reflow the frame: date and amount stay where they were, and the
+        // description column keeps the spare width.
         Table(rows, selection: $selection) {
             TableColumn("Date") { row in
                 if let date = row.date {
@@ -1443,7 +1528,7 @@ struct JournalView: View {
                         .scaledFont(.body).fontWeight(.medium)
                 }
             }
-            .width(min: 90, ideal: 100)
+            .width(min: 72 * appFontScale, ideal: 80 * appFontScale, max: 112 * appFontScale)
             TableColumn("Transaction / Account") { row in
                 // Legs are indented under their heading, so the grouping still
                 // reads even though the rows are flat. Notes (on headings) and
@@ -1464,15 +1549,25 @@ struct JournalView: View {
                 }
                 .padding(.leading, row.isHeading ? 0 : 18 * appFontScale)
             }
+            TableColumn("R") { row in
+                if !row.isHeading, !row.reconcile.isEmpty {
+                    ReconcileBadge(glyph: row.reconcile) {
+                        model.cycleReconcileState(splitID: row.id)
+                    }
+                }
+            }
+            .width(24 * appFontScale)
             TableColumn("Amount") { row in
                 if let amount = row.amount {
                     Text(AmountFormat.string(amount, code: row.currencyCode))
                         .scaledFont(.body)
                         .monospacedDigit()
                         .foregroundStyle(amount < 0 ? .red : .primary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            .width(min: 100, ideal: 130)
+            .width(min: 80 * appFontScale, ideal: 92 * appFontScale, max: 150 * appFontScale)
+            .alignment(.numeric)
         }
         .contextMenu(forSelectionType: GncGUID.self) { ids in
             // A journal row is a heading or a leg. A heading has no split of its

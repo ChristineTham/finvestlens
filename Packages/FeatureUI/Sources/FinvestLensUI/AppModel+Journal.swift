@@ -35,6 +35,9 @@ public struct JournalRow: Identifiable, Hashable, Sendable {
     public var memo: String = ""
     /// The split's action (legs only) — GnuCash's per-leg Action field.
     public var action: String = ""
+    /// The split's reconcile glyph (legs only): n/c/y/f/v, as in the Basic
+    /// register — empty on headings.
+    public var reconcile: String = ""
 
     /// The secondary detail line for this row: notes on a heading, action and
     /// memo on a leg. Empty when there is nothing to say.
@@ -90,7 +93,8 @@ extension AppModel {
                     date: nil, text: split.account?.name ?? "—",
                     amount: split.value, currencyCode: txn.currency.mnemonic,
                     isFocusAccount: focus != nil && split.account === focus,
-                    memo: split.memo, action: split.action))
+                    memo: split.memo, action: split.action,
+                    reconcile: split.reconcileState.rawValue))
             }
         }
         journalRowCache[accountID] = rows
