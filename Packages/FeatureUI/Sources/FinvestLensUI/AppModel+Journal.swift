@@ -38,6 +38,8 @@ public struct JournalRow: Identifiable, Hashable, Sendable {
     /// The split's reconcile glyph (legs only): n/c/y/f/v, as in the Basic
     /// register — empty on headings.
     public var reconcile: String = ""
+    /// Whether the transaction carries a document link (headings only).
+    public var hasDocument = false
     /// The focused account's balance as of this leg (single-account journals
     /// only; `nil` on headings, other accounts' legs, and the general ledger).
     /// Gives the journal styles the same Balance column as Basic, so switching
@@ -179,7 +181,7 @@ extension AppModel {
                 id: txn.guid, transactionID: txn.guid, isHeading: true,
                 date: txn.datePosted, text: txn.transactionDescription,
                 amount: nil, currencyCode: txn.currency.mnemonic, isFocusAccount: false,
-                notes: txn.notes))
+                notes: txn.notes, hasDocument: txn.documentLink != nil))
             for split in txn.splits {
                 let isFocus = inFocus(split)
                 rows.append(JournalRow(

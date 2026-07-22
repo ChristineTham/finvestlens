@@ -55,6 +55,9 @@ public struct RegisterRow: Identifiable, Hashable, Sendable {
     /// The account's balance as of this posting, or `nil` when the register
     /// spans more than one commodity and a running total would mean nothing.
     public var runningBalance: Decimal?
+    /// Whether the transaction carries a document link (`assoc_uri`) — drawn as
+    /// a paperclip on the row, and what the attachments panel opens.
+    public var hasDocument = false
 
     /// What double-line mode shows beneath the description: the transaction's
     /// notes, then this split's own memo, then its action. Any of the three can
@@ -1843,7 +1846,8 @@ public final class AppModel {
                 // never had to say.
                 accountName: registerIncludesSubaccounts ? (split.account?.name ?? "") : "",
                 amount: split.quantity,
-                runningBalance: balancesAreMeaningful ? running : nil
+                runningBalance: balancesAreMeaningful ? running : nil,
+                hasDocument: split.transaction?.documentLink != nil
             )
         }
         registerRows = ordered(filtered(rows))

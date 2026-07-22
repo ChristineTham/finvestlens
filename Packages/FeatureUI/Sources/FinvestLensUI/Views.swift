@@ -1175,6 +1175,8 @@ struct RegisterView: View {
     /// GnuCash's View ▸ Double Line. A preference rather than per-register
     /// state, as in GnuCash, so it survives moving between accounts.
     @AppStorage("registerDoubleLine") private var doubleLine = false
+    /// Whether the attachments sidebar is shown (persisted like Double Line).
+    @AppStorage("registerAttachmentsShown") private var attachmentsShown = false
     /// Set by the ⌘↑/⌘↓ shortcuts; the scrolling view consumes and clears it.
     @State private var jump: RegisterEnd?
 
@@ -1203,23 +1205,30 @@ struct RegisterView: View {
                     subaccountsToggle
                 }
                 doubleLineToggle
+                attachmentsToggle
                 sortMenu
                 filterButton
             }
             .padding(6)
             Divider()
-            content
-                // The entry bar belongs to every single-account style, not just
-                // Basic — same reason as the summary bar.
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if let accountID = model.selectedAccountID,
-                       !model.registerIncludesSubaccounts {
-                        VStack(spacing: 0) {
-                            Divider()
-                            RegisterEntryBar(model: model, accountID: accountID)
+            HStack(spacing: 0) {
+                content
+                    // The entry bar belongs to every single-account style, not just
+                    // Basic — same reason as the summary bar.
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        if let accountID = model.selectedAccountID,
+                           !model.registerIncludesSubaccounts {
+                            VStack(spacing: 0) {
+                                Divider()
+                                RegisterEntryBar(model: model, accountID: accountID)
+                            }
                         }
                     }
+                if attachmentsShown {
+                    Divider()
+                    AttachmentsPanel(model: model)
                 }
+            }
             if let summary = model.registerSummary {
                 Divider()
                 summaryBar(summary)
@@ -1279,6 +1288,19 @@ struct RegisterView: View {
         }
         .toggleStyle(.button)
         .help("Show notes, memo and action under each transaction")
+    }
+
+    /// The attachments sidebar toggle. The paperclip fills when the selected
+    /// transaction carries a link — visible before the panel is even opened.
+    private var attachmentsToggle: some View {
+        let selectedHasDocument = model.selectedTransactionIDs.count == 1
+            && model.selectedTransactionIDs.first.map(model.hasLinkedDocument) == true
+        return Toggle(isOn: $attachmentsShown) {
+            Label("Attachments",
+                  systemImage: selectedHasDocument ? "paperclip.badge.ellipsis" : "paperclip")
+        }
+        .toggleStyle(.button)
+        .help("Show the selected transaction’s attachment — view, open, add or remove its link")
     }
 
     /// GnuCash's View ▸ Sort By, as a menu rather than a dialog — the options
@@ -1470,9 +1492,17 @@ struct RegisterView: View {
             TableColumn("Description", value: \.description) { row in
                 if let main = row.main {
                     VStack(alignment: .leading, spacing: 1) {
-                        InlineTextCell(value: main.description,
-                                       onFocus: { select(row.id) }) {
-                            model.inlineSetDescription(splitID: row.id, to: $0)
+                        HStack(spacing: 4) {
+                            if main.hasDocument {
+                                Image(systemName: "paperclip")
+                                    .imageScale(.small)
+                                    .foregroundStyle(.secondary)
+                                    .help("Has an attachment — open the Attachments sidebar")
+                            }
+                            InlineTextCell(value: main.description,
+                                           onFocus: { select(row.id) }) {
+                                model.inlineSetDescription(splitID: row.id, to: $0)
+                            }
                         }
                         // Folded columns surface as caption lines instead of
                         // vanishing: date on very narrow windows, then transfer
@@ -1803,8 +1833,15 @@ struct JournalView: View {
                 // selected row edits in place, as in the Basic table.
                 VStack(alignment: .leading, spacing: 1) {
                     if row.isHeading {
-                        InlineTextCell(value: row.text, onFocus: { select(row.id) }) {
-                            model.inlineSetDescription(transactionID: row.transactionID, to: $0)
+                        HStack(spacing: 4) {
+                            if row.hasDocument {
+                                Image(systemName: "paperclip")
+                                    .imageScale(.small)
+                                    .foregroundStyle(.secondary)
+                            }
+                            InlineTextCell(value: row.text, onFocus: { select(row.id) }) {
+                                model.inlineSetDescription(transactionID: row.transactionID, to: $0)
+                            }
                         }
                         if !showsDate, let date = row.date {
                             Text(dateFormat.short(date))

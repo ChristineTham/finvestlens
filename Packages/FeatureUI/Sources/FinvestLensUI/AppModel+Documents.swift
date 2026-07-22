@@ -127,6 +127,35 @@ extension AppModel {
         book?.transaction(with: transactionID)?.documentLink != nil
     }
 
+    /// The raw stored link (relative path, absolute path, or URL), if any.
+    public func documentLink(for transactionID: GncGUID) -> String? {
+        book?.transaction(with: transactionID)?.documentLink
+    }
+
+    /// Stores `link` verbatim (`nil` removes the association). One undoable
+    /// action; the file itself is never touched.
+    public func setDocumentLink(_ link: String?, for transactionID: GncGUID) {
+        guard let book, let txn = book.transaction(with: transactionID),
+              txn.documentLink != link else { return }
+        editing([transactionID], named: link == nil ? "Remove Document Link" : "Set Document Link") {
+            txn.documentLink = link
+        }
+    }
+
+    /// Links an existing file **in place** — no copy, unlike
+    /// ``attachDocument(named:data:to:)``. Stored relative to the document
+    /// folder when the file lives inside it (so book + documents move
+    /// together), else as an absolute path.
+    public func linkDocument(at url: URL, to transactionID: GncGUID) {
+        let path = url.standardizedFileURL.path
+        var link = path
+        if let base = effectiveDocumentFolder?.standardizedFileURL.path {
+            let prefix = base.hasSuffix("/") ? base : base + "/"
+            if path.hasPrefix(prefix) { link = String(path.dropFirst(prefix.count)) }
+        }
+        setDocumentLink(link, for: transactionID)
+    }
+
     /// One transaction's document association, for the book-wide list
     /// (GnuCash's Tools ▸ Transaction Linked Documents).
     public struct LinkedDocument: Identifiable, Sendable {
