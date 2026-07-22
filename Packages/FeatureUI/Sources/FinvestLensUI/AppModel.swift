@@ -1477,6 +1477,9 @@ public final class AppModel {
     // MARK: Snapshots
 
     func refreshAll() {
+        // Splits are added/removed on their transactions inside edit closures,
+        // which the book cannot observe — drop its GUID lookup indexes here.
+        book?.invalidateLookupIndexes()
         journalTransactionCache = [:]
         journalRowCache = [:]
         priceRowCache = nil
@@ -1761,11 +1764,28 @@ public final class AppModel {
         return currency.round(total)
     }
 
+    /// One-entry memo for the Basic/Auto-Split table's row array. The table asks
+    /// for its rows on every body pass — every click and every field focus —
+    /// and mapping thousands of RegisterRows into AutoSplitRows each time, then
+    /// handing SwiftUI a brand-new array to diff, is what made the register
+    /// feel sluggish. Returning the identical array instance lets the diff
+    /// short-circuit. Dropped whenever the register rows are rebuilt.
+    @ObservationIgnored private var autoSplitRowsCache: (key: GncGUID?, rows: [AutoSplitRow])?
+
+    func cachedAutoSplitRows(expanding key: GncGUID?,
+                             build: () -> [AutoSplitRow]) -> [AutoSplitRow] {
+        if let cached = autoSplitRowsCache, cached.key == key { return cached.rows }
+        let rows = build()
+        autoSplitRowsCache = (key, rows)
+        return rows
+    }
+
     private func refreshRegister() {
         // The journal styles honour the same sort/filter/subaccounts settings,
         // and their caches were built under the old ones.
         journalTransactionCache = [:]
         journalRowCache = [:]
+        autoSplitRowsCache = nil
         guard let book, let id = selectedAccountID, let account = book.account(with: id) else {
             registerRows = []
             return

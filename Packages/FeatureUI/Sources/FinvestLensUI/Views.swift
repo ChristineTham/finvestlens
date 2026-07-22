@@ -1378,7 +1378,9 @@ struct RegisterView: View {
                     jump = nil
                 }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { registerWidth = $0 }
+        // Quantised to 8pt: live-resize otherwise fires a body pass (and a
+        // full column-width recompute) for every pixel.
+        .onGeometryChange(for: CGFloat.self) { ($0.size.width / 8).rounded() * 8 } action: { registerWidth = $0 }
     }
 
     /// Lands on the row a jump asked for, or the newest when nothing did.
@@ -1753,7 +1755,7 @@ struct JournalView: View {
                         jump = nil
                     }
             }
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tableWidth = $0 }
+            .onGeometryChange(for: CGFloat.self) { ($0.size.width / 8).rounded() * 8 } action: { tableWidth = $0 }
         }
     }
 

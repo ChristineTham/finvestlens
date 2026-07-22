@@ -205,32 +205,34 @@ extension AppModel {
     /// shown as main rows are skipped — they are on screen, and a split GUID
     /// can only appear once in the table.
     public func autoSplitRows(expanding transactionID: GncGUID?) -> [AutoSplitRow] {
-        let rows = registerRows
-        guard let transactionID, let txn = book?.transaction(with: transactionID) else {
-            return rows.map(AutoSplitRow.init(main:))
-        }
-        let expandedIDs = Set(txn.splits.map(\.guid))
-        let mainIDs = Set(rows.map(\.id))
-        var out: [AutoSplitRow] = []
-        out.reserveCapacity(rows.count + txn.splits.count)
-        var inserted = false
-        for row in rows {
-            out.append(AutoSplitRow(main: row))
-            if !inserted, expandedIDs.contains(row.id) {
-                inserted = true
-                for split in txn.splits where !mainIDs.contains(split.guid) {
-                    out.append(AutoSplitRow(
-                        legID: split.guid,
-                        account: split.account?.fullName ?? "—",
-                        memo: split.memo,
-                        action: split.action,
-                        reconcile: split.reconcileState.rawValue,
-                        amount: split.value,
-                        currencyCode: txn.currency.mnemonic))
+        cachedAutoSplitRows(expanding: transactionID) {
+            let rows = registerRows
+            guard let transactionID, let txn = book?.transaction(with: transactionID) else {
+                return rows.map(AutoSplitRow.init(main:))
+            }
+            let expandedIDs = Set(txn.splits.map(\.guid))
+            let mainIDs = Set(rows.map(\.id))
+            var out: [AutoSplitRow] = []
+            out.reserveCapacity(rows.count + txn.splits.count)
+            var inserted = false
+            for row in rows {
+                out.append(AutoSplitRow(main: row))
+                if !inserted, expandedIDs.contains(row.id) {
+                    inserted = true
+                    for split in txn.splits where !mainIDs.contains(split.guid) {
+                        out.append(AutoSplitRow(
+                            legID: split.guid,
+                            account: split.account?.fullName ?? "—",
+                            memo: split.memo,
+                            action: split.action,
+                            reconcile: split.reconcileState.rawValue,
+                            amount: split.value,
+                            currencyCode: txn.currency.mnemonic))
+                    }
                 }
             }
+            return out
         }
-        return out
     }
 
     /// The set of accounts a single-account journal is *about*: the account,

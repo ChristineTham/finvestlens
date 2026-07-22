@@ -353,6 +353,7 @@ public final class Book {
     public func addTransaction(_ transaction: Transaction) -> Transaction {
         registerCommodity(transaction.currency)
         transactions.append(transaction)
+        invalidateLookupIndexes()
         return transaction
     }
 
@@ -360,11 +361,61 @@ public final class Book {
     public func removeTransaction(_ transaction: Transaction) {
         transactions.removeAll { $0 === transaction }
         for split in transaction.splits { split.transaction = nil }
+        invalidateLookupIndexes()
+    }
+
+    // MARK: GUID lookup indexes
+    //
+    // `transaction(with:)` / `split(with:)` were linear scans over the whole
+    // book — and the register asks per visible cell per render, which on a 46k-
+    // transaction book made the UI visibly sluggish. Built lazily like the
+    // price index. Splits are added/removed on their *transaction*, which the
+    // book cannot observe, so a miss (or a stale hit — an indexed split that
+    // has been detached) rebuilds once per generation; the app additionally
+    // invalidates after every edit.
+    private var transactionIndex: [GncGUID: Transaction]?
+    private var splitIndex: [GncGUID: Split]?
+    private var lookupRetriedAfterMiss = false
+
+    /// Drops the GUID lookup indexes. Called by the book's own transaction
+    /// add/remove, and by the app after any edit (splits can change on a
+    /// transaction without the book seeing it).
+    public func invalidateLookupIndexes() {
+        transactionIndex = nil
+        splitIndex = nil
+        lookupRetriedAfterMiss = false
+    }
+
+    private func buildLookupIndexesIfNeeded() {
+        guard transactionIndex == nil || splitIndex == nil else { return }
+        var txns = [GncGUID: Transaction](minimumCapacity: transactions.count)
+        var splits = [GncGUID: Split](minimumCapacity: transactions.count * 2)
+        for transaction in transactions {
+            txns[transaction.guid] = transaction
+            for split in transaction.splits { splits[split.guid] = split }
+        }
+        transactionIndex = txns
+        splitIndex = splits
+    }
+
+    /// A miss can mean "genuinely absent" or "index built before this object
+    /// appeared"; one rebuild per generation tells them apart without letting a
+    /// repeatedly-queried stale GUID rebuild the index every call.
+    private func rebuildOnceAfterMiss() -> Bool {
+        guard !lookupRetriedAfterMiss else { return false }
+        lookupRetriedAfterMiss = true
+        transactionIndex = nil
+        splitIndex = nil
+        buildLookupIndexesIfNeeded()
+        return true
     }
 
     /// Looks up a transaction by GUID.
     public func transaction(with guid: GncGUID) -> Transaction? {
-        transactions.first { $0.guid == guid }
+        buildLookupIndexesIfNeeded()
+        if let hit = transactionIndex?[guid] { return hit }
+        guard rebuildOnceAfterMiss() else { return nil }
+        return transactionIndex?[guid]
     }
 
     /// All distinct tags used across transactions, sorted (`FR-TAG-01`).
@@ -378,10 +429,12 @@ public final class Book {
 
     /// Looks up a split by GUID across all transactions.
     public func split(with guid: GncGUID) -> Split? {
-        for transaction in transactions {
-            if let split = transaction.splits.first(where: { $0.guid == guid }) { return split }
-        }
-        return nil
+        buildLookupIndexesIfNeeded()
+        // A detached split (removed from its transaction since the index was
+        // built) is stale — fall through to a rebuild.
+        if let hit = splitIndex?[guid], hit.transaction != nil { return hit }
+        guard rebuildOnceAfterMiss() else { return nil }
+        return splitIndex?[guid]
     }
 
     /// All splits posted to `account` across every transaction.
