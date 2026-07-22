@@ -60,14 +60,25 @@ public struct AppDateFormat: Equatable, Sendable {
 
     // MARK: Formatting
 
-    /// Numeric — for dense tables and lists: 16/12/2025, 12.16.2025, 2025-12-16.
-    public func short(_ date: Date) -> String {
-        let pattern = switch order {
+    private var shortPattern: String {
+        switch order {
         case .dmy: "d/M/yyyy"
         case .mdy: "M.d.yyyy"
         case .ymd: "yyyy-MM-dd"
         }
-        return Self.formatted(date, pattern: pattern)
+    }
+
+    /// Numeric — for dense tables and lists: 16/12/2025, 12.16.2025, 2025-12-16.
+    public func short(_ date: Date) -> String {
+        Self.formatted(date, pattern: shortPattern)
+    }
+
+    /// Parses a date typed in the short form back to a `Date` — the inverse of
+    /// ``short(_:)``, for in-place register editing. `nil` when it doesn't read
+    /// as a date in the chosen order.
+    public func parseShort(_ string: String) -> Date? {
+        Self.formatter(pattern: shortPattern)
+            .date(from: string.trimmingCharacters(in: .whitespaces))
     }
 
     /// Month spelled out — for labels, sentences and documents:
@@ -112,19 +123,19 @@ public struct AppDateFormat: Equatable, Sendable {
     private static let cacheLock = NSLock()
     nonisolated(unsafe) private static var cache: [String: DateFormatter] = [:]
 
-    private static func formatted(_ date: Date, pattern: String) -> String {
+    private static func formatter(pattern: String) -> DateFormatter {
         cacheLock.lock()
-        let formatter: DateFormatter
-        if let hit = cache[pattern] {
-            formatter = hit
-        } else {
-            formatter = DateFormatter()
-            formatter.calendar = Calendar(identifier: .gregorian)
-            formatter.dateFormat = pattern
-            cache[pattern] = formatter
-        }
-        cacheLock.unlock()
-        return formatter.string(from: date)
+        defer { cacheLock.unlock() }
+        if let hit = cache[pattern] { return hit }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = pattern
+        cache[pattern] = formatter
+        return formatter
+    }
+
+    private static func formatted(_ date: Date, pattern: String) -> String {
+        formatter(pattern: pattern).string(from: date)
     }
 }
 
