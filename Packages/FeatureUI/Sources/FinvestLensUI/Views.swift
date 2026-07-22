@@ -1170,6 +1170,11 @@ struct RegisterView: View {
                 }
                 .pickerStyle(.segmented).labelsHidden()
                 .fixedSize()
+                // A discreet edit affordance for the current selection: Edit
+                // (inspector) for one transaction, Bulk Edit for several. Sits
+                // in the flexible middle so its coming and going moves neither
+                // the style picker nor the right-hand controls.
+                editSelectionButton
                 Spacer()
                 // Every control applies to every style: Subaccounts, Sort and
                 // Filter shape which transactions all three styles show, and
@@ -1208,6 +1213,28 @@ struct RegisterView: View {
         }
         .sheet(isPresented: $goToDateShown) {
             GoToDateSheet(model: model)
+        }
+    }
+
+    /// Edit (one transaction → the inspector) or Bulk Edit (several → the
+    /// uniform-change sheet), shown only while something is selected.
+    @ViewBuilder
+    private var editSelectionButton: some View {
+        let count = model.selectedTransactionIDs.count
+        if count > 0 {
+            Button {
+                if count == 1 {
+                    model.editingTransactionID = model.selectedTransactionIDs.first
+                } else {
+                    model.presentedPanel = .bulkEdit
+                }
+            } label: {
+                Label(count == 1 ? "Edit" : "Bulk Edit \(count)",
+                      systemImage: "square.and.pencil")
+            }
+            .help(count == 1
+                  ? "Edit the selected transaction in the inspector"
+                  : "Apply a uniform change to the \(count) selected transactions")
         }
     }
 
@@ -1896,11 +1923,14 @@ struct JournalView: View {
             ScheduleTransactionSheet(model: model, transactionID: id)
         }
         .onChange(of: selection) {
-            if let id = selection.first, let row = rows.first(where: { $0.id == id }) {
-                model.selectedSplitID = model.anySplitID(ofTransaction: row.transactionID)
-            } else {
-                model.selectedSplitID = nil
-            }
+            // Mirror the full selection into the model (as the Basic table
+            // does): headings stand in via their transaction's first leg.
+            let splitIDs = Set(selection.compactMap { id -> GncGUID? in
+                guard let row = rows.first(where: { $0.id == id }) else { return nil }
+                return row.isHeading ? model.anySplitID(ofTransaction: row.transactionID) : id
+            })
+            model.selectedSplitIDs = splitIDs
+            model.selectedSplitID = splitIDs.first
         }
     }
 }
