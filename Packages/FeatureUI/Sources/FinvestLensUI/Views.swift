@@ -1004,6 +1004,34 @@ enum RegisterEnd {
     case oldest, newest
 }
 
+/// Column widths as clamped proportions of the register's measured width, so
+/// the grid rescales continuously as the window resizes: every column grows
+/// with available space up to a cap, never shrinks below what its content
+/// needs, and Description (the one unconstrained column) takes the rest.
+/// Shared by the Basic and journal tables so the styles line up.
+enum RegisterColumns {
+    private static func clamp(_ value: CGFloat, _ lo: CGFloat, _ hi: CGFloat,
+                              _ scale: CGFloat) -> CGFloat {
+        min(max(value, lo * scale), hi * scale)
+    }
+
+    static func date(_ width: CGFloat, _ scale: CGFloat) -> CGFloat {
+        clamp(width * 0.09, 74, 120, scale)
+    }
+    static func account(_ width: CGFloat, _ scale: CGFloat) -> CGFloat {
+        clamp(width * 0.14, 70, 240, scale)
+    }
+    static func transfer(_ width: CGFloat, _ scale: CGFloat) -> CGFloat {
+        clamp(width * 0.16, 80, 300, scale)
+    }
+    static func amount(_ width: CGFloat, _ scale: CGFloat) -> CGFloat {
+        clamp(width * 0.10, 78, 160, scale)
+    }
+    static func balance(_ width: CGFloat, _ scale: CGFloat) -> CGFloat {
+        clamp(width * 0.11, 86, 170, scale)
+    }
+}
+
 /// The reconcile state as a glanceable symbol, shared by the Basic register and
 /// the journal styles so the column reads identically everywhere. Activating it
 /// cycles the state (n → c → y), as the letter button always did.
@@ -1301,7 +1329,7 @@ struct RegisterView: View {
                 Text(dateFormat.short(row.date))
                     .scaledFont(.body)
             }
-            .width(min: 72 * appFontScale, ideal: 80 * appFontScale, max: 112 * appFontScale)
+            .width(RegisterColumns.date(registerWidth, appFontScale))
             // Description is the flexible column: everything else is pinned near
             // its content width, so spare width lands here.
             TableColumn("Description", value: \.description) { row in
@@ -1336,13 +1364,13 @@ struct RegisterView: View {
                 TableColumn("Account") { row in
                     Text(row.accountName).scaledFont(.body).foregroundStyle(.secondary)
                 }
-                .width(min: 70 * appFontScale, ideal: 120 * appFontScale, max: 240 * appFontScale)
+                .width(RegisterColumns.account(registerWidth, appFontScale))
             }
             if !compact {
                 TableColumn("Transfer") { row in
                     Text(row.transfer).scaledFont(.body).foregroundStyle(.secondary)
                 }
-                .width(min: 80 * appFontScale, ideal: 140 * appFontScale, max: 280 * appFontScale)
+                .width(RegisterColumns.transfer(registerWidth, appFontScale))
             }
             TableColumn("R") { row in
                 ReconcileBadge(glyph: row.reconcile) {
@@ -1358,7 +1386,7 @@ struct RegisterView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .accessibilityLabel(AmountFormat.spoken(row.amount, code: currencyCode))
             }
-            .width(min: 80 * appFontScale, ideal: 92 * appFontScale, max: 150 * appFontScale)
+            .width(RegisterColumns.amount(registerWidth, appFontScale))
             .alignment(.numeric)
             // Balance has no sort on purpose: each row's balance is the
             // account's balance *as of that posting*, computed in date order —
@@ -1378,7 +1406,7 @@ struct RegisterView: View {
                         .accessibilityLabel("No running balance")
                 }
             }
-            .width(min: 88 * appFontScale, ideal: 100 * appFontScale, max: 160 * appFontScale)
+            .width(RegisterColumns.balance(registerWidth, appFontScale))
             .alignment(.numeric)
         }
         .tableColumnHeaders(.visible)
@@ -1474,6 +1502,8 @@ struct JournalView: View {
     var autoSplit = false
     @State private var selection: Set<GncGUID> = []
     @Environment(\.appFontScale) private var appFontScale
+    /// Measured width, driving the proportional column widths (RegisterColumns).
+    @State private var tableWidth: CGFloat = 800
 
     /// The transaction to open out: whichever one the selected row belongs to,
     /// so selecting either a heading or one of its legs keeps it open.
@@ -1505,6 +1535,7 @@ struct JournalView: View {
                         jump = nil
                     }
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { tableWidth = $0 }
         }
     }
 
@@ -1528,7 +1559,7 @@ struct JournalView: View {
                         .scaledFont(.body).fontWeight(.medium)
                 }
             }
-            .width(min: 72 * appFontScale, ideal: 80 * appFontScale, max: 112 * appFontScale)
+            .width(RegisterColumns.date(tableWidth, appFontScale))
             TableColumn("Transaction / Account") { row in
                 // Legs are indented under their heading, so the grouping still
                 // reads even though the rows are flat. Notes (on headings) and
@@ -1566,7 +1597,7 @@ struct JournalView: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            .width(min: 80 * appFontScale, ideal: 92 * appFontScale, max: 150 * appFontScale)
+            .width(RegisterColumns.amount(tableWidth, appFontScale))
             .alignment(.numeric)
         }
         .contextMenu(forSelectionType: GncGUID.self) { ids in
