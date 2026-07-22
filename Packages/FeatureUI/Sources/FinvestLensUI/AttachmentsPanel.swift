@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import QuickLook
 import FinvestLensEngine
 #if os(macOS)
 import AppKit
@@ -20,6 +21,8 @@ import UniformTypeIdentifiers
 struct AttachmentsPanel: View {
     @Bindable var model: AppModel
     @State private var webLinkText = ""
+    /// The file being previewed — non-nil presents the Quick Look panel.
+    @State private var previewURL: URL?
 
     /// The single selected transaction, if the selection is exactly one.
     private var transactionID: GncGUID? {
@@ -57,6 +60,7 @@ struct AttachmentsPanel: View {
         }
         .padding(12)
         .frame(width: 270, alignment: .topLeading)
+        .quickLookPreview($previewURL)
     }
 
     @ViewBuilder
@@ -67,14 +71,29 @@ struct AttachmentsPanel: View {
             : (url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false)
 
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: isWeb ? "link" : "doc")
-                    .foregroundStyle(.secondary)
-                Text(isWeb ? link : (url?.lastPathComponent ?? link))
-                    .scaledFont(.body)
-                    .lineLimit(2)
-                    .truncationMode(.middle)
+            // The name itself Quick Looks the file (web links open in the
+            // browser) — the fastest "what is this?" gesture.
+            Button {
+                if isWeb {
+                    #if os(macOS)
+                    if let webURL = URL(string: link) { NSWorkspace.shared.open(webURL) }
+                    #endif
+                } else if exists {
+                    previewURL = url
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: isWeb ? "link" : "doc")
+                        .foregroundStyle(.secondary)
+                    Text(isWeb ? link : (url?.lastPathComponent ?? link))
+                        .scaledFont(.body)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .help(isWeb ? "Open in the browser" : "Quick Look")
             // The raw stored link — the relative path is the durable fact.
             Text(link)
                 .scaledFont(.caption)
@@ -90,24 +109,34 @@ struct AttachmentsPanel: View {
                     .foregroundStyle(.orange)
             }
             HStack {
-                Button("Open") {
-                    if isWeb {
+                if isWeb {
+                    Button("Open") {
                         #if os(macOS)
                         if let webURL = URL(string: link) { NSWorkspace.shared.open(webURL) }
                         #endif
-                    } else {
-                        model.openLinkedDocument(for: transactionID)
                     }
-                }
-                .disabled(!exists)
-                #if os(macOS)
-                if !isWeb, let url {
-                    Button("Reveal") {
-                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                } else {
+                    Button("Quick Look", systemImage: "eye") { previewURL = url }
+                        .disabled(!exists)
+                    Button {
+                        model.openLinkedDocument(for: transactionID)
+                    } label: {
+                        Image(systemName: "arrow.up.forward.app")
                     }
                     .disabled(!exists)
+                    .help("Open in its application")
+                    #if os(macOS)
+                    if let url {
+                        Button {
+                            NSWorkspace.shared.activateFileViewerSelecting([url])
+                        } label: {
+                            Image(systemName: "folder")
+                        }
+                        .disabled(!exists)
+                        .help("Reveal in Finder")
+                    }
+                    #endif
                 }
-                #endif
                 Spacer()
                 Button("Remove", role: .destructive) {
                     model.setDocumentLink(nil, for: transactionID)
