@@ -59,6 +59,48 @@ public struct JournalRow: Identifiable, Hashable, Sendable {
     }
 }
 
+/// One row of the Basic / Auto-Split register table: a transaction row (the
+/// focus account's split, exactly as Basic shows it), or — in Auto-Split — one
+/// leg of the expanded transaction shown beneath it.
+public struct AutoSplitRow: Identifiable, Hashable, Sendable {
+    public let id: GncGUID
+    /// The Basic register row; `nil` for an expanded leg.
+    public let main: RegisterRow?
+    /// Leg fields (empty on main rows).
+    public let legAccount: String
+    public let legMemo: String
+    public let legReconcile: String
+    public let legAmount: Decimal
+    public let legCurrencyCode: String
+
+    init(main: RegisterRow) {
+        id = main.id
+        self.main = main
+        legAccount = ""
+        legMemo = ""
+        legReconcile = ""
+        legAmount = 0
+        legCurrencyCode = ""
+    }
+
+    init(legID: GncGUID, account: String, memo: String, reconcile: String,
+         amount: Decimal, currencyCode: String) {
+        id = legID
+        main = nil
+        legAccount = account
+        legMemo = memo
+        legReconcile = reconcile
+        legAmount = amount
+        legCurrencyCode = currencyCode
+    }
+
+    // Sort handles for the table's sortable headers. Never applied to reorder
+    // rows — the model sorts; see `tableSortOrder` in RegisterView.
+    public var date: Date { main?.date ?? .distantFuture }
+    public var description: String { main?.description ?? legAccount }
+    public var amount: Decimal { main?.amount ?? legAmount }
+}
+
 /// How the register presents transactions (`FR-REG-01`).
 public enum RegisterStyle: String, CaseIterable, Identifiable, Sendable {
     case basic = "Basic"
@@ -110,21 +152,40 @@ extension AppModel {
         return rows
     }
 
-    /// GnuCash's Auto-Split Ledger (`FR-REG-03`): one line per transaction, with
-    /// the one you are looking at opened out into its legs.
+    /// GnuCash's Auto-Split Ledger (`FR-REG-03`): exactly the Basic register —
+    /// same rows, columns and running balance — with the transaction you are
+    /// looking at opened out into its legs beneath its row.
     ///
-    /// The style sits between the other two and is the one people actually keep
-    /// on: Basic never shows you a multi-split transaction's insides, and
-    /// Journal shows everyone's at once, which on a real account is mostly rows
-    /// you did not ask about.
-    ///
-    /// Filtered from the journal's own cached rows, so switching style or moving
-    /// the selection costs a pass over an array rather than a rebuild.
-    public func autoSplitRows(forAccountID accountID: GncGUID?,
-                              expanding transactionID: GncGUID?) -> [JournalRow] {
-        journalRows(forAccountID: accountID).filter { row in
-            row.isHeading || row.transactionID == transactionID
+    /// A main row is a ``RegisterRow`` (the focus account's split); a leg row is
+    /// one split of the expanded transaction. Legs posting to accounts already
+    /// shown as main rows are skipped — they are on screen, and a split GUID
+    /// can only appear once in the table.
+    public func autoSplitRows(expanding transactionID: GncGUID?) -> [AutoSplitRow] {
+        let rows = registerRows
+        guard let transactionID, let txn = book?.transaction(with: transactionID) else {
+            return rows.map(AutoSplitRow.init(main:))
         }
+        let expandedIDs = Set(txn.splits.map(\.guid))
+        let mainIDs = Set(rows.map(\.id))
+        var out: [AutoSplitRow] = []
+        out.reserveCapacity(rows.count + txn.splits.count)
+        var inserted = false
+        for row in rows {
+            out.append(AutoSplitRow(main: row))
+            if !inserted, expandedIDs.contains(row.id) {
+                inserted = true
+                for split in txn.splits where !mainIDs.contains(split.guid) {
+                    out.append(AutoSplitRow(
+                        legID: split.guid,
+                        account: split.account?.fullName ?? "—",
+                        memo: split.memo,
+                        reconcile: split.reconcileState.rawValue,
+                        amount: split.value,
+                        currencyCode: txn.currency.mnemonic))
+                }
+            }
+        }
+        return out
     }
 
     /// Transactions for `accountID` (its postings), or every transaction when

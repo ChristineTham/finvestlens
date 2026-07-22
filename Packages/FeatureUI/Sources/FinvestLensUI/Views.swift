@@ -1247,13 +1247,16 @@ struct RegisterView: View {
                 registerTable
             }
         case .autoSplit:
+            // GnuCash's Auto-Split Ledger is the Basic register with the selected
+            // transaction opened into its legs — the same table, not a journal.
             if model.selectedAccountID == nil {
                 ContentUnavailableView("Select an account", systemImage: "list.bullet.rectangle",
                                        description: Text("Choose an account to see its transactions."))
+            } else if model.registerRows.isEmpty {
+                ContentUnavailableView("No transactions", systemImage: "tray",
+                                       description: Text("This account has no postings yet."))
             } else {
-                JournalView(model: model, accountID: model.selectedAccountID,
-                            editingTransactionID: $editingTransactionID, jump: $jump,
-                            autoSplit: true)
+                registerTable
             }
         case .journal:
             if model.selectedAccountID == nil {
@@ -1308,15 +1311,15 @@ struct RegisterView: View {
     /// from the menu are the same setting, and the header arrow shows whichever
     /// way it was set. The comparator itself is never applied — the model sorts,
     /// as it always has, and the binding is just the header's handle on it.
-    private var tableSortOrder: Binding<[KeyPathComparator<RegisterRow>]> {
+    private var tableSortOrder: Binding<[KeyPathComparator<AutoSplitRow>]> {
         Binding(
             get: {
                 switch model.registerSort {
-                case .date: [KeyPathComparator(\RegisterRow.date,
+                case .date: [KeyPathComparator(\AutoSplitRow.date,
                                                order: model.registerSortReversed ? .reverse : .forward)]
-                case .description: [KeyPathComparator(\RegisterRow.description,
+                case .description: [KeyPathComparator(\AutoSplitRow.description,
                                                       order: model.registerSortReversed ? .reverse : .forward)]
-                case .amount: [KeyPathComparator(\RegisterRow.amount,
+                case .amount: [KeyPathComparator(\AutoSplitRow.amount,
                                                  order: model.registerSortReversed ? .reverse : .forward)]
                 default: []
                 }
@@ -1327,11 +1330,18 @@ struct RegisterView: View {
                     model.registerSortReversed = false
                     return
                 }
-                if first.keyPath == \RegisterRow.date { model.registerSort = .date }
-                else if first.keyPath == \RegisterRow.description { model.registerSort = .description }
-                else if first.keyPath == \RegisterRow.amount { model.registerSort = .amount }
+                if first.keyPath == \AutoSplitRow.date { model.registerSort = .date }
+                else if first.keyPath == \AutoSplitRow.description { model.registerSort = .description }
+                else if first.keyPath == \AutoSplitRow.amount { model.registerSort = .amount }
                 model.registerSortReversed = first.order == .reverse
             })
+    }
+
+    /// The transaction opened out in Auto-Split: whichever one the selected row
+    /// belongs to (a leg keeps its transaction open). Basic never expands.
+    private var expandedTransactionID: GncGUID? {
+        guard style == .autoSplit, let first = selection.first else { return nil }
+        return model.transactionID(ofSplit: first)
     }
 
     // Responsive folds (see RegisterColumns): side columns → description line,
@@ -1341,45 +1351,68 @@ struct RegisterView: View {
     private var showsDate: Bool { RegisterColumns.showsDate(registerWidth, appFontScale) }
 
     private var registerTableBody: some View {
-        Table(model.registerRows, selection: $selection, sortOrder: tableSortOrder) {
+        // Basic and Auto-Split share this table: with nothing expanded the rows
+        // are identical, so the two styles are pixel-for-pixel the same until a
+        // transaction is selected and its legs unfold beneath it.
+        Table(model.autoSplitRows(expanding: expandedTransactionID),
+              selection: $selection, sortOrder: tableSortOrder) {
             if showsDate {
                 TableColumn("Date", value: \.date) { row in
-                    Text(dateFormat.short(row.date))
-                        .scaledFont(.body)
+                    if let main = row.main {
+                        Text(dateFormat.short(main.date))
+                            .scaledFont(.body)
+                    }
                 }
                 .width(RegisterColumns.date(registerWidth, appFontScale))
             }
             // Description is the flexible column: everything else is pinned near
             // its content width, so spare width lands here.
             TableColumn("Description", value: \.description) { row in
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(row.description).scaledFont(.body)
-                    // Folded columns surface as caption lines instead of
-                    // vanishing: date on very narrow windows, then transfer
-                    // (and the subtree account).
-                    if !showsDate {
-                        Text(dateFormat.short(row.date))
-                            .scaledFont(.caption)
+                if let main = row.main {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(main.description).scaledFont(.body)
+                        // Folded columns surface as caption lines instead of
+                        // vanishing: date on very narrow windows, then transfer
+                        // (and the subtree account).
+                        if !showsDate {
+                            Text(dateFormat.short(main.date))
+                                .scaledFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if !showsSide, !main.transfer.isEmpty {
+                            Text("→ \(main.transfer)")
+                                .scaledFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if !showsSide, model.registerIncludesSubaccounts, !main.accountName.isEmpty {
+                            Text(main.accountName)
+                                .scaledFont(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                        // Only when there is something to say: an empty second line
+                        // on every row would add height to show nothing.
+                        if doubleLine, !main.secondLine.isEmpty {
+                            Text(main.secondLine)
+                                .scaledFont(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                } else {
+                    // An expanded leg: the account it posts to, indented under
+                    // its transaction, with the memo beneath.
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(row.legAccount)
+                            .scaledFont(.body)
                             .foregroundStyle(.secondary)
+                        if !row.legMemo.isEmpty {
+                            Text(row.legMemo)
+                                .scaledFont(.caption)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(2)
+                        }
                     }
-                    if !showsSide, !row.transfer.isEmpty {
-                        Text("→ \(row.transfer)")
-                            .scaledFont(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    if !showsSide, model.registerIncludesSubaccounts, !row.accountName.isEmpty {
-                        Text(row.accountName)
-                            .scaledFont(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                    // Only when there is something to say: an empty second line
-                    // on every row would add height to show nothing.
-                    if doubleLine, !row.secondLine.isEmpty {
-                        Text(row.secondLine)
-                            .scaledFont(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
+                    .padding(.leading, 18 * appFontScale)
                 }
             }
             // Which account a row posted to, which only a subtree register has
@@ -1387,39 +1420,51 @@ struct RegisterView: View {
             // account and the column would say nothing.
             if showsSide, model.registerIncludesSubaccounts {
                 TableColumn("Account") { row in
-                    Text(row.accountName).scaledFont(.body).foregroundStyle(.secondary)
+                    if let main = row.main {
+                        Text(main.accountName).scaledFont(.body).foregroundStyle(.secondary)
+                    }
                 }
                 .width(RegisterColumns.account(registerWidth, appFontScale))
             }
             if showsSide {
                 TableColumn("Transfer") { row in
-                    Text(row.transfer).scaledFont(.body).foregroundStyle(.secondary)
+                    if let main = row.main {
+                        Text(main.transfer).scaledFont(.body).foregroundStyle(.secondary)
+                    }
                 }
                 .width(RegisterColumns.transfer(registerWidth, appFontScale))
             }
             TableColumn("R") { row in
-                ReconcileBadge(glyph: row.reconcile) {
+                ReconcileBadge(glyph: row.main?.reconcile ?? row.legReconcile) {
                     model.cycleReconcileState(splitID: row.id)
                 }
             }
             .width(24 * appFontScale)
             TableColumn("Amount", value: \.amount) { row in
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text(AmountFormat.string(row.amount, code: currencyCode))
+                if let main = row.main {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(AmountFormat.string(main.amount, code: currencyCode))
+                            .scaledFont(.body)
+                            .monospacedDigit()
+                            .foregroundStyle(main.amount < 0 ? .red : .primary)
+                            .accessibilityLabel(AmountFormat.spoken(main.amount, code: currencyCode))
+                        // The folded Balance column: under the amount, not gone.
+                        if !showsBalance, let balance = main.runningBalance {
+                            Text(AmountFormat.string(balance, code: currencyCode))
+                                .scaledFont(.caption)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                                .accessibilityLabel("Balance \(AmountFormat.spoken(balance, code: currencyCode))")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                } else {
+                    Text(AmountFormat.string(row.legAmount, code: row.legCurrencyCode))
                         .scaledFont(.body)
                         .monospacedDigit()
-                        .foregroundStyle(row.amount < 0 ? .red : .primary)
-                        .accessibilityLabel(AmountFormat.spoken(row.amount, code: currencyCode))
-                    // The folded Balance column: under the amount, not gone.
-                    if !showsBalance, let balance = row.runningBalance {
-                        Text(AmountFormat.string(balance, code: currencyCode))
-                            .scaledFont(.caption)
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .accessibilityLabel("Balance \(AmountFormat.spoken(balance, code: currencyCode))")
-                    }
+                        .foregroundStyle(row.legAmount < 0 ? .red : .secondary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .width(RegisterColumns.amount(registerWidth, appFontScale))
             .alignment(.numeric)
@@ -1428,15 +1473,15 @@ struct RegisterView: View {
             // ordering by it would order by an artefact.
             if showsBalance {
                 TableColumn("Balance") { row in
-                    // Absent for a subtree spanning several commodities: a running
-                    // total of shares and dollars is a number of nothing.
-                    if let balance = row.runningBalance {
+                    // Absent on legs, and for a subtree spanning several
+                    // commodities, where a running total would mean nothing.
+                    if let balance = row.main?.runningBalance {
                         Text(AmountFormat.string(balance, code: currencyCode))
                             .scaledFont(.body)
                             .monospacedDigit()
                             .frame(maxWidth: .infinity, alignment: .trailing)
                             .accessibilityLabel("Balance \(AmountFormat.spoken(balance, code: currencyCode))")
-                    } else {
+                    } else if row.main != nil {
                         Text("—").foregroundStyle(.tertiary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                             .accessibilityLabel("No running balance")
@@ -1533,27 +1578,13 @@ struct JournalView: View {
     let accountID: GncGUID?
     @Binding var editingTransactionID: GncGUID?
     @Binding var jump: RegisterEnd?
-    /// GnuCash's Auto-Split Ledger: the same rows, but only the selected
-    /// transaction opened out. The two styles differ by which rows are shown and
-    /// nothing else, so they are one view.
-    var autoSplit = false
     @State private var selection: Set<GncGUID> = []
     @Environment(\.appFontScale) private var appFontScale
     /// Measured width, driving the proportional column widths (RegisterColumns).
     @State private var tableWidth: CGFloat = 800
 
-    /// The transaction to open out: whichever one the selected row belongs to,
-    /// so selecting either a heading or one of its legs keeps it open.
-    private var expandedTransactionID: GncGUID? {
-        guard autoSplit, let id = selection.first else { return nil }
-        return model.journalRows(forAccountID: accountID)
-            .first { $0.id == id }?.transactionID
-    }
-
     var body: some View {
-        let rows = autoSplit
-            ? model.autoSplitRows(forAccountID: accountID, expanding: expandedTransactionID)
-            : model.journalRows(forAccountID: accountID)
+        let rows = model.journalRows(forAccountID: accountID)
         if rows.isEmpty {
             ContentUnavailableView("No transactions", systemImage: "tray",
                                    description: Text("No postings to show."))
