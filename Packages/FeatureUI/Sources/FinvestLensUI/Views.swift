@@ -1043,6 +1043,31 @@ enum RegisterColumns {
     }
 }
 
+/// A text field for in-place register editing: holds a draft, commits on
+/// Return. Escape (or clicking away without submitting) abandons the draft —
+/// nothing reaches the book until the commit.
+struct InlineTextCell: View {
+    let value: String
+    var trailing = false
+    let commit: (String) -> Void
+    @State private var draft: String
+
+    init(value: String, trailing: Bool = false, commit: @escaping (String) -> Void) {
+        self.value = value
+        self.trailing = trailing
+        self.commit = commit
+        _draft = State(initialValue: value)
+    }
+
+    var body: some View {
+        TextField("", text: $draft)
+            .textFieldStyle(.plain)
+            .scaledFont(.body)
+            .multilineTextAlignment(trailing ? .trailing : .leading)
+            .onSubmit { commit(draft) }
+    }
+}
+
 /// The reconcile state as a glanceable symbol, shared by the Basic register and
 /// the journal styles so the column reads identically everywhere. Activating it
 /// cycles the state (n → c → y), as the letter button always did.
@@ -1350,6 +1375,12 @@ struct RegisterView: View {
     private var showsBalance: Bool { RegisterColumns.showsBalance(registerWidth, appFontScale) }
     private var showsDate: Bool { RegisterColumns.showsDate(registerWidth, appFontScale) }
 
+    /// The row whose fields edit in place: the single selected transaction row
+    /// (GnuCash edits the current row; a multi-selection is for bulk actions).
+    private func isEditingRow(_ row: AutoSplitRow) -> Bool {
+        row.main != nil && selection.count == 1 && selection.first == row.id
+    }
+
     private var registerTableBody: some View {
         // Basic and Auto-Split share this table: with nothing expanded the rows
         // are identical, so the two styles are pixel-for-pixel the same until a
@@ -1359,8 +1390,17 @@ struct RegisterView: View {
             if showsDate {
                 TableColumn("Date", value: \.date) { row in
                     if let main = row.main {
-                        Text(dateFormat.short(main.date))
+                        if isEditingRow(row) {
+                            DatePicker("", selection: Binding(
+                                get: { main.date },
+                                set: { model.inlineSetDate(splitID: row.id, to: $0) }
+                            ), displayedComponents: .date)
+                            .labelsHidden()
                             .scaledFont(.body)
+                        } else {
+                            Text(dateFormat.short(main.date))
+                                .scaledFont(.body)
+                        }
                     }
                 }
                 .width(RegisterColumns.date(registerWidth, appFontScale))
@@ -1370,7 +1410,14 @@ struct RegisterView: View {
             TableColumn("Description", value: \.description) { row in
                 if let main = row.main {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(main.description).scaledFont(.body)
+                        if isEditingRow(row) {
+                            InlineTextCell(value: main.description) {
+                                model.inlineSetDescription(splitID: row.id, to: $0)
+                            }
+                            .id(row.id)
+                        } else {
+                            Text(main.description).scaledFont(.body)
+                        }
                         // Folded columns surface as caption lines instead of
                         // vanishing: date on very narrow windows, then transfer
                         // (and the subtree account).
@@ -1430,7 +1477,22 @@ struct RegisterView: View {
             if showsSide {
                 TableColumn("Transfer") { row in
                     if let main = row.main {
-                        Text(main.transfer).scaledFont(.body).foregroundStyle(.secondary)
+                        if isEditingRow(row), model.isSimpleTransfer(splitID: row.id) {
+                            // Re-categorise in place: move the counter leg.
+                            Picker("", selection: Binding(
+                                get: { model.otherAccountID(ofSplit: row.id) },
+                                set: { if let id = $0 { model.inlineSetTransfer(splitID: row.id, to: id) } }
+                            )) {
+                                ForEach(model.postableAccounts) { node in
+                                    Text(node.fullName).tag(GncGUID?.some(node.id))
+                                }
+                            }
+                            .labelsHidden()
+                        } else {
+                            Text(main.transfer).scaledFont(.body).foregroundStyle(.secondary)
+                                .help(isEditingRow(row)
+                                      ? "Multi-split or multi-currency — edit in the inspector (⌘E)" : "")
+                        }
                     }
                 }
                 .width(RegisterColumns.transfer(registerWidth, appFontScale))
@@ -1444,11 +1506,22 @@ struct RegisterView: View {
             TableColumn("Amount", value: \.amount) { row in
                 if let main = row.main {
                     VStack(alignment: .trailing, spacing: 1) {
-                        Text(AmountFormat.string(main.amount, code: currencyCode))
-                            .scaledFont(.body)
+                        if isEditingRow(row), model.isSimpleTransfer(splitID: row.id) {
+                            InlineTextCell(value: "\(main.amount)", trailing: true) { text in
+                                if let value = EditableSplit.strictDecimal(
+                                    text.trimmingCharacters(in: .whitespaces)) {
+                                    model.inlineSetAmount(splitID: row.id, to: value)
+                                }
+                            }
+                            .id(row.id)
                             .monospacedDigit()
-                            .foregroundStyle(main.amount < 0 ? .red : .primary)
-                            .accessibilityLabel(AmountFormat.spoken(main.amount, code: currencyCode))
+                        } else {
+                            Text(AmountFormat.string(main.amount, code: currencyCode))
+                                .scaledFont(.body)
+                                .monospacedDigit()
+                                .foregroundStyle(main.amount < 0 ? .red : .primary)
+                                .accessibilityLabel(AmountFormat.spoken(main.amount, code: currencyCode))
+                        }
                         // The folded Balance column: under the amount, not gone.
                         if !showsBalance, let balance = main.runningBalance {
                             Text(AmountFormat.string(balance, code: currencyCode))
