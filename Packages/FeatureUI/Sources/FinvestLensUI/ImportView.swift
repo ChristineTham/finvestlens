@@ -29,6 +29,7 @@ struct ImportPayload: Identifiable {
 /// rows (with duplicate flags and suggested destinations), then post
 /// (`FR-XIO-03/05`).
 struct ImportView: View {
+    @Environment(\.appDateFormat) private var appDateFormat
     @Bindable var model: AppModel
     let payload: ImportPayload
     @Environment(\.dismiss) private var dismiss
@@ -189,7 +190,7 @@ struct ImportView: View {
         let staged = result.staged
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(staged.date, format: .dateTime.year().month().day())
+                Text(appDateFormat.string(staged.date))
                     .foregroundStyle(.secondary)
                     .frame(width: dateWidth, alignment: .leading)
                 Text(staged.payee.isEmpty ? staged.memo : staged.payee)
@@ -300,7 +301,7 @@ struct ImportView: View {
         let inv = row.investment
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(row.date, format: .dateTime.year().month().day())
+                Text(appDateFormat.string(row.date))
                     .foregroundStyle(.secondary).frame(width: dateWidth, alignment: .leading)
                 Text(inv?.action.rawValue.capitalized ?? "—").fontWeight(.medium)
                 Text(inv?.security ?? "").foregroundStyle(.secondary)

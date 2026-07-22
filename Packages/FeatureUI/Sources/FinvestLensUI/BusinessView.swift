@@ -393,6 +393,7 @@ struct InvoiceEditorSheet: View {
 // MARK: - Invoice detail
 
 struct InvoiceDetailSheet: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     let invoiceID: GncGUID
     @Environment(\.dismiss) private var dismiss
@@ -410,9 +411,9 @@ struct InvoiceDetailSheet: View {
                     LabeledContent("Document", value: invoice.id)
                     LabeledContent(invoice.kind == .invoice ? "Customer" : "Vendor",
                                    value: invoice.owner.displayName)
-                    LabeledContent("Opened", value: invoice.dateOpened.formatted(date: .abbreviated, time: .omitted))
+                    LabeledContent("Opened", value: dateFormat.string(invoice.dateOpened))
                     if let due = invoice.dueDate {
-                        LabeledContent("Due", value: due.formatted(date: .abbreviated, time: .omitted))
+                        LabeledContent("Due", value: dateFormat.string(due))
                     }
                     Section("Lines") {
                         ForEach(invoice.entries) { entry in
@@ -540,12 +541,12 @@ struct PrintableInvoice: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    labelled("Opened", invoice.dateOpened.formatted(date: .abbreviated, time: .omitted))
+                    labelled("Opened", AppDateFormat.current.string(invoice.dateOpened))
                     if let posted = invoice.datePosted {
-                        labelled("Posted", posted.formatted(date: .abbreviated, time: .omitted))
+                        labelled("Posted", AppDateFormat.current.string(posted))
                     }
                     if let due = invoice.dueDate {
-                        labelled("Due", due.formatted(date: .abbreviated, time: .omitted))
+                        labelled("Due", AppDateFormat.current.string(due))
                     }
                 }
             }

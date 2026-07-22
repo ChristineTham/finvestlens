@@ -13,6 +13,7 @@ import SwiftUI
 import FinvestLensEngine
 
 struct TimeMileageView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.isEmbeddedDestination) private var embedded
@@ -104,7 +105,7 @@ struct TimeMileageView: View {
                     .foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(entry.detail.isEmpty ? entry.kind.rawValue.capitalized : entry.detail)
-                    Text("\(customer?.name ?? "—") · \(entry.date.formatted(date: .abbreviated, time: .omitted))")
+                    Text("\(customer?.name ?? "—") · \(dateFormat.string(entry.date))")
                         .scaledFont(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()

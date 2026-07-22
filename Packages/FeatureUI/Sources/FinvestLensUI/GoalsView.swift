@@ -14,6 +14,7 @@ import SwiftUI
 import FinvestLensEngine
 
 struct GoalsView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.isEmbeddedDestination) private var embedded
@@ -93,6 +94,7 @@ struct GoalsView: View {
 
 /// One goal: name, linked account, a progress bar, and the figures.
 private struct GoalRow: View {
+    @Environment(\.appDateFormat) private var dateFormat
     let goal: SavingsGoal
     let code: String
     let accountName: String?
@@ -119,7 +121,7 @@ private struct GoalRow: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if let date = goal.targetDate {
-                    Text("by \(date.formatted(date: .abbreviated, time: .omitted))")
+                    Text("by \(dateFormat.string(date))")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

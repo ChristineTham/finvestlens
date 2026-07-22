@@ -18,6 +18,7 @@ import FinvestLensIntelligence
 /// Finds transactions still parked in Imbalance/Orphan accounts, asks the
 /// on-device model for a category each, and applies the reviewed choices.
 struct AutoCategorizeSheet: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appFontScale) private var appFontScale
@@ -147,7 +148,7 @@ struct AutoCategorizeSheet: View {
         Toggle(isOn: accepted) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(plan.date, format: .dateTime.year().month().day())
+                    Text(dateFormat.string(plan.date))
                         .foregroundStyle(.secondary)
                         .frame(width: dateWidth, alignment: .leading)
                     Text(plan.displayDescription).fontWeight(.medium)
@@ -184,7 +185,7 @@ struct AutoCategorizeSheet: View {
     private func row(_ item: AppModel.UncategorizedItem) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(item.date, format: .dateTime.year().month().day())
+                Text(dateFormat.string(item.date))
                     .foregroundStyle(.secondary)
                     .frame(width: dateWidth, alignment: .leading)
                 Text(item.transactionDescription)

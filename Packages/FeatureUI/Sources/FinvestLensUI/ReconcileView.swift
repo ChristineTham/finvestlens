@@ -28,6 +28,7 @@ public struct ReconcileWindow: View {
 /// The reconciliation workflow: enter a statement, tick off items until the
 /// difference is zero, then finish (`FR-REC-01`).
 struct ReconcileView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     let accountID: GncGUID
     @Environment(\.dismiss) private var dismiss
@@ -68,7 +69,7 @@ struct ReconcileView: View {
                             ? "Re-opened \(reverted) reconciled split\(reverted == 1 ? "" : "s") — they're now cleared and can be reconciled again."
                             : "Nothing to re-open."
                     }
-                    Text("The most recent reconciliation was \(last, format: .dateTime.year().month().day()). Re-opening reverts those splits to cleared so you can reconcile the statement again (FR-REC-03).")
+                    Text("The most recent reconciliation was \(dateFormat.string(last)). Re-opening reverts those splits to cleared so you can reconcile the statement again (FR-REC-03).")
                         .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -109,7 +110,7 @@ struct ReconcileView: View {
                             Image(systemName: item.isCleared ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(item.isCleared ? Color.accentColor : Color.secondary)
                                 .accessibilityHidden(true)
-                            Text(item.date, format: .dateTime.year().month().day())
+                            Text(dateFormat.string(item.date))
                                 .foregroundStyle(.secondary)
                                 .frame(width: dateWidth, alignment: .leading)
                             Text(item.description)

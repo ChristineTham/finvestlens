@@ -258,6 +258,7 @@ private struct PriceHistorySection: View {
 /// GnuCash's Reconciliation Report: of what is in this account, how much has the
 /// bank agreed to? (`FR-RPT-05`)
 struct ReconcileReportView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     @State private var accountID: GncGUID?
     @State private var asOf = Date()
@@ -331,7 +332,7 @@ struct ReconcileReportView: View {
             } else {
                 ForEach(rows) { row in
                     HStack {
-                        Text(row.date, format: .dateTime.year().month().day())
+                        Text(dateFormat.string(row.date))
                             .foregroundStyle(.secondary)
                             .frame(width: dateWidth, alignment: .leading)
                         VStack(alignment: .leading) {
@@ -364,6 +365,7 @@ struct ReconcileReportView: View {
 }
 
 struct TransactionReportView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     @State private var accountID: GncGUID?
     @State private var from = Calendar.current.date(byAdding: .month, value: -3, to: Date()) ?? Date()
@@ -394,7 +396,7 @@ struct TransactionReportView: View {
                     List {
                         ForEach(report.rows) { row in
                             HStack {
-                                Text(row.date, format: .dateTime.year().month().day())
+                                Text(dateFormat.string(row.date))
                                     .foregroundStyle(.secondary).frame(width: dateWidth, alignment: .leading)
                                 VStack(alignment: .leading) {
                                     Text(row.description)
@@ -426,6 +428,7 @@ struct TransactionReportView: View {
 }
 
 struct InvestmentLotsView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
 
     var body: some View {
@@ -450,7 +453,7 @@ struct InvestmentLotsView: View {
                             HStack {
                                 Text(lot.symbol).fontWeight(.medium)
                                 if let date = lot.acquisitionDate {
-                                    Text(date, format: .dateTime.year().month().day())
+                                    Text(dateFormat.string(date))
                                         .scaledFont(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -521,6 +524,7 @@ struct PriceScatterView: View {
 }
 
 struct CapitalGainsView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
 
     var body: some View {
@@ -550,7 +554,7 @@ struct CapitalGainsView: View {
                                         .foregroundStyle(line.gain < 0 ? .red : .green)
                                 }
                                 HStack {
-                                    Text("\(line.quantity.formatted()) sold \(line.disposalDate, format: .dateTime.year().month().day())")
+                                    Text("\(line.quantity.formatted()) sold \(dateFormat.string(line.disposalDate))")
                                         .scaledFont(.caption).foregroundStyle(.secondary)
                                     Spacer()
                                     Text("proceeds \(AmountFormat.string(line.proceeds, code: report.currencyCode)) − cost \(AmountFormat.string(line.costBasis, code: report.currencyCode))")
@@ -581,7 +585,7 @@ struct CapitalGainsView: View {
                             HStack {
                                 Text(lot.symbol).fontWeight(.medium)
                                 if let date = lot.acquisitionDate {
-                                    Text(date, format: .dateTime.year().month().day())
+                                    Text(dateFormat.string(date))
                                         .scaledFont(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
@@ -614,6 +618,7 @@ struct CapitalGainsView: View {
 }
 
 struct CashFlowView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     @State private var showAddWhatIf = false
     @State private var wiDate = Date()
@@ -661,7 +666,7 @@ struct CashFlowView: View {
                     }
                     List(events) { event in
                         HStack {
-                            Text(event.date, format: .dateTime.year().month().day())
+                            Text(dateFormat.string(event.date))
                                 .foregroundStyle(.secondary)
                                 .frame(width: dateWidth, alignment: .leading)
                             Text(event.label)
@@ -716,7 +721,7 @@ struct CashFlowView: View {
                     }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .accessibilityLabel("Remove what-if event \(event.label)")
-                    Text("\(event.label): \(AmountFormat.string(event.amount, code: model.reportCurrency.mnemonic)) on \(event.date, format: .dateTime.year().month().day())")
+                    Text("\(event.label): \(AmountFormat.string(event.amount, code: model.reportCurrency.mnemonic)) on \(dateFormat.string(event.date))")
                         .scaledFont(.caption2).foregroundStyle(.secondary)
                 }
             }

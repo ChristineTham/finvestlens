@@ -95,7 +95,7 @@ public enum TransactionPasteboard {
 
     /// What a copied transaction looks like as text.
     static func describe(_ clipboard: TransactionClipboard) -> String {
-        let date = clipboard.datePosted.formatted(date: .numeric, time: .omitted)
+        let date = AppDateFormat.current.string(clipboard.datePosted)
         let legs = clipboard.legs
             .map { "  \($0.accountFullName)  \($0.value)" }
             .joined(separator: "\n")

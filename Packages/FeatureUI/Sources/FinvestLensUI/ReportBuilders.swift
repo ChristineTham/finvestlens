@@ -56,7 +56,7 @@ extension AppModel {
               kind.usesScaffold else { return nil }
 
         let (from, to) = resolve(configuration.period)
-        let asOfLabel = "As of \(to.formatted(date: .long, time: .omitted))"
+        let asOfLabel = "As of \(AppDateFormat.current.string(to))"
         let periodLabel = kind.isAsOf ? asOfLabel : label(for: configuration.period)
 
         switch kind {
@@ -369,7 +369,7 @@ extension AppModel {
                     columns: columns,
                     columnTotals: ("Total", amounts(totals)))],
                 notes: ["Open invoices are aged by their due date as of "
-                        + to.formatted(date: .abbreviated, time: .omitted)
+                        + AppDateFormat.current.string(to)
                         + " into 0–30 (current), 31–60, 61–90 and 91+ day buckets."],
                 facts: ReportFactsSource(
                     headline: [("Total", totals.total), ("Current", totals.current),
@@ -450,7 +450,7 @@ extension AppModel {
                 columnTotals: ("Total",
                                [totalCharged, totalCharged - totalOutstanding, totalOutstanding]))],
             notes: ["Totals cover posted documents only, as of "
-                    + to.formatted(date: .abbreviated, time: .omitted)
+                    + AppDateFormat.current.string(to)
                     + ". \"Paid\" is \(chargedNoun.lowercased()) less what is still outstanding."],
             facts: ReportFactsSource(
                 headline: [(chargedNoun, totalCharged), ("Paid", totalCharged - totalOutstanding),
@@ -461,7 +461,7 @@ extension AppModel {
     /// A short label for one average-balance interval — the start date, since
     /// intervals abut (each ends the day before the next begins).
     private func intervalLabel(_ interval: AverageBalanceInterval) -> String {
-        interval.start.formatted(date: .abbreviated, time: .omitted)
+        AppDateFormat.current.string(interval.start)
     }
 
     // MARK: Comparative statements
@@ -503,9 +503,9 @@ extension AppModel {
             return "Q\((fromMonth - 1) / 3 + 1) \(fromYear)"
         }
         if stride.month == 1 {
-            return from.formatted(.dateTime.month(.abbreviated).year())
+            return AppDateFormat.current.monthYear(from)
         }
-        return to.formatted(date: .abbreviated, time: .omitted)
+        return AppDateFormat.current.string(to)
     }
 
     /// Aligns report lines from several periods into comparative rows, keyed by
@@ -635,7 +635,7 @@ extension AppModel {
 
     private func valuationNote(_ date: Date) -> String {
         "Security holdings are valued at market using the latest price on or before "
-        + date.formatted(date: .abbreviated, time: .omitted)
+        + AppDateFormat.current.string(date)
         + "; foreign currencies convert at that date's rate. Accounts with no available "
         + "price are omitted."
     }

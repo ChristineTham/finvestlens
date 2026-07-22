@@ -18,6 +18,7 @@ import FinvestLensEngine
 /// Every transaction with an attached document, in one list — the roll-up
 /// GnuCash offers so links aren't reachable only one register row at a time.
 struct LinkedDocumentsView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var editingTransactionID: GncGUID?
@@ -56,7 +57,7 @@ struct LinkedDocumentsView: View {
                 Text(doc.description.isEmpty ? "(no description)" : doc.description)
                     .scaledFont(.body)
                 HStack(spacing: 6) {
-                    Text(doc.date, format: .dateTime.year().month().day())
+                    Text(dateFormat.string(doc.date))
                     Text("·")
                     Text(doc.displayName).lineLimit(1).truncationMode(.middle)
                     if !doc.exists && !doc.isWeb {

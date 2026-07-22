@@ -44,6 +44,7 @@ private struct SmartDocument: Identifiable {
 }
 
 struct SmartImportSheet: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     let payload: SmartImportPayload
     @Environment(\.dismiss) private var dismiss
@@ -175,6 +176,7 @@ struct SmartImportSheet: View {
 // MARK: - Row
 
 private struct SmartDocumentRow: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     @Binding var document: SmartDocument
     var onReviewStatement: () -> Void
@@ -321,11 +323,11 @@ private struct SmartDocumentRow: View {
                     .scaledFont(.caption).foregroundStyle(.orange)
             }
             if let match {
-                Label("Matches “\(match.transactionDescription)” of \(match.datePosted.formatted(date: .abbreviated, time: .omitted)) from \(match.fundingAccountName).",
+                Label("Matches “\(match.transactionDescription)” of \(dateFormat.string(match.datePosted)) from \(match.fundingAccountName).",
                       systemImage: "link")
                     .scaledFont(.callout)
                 if let proposed = match.proposedDate {
-                    Toggle("Set date to invoice date (\(proposed.formatted(date: .abbreviated, time: .omitted))) — the bank’s date is kept for matching",
+                    Toggle("Set date to invoice date (\(dateFormat.string(proposed))) — the bank’s date is kept for matching",
                            isOn: $adjustDate)
                         .scaledFont(.caption)
                 }
@@ -387,6 +389,7 @@ private struct SmartDocumentRow: View {
 /// Picks a funding account and creates a transaction from an unmatched invoice
 /// (`FR-AI-07`).
 private struct CreateFromInvoiceSheet: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     let analysis: InvoiceAnalysis
     var onCreated: (GncGUID) -> Void
@@ -413,7 +416,7 @@ private struct CreateFromInvoiceSheet: View {
                     LabeledContent("Vendor", value: analysis.vendor.isEmpty ? "—" : analysis.vendor)
                     LabeledContent("Total", value: AmountFormat.string(analysis.total, code: code))
                     if let date = analysis.date {
-                        LabeledContent("Date", value: date.formatted(date: .abbreviated, time: .omitted))
+                        LabeledContent("Date", value: dateFormat.string(date))
                     }
                 }
                 Section("Pay from") {

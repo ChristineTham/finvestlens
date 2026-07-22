@@ -1005,6 +1005,7 @@ enum RegisterEnd {
 }
 
 struct RegisterView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     @State private var selection: Set<GncGUID> = []
     @State private var editingTransactionID: GncGUID?
@@ -1238,7 +1239,7 @@ struct RegisterView: View {
     private var registerTableBody: some View {
         Table(model.registerRows, selection: $selection, sortOrder: tableSortOrder) {
             TableColumn("Date", value: \.date) { row in
-                Text(row.date, format: .dateTime.year().month().day())
+                Text(dateFormat.string(row.date))
                     .scaledFont(.body)
             }
             TableColumn("Description", value: \.description) { row in
@@ -1386,6 +1387,7 @@ struct RegisterView: View {
 /// no windowing is needed. The nested-section version had to be paged, and
 /// scrolling it to the far end never settled.
 struct JournalView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     let accountID: GncGUID?
     @Binding var editingTransactionID: GncGUID?
@@ -1437,7 +1439,7 @@ struct JournalView: View {
         Table(rows, selection: $selection) {
             TableColumn("Date") { row in
                 if let date = row.date {
-                    Text(date, format: .dateTime.year().month().day())
+                    Text(dateFormat.string(date))
                         .scaledFont(.body).fontWeight(.medium)
                 }
             }
@@ -2042,6 +2044,7 @@ struct RegisterFilterSheet: View {
 // MARK: - Search results
 
 struct SearchResultsView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     @State private var selection: Set<GncGUID> = []
     @State private var editingTransactionID: GncGUID?
@@ -2049,7 +2052,7 @@ struct SearchResultsView: View {
     var body: some View {
         Table(model.searchResults, selection: $selection) {
             TableColumn("Date") { row in
-                Text(row.date, format: .dateTime.year().month().day())
+                Text(dateFormat.string(row.date))
                     .scaledFont(.body)
             }
             TableColumn("Description") { row in

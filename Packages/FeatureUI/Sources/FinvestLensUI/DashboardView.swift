@@ -16,6 +16,7 @@ import FinvestLensReports
 /// windows show the essentials; wider ones reveal more panels down the priority
 /// list. Investment panels appear only when the book holds securities.
 struct DashboardView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
 
     /// The timescale that drives every panel. This financial year by default.
@@ -438,7 +439,7 @@ struct DashboardView: View {
         let portfolio = atDate.first(where: \.isPortfolio)
         let holdings = atDate.filter { !$0.isPortfolio }.sorted { $0.returnPct > $1.returnPct }
         return VStack(alignment: .leading, spacing: 2) {
-            Text(date, format: .dateTime.year().month().day())
+            Text(dateFormat.string(date))
                 .scaledFont(.caption2).foregroundStyle(.secondary)
             if let portfolio {
                 perfRow(name: "Portfolio", pct: portfolio.returnPct, bold: true)
@@ -587,7 +588,7 @@ struct DashboardView: View {
             } else {
                 ForEach(Array(recent)) { row in
                     HStack(spacing: 8) {
-                        Text(row.date ?? Date(), format: .dateTime.month().day())
+                        Text(dateFormat.monthDay(row.date ?? Date()))
                             .scaledFont(.caption).foregroundStyle(.secondary)
                             .frame(width: 52, alignment: .leading)
                         Text(row.text.isEmpty ? "—" : row.text).lineLimit(1)
@@ -689,7 +690,7 @@ struct DashboardView: View {
                     HStack {
                         Text(bill.name).lineLimit(1)
                         Spacer()
-                        Text(bill.dueDate, format: .dateTime.month().day())
+                        Text(dateFormat.monthDay(bill.dueDate))
                             .scaledFont(.caption).foregroundStyle(.secondary)
                         Text(AmountFormat.string(bill.amount, code: code)).monospacedDigit()
                     }

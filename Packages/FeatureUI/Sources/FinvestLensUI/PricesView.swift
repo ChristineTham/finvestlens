@@ -11,6 +11,7 @@ import FinvestLensEngine
 
 /// The price editor: list and add security prices (`FR-INV-02`).
 struct PricesView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.isEmbeddedDestination) private var embedded
@@ -34,7 +35,7 @@ struct PricesView: View {
                                 ForEach(model.priceRows) { row in
                                     HStack {
                                         Text(row.symbol).fontWeight(.medium)
-                                        Text(row.date, format: .dateTime.year().month().day())
+                                        Text(dateFormat.string(row.date))
                                             .foregroundStyle(.secondary)
                                         Spacer()
                                         Text(AmountFormat.string(row.value, code: row.currencyCode))
@@ -51,7 +52,7 @@ struct PricesView: View {
                                 ForEach(model.rateRows) { row in
                                     HStack {
                                         Text("\(row.from) → \(row.to)").fontWeight(.medium)
-                                        Text(row.date, format: .dateTime.year().month().day())
+                                        Text(dateFormat.string(row.date))
                                             .foregroundStyle(.secondary)
                                         Spacer()
                                         Text(row.value.formatted(.number.precision(.fractionLength(0...6))))

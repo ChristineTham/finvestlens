@@ -171,12 +171,19 @@ public struct AppearanceModifier: ViewModifier {
     @AppStorage(AppearanceKey.colorScheme) private var schemeRaw = ColorSchemePreference.system.rawValue
     @AppStorage(AppearanceKey.accent) private var accentRaw = AppAccent.lavender.rawValue
     @AppStorage(AppearanceKey.textStep) private var textStep = TextSize.defaultStep
+    @AppStorage(AppDateFormat.orderKey) private var dateOrderRaw = DateOrder.dmy.rawValue
+    @AppStorage(AppDateFormat.styleKey) private var dateStyleRaw = DateDisplayStyle.short.rawValue
 
     public init() {}
 
     private var scheme: ColorSchemePreference { ColorSchemePreference(rawValue: schemeRaw) ?? .system }
 
     private var fontScale: CGFloat { TextSize.scale(textStep) }
+
+    private var dateFormat: AppDateFormat {
+        AppDateFormat(order: DateOrder(rawValue: dateOrderRaw) ?? .dmy,
+                      style: DateDisplayStyle(rawValue: dateStyleRaw) ?? .short)
+    }
 
     public func body(content: Content) -> some View {
         content
@@ -186,6 +193,9 @@ public struct AppearanceModifier: ViewModifier {
             // relies on the body style (lists, forms, labels) scales too.
             .environment(\.appFontScale, fontScale)
             .environment(\.font, .system(size: TextStyleMetrics.size(.body) * fontScale))
+            // The date-format preference: every displayed date reads this, so a
+            // change in Settings re-renders them all (see DateDisplay.swift).
+            .environment(\.appDateFormat, dateFormat)
         #if canImport(AppKit)
             // Drive NSApp.appearance directly: unlike preferredColorScheme(nil),
             // this reliably reverts to the system appearance when switching back

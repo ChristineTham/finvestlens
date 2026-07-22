@@ -13,6 +13,7 @@ import FinvestLensReports
 /// Lists scheduled transactions, shows what's due, and posts due instances
 /// (`FR-SCH-01/03`).
 struct ScheduledView: View {
+    @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.isEmbeddedDestination) private var embedded
@@ -33,7 +34,7 @@ struct ScheduledView: View {
                             HStack {
                                 billBadge(bill.status)
                                 Text(bill.name)
-                                Text(bill.dueDate, format: .dateTime.year().month().day())
+                                Text(dateFormat.string(bill.dueDate))
                                     .scaledFont(.caption).foregroundStyle(.secondary)
                                 Spacer()
                                 Text(AmountFormat.string(bill.amount, code: model.reportCurrency.mnemonic))
@@ -49,7 +50,7 @@ struct ScheduledView: View {
                             HStack {
                                 Text(instance.name)
                                 Spacer()
-                                Text(instance.date, format: .dateTime.year().month().day())
+                                Text(dateFormat.string(instance.date))
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -141,7 +142,7 @@ struct ScheduledView: View {
     }
 
     private func recurrenceSummary(_ recurrence: Recurrence) -> String {
-        let from = recurrence.startDate.formatted(.dateTime.year().month().day())
+        let from = dateFormat.string(recurrence.startDate)
         if recurrence.period == .once { return "Once, on \(from)" }
         let unit = recurrence.period.unitNoun
         let every = recurrence.interval == 1 ? "Every \(unit)" : "Every \(recurrence.interval) \(unit)s"

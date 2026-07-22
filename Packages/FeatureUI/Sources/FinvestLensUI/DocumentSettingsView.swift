@@ -49,18 +49,45 @@ public struct DocumentSettingsView: View {
     }
 }
 
-/// General preferences: autosave (`FR-DAT-10`).
+/// General preferences: autosave (`FR-DAT-10`), date format.
 public struct GeneralSettingsView: View {
     @AppStorage("finvestlens.autosaveIntervalSeconds") private var autosaveSeconds = 300
     @AppStorage(AppModel.reopenLastBookDefaultsKey) private var reopenLastBook = true
+    @AppStorage(AppDateFormat.orderKey) private var dateOrderRaw = DateOrder.dmy.rawValue
+    @AppStorage(AppDateFormat.styleKey) private var dateStyleRaw = DateDisplayStyle.short.rawValue
 
     public init() {}
+
+    private var dateOrder: DateOrder { DateOrder(rawValue: dateOrderRaw) ?? .dmy }
+    private var dateStyle: DateDisplayStyle { DateDisplayStyle(rawValue: dateStyleRaw) ?? .short }
 
     public var body: some View {
         Form {
             Section("On launch") {
                 Toggle("Reopen the last book", isOn: $reopenLastBook)
                 Text("When on, FinvestLens reopens the book you had open when you last quit.")
+                    .scaledFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section("Dates") {
+                Picker("Order", selection: $dateOrderRaw) {
+                    ForEach(DateOrder.allCases) { order in
+                        Text(order.displayName).tag(order.rawValue)
+                    }
+                }
+                Picker("Style", selection: $dateStyleRaw) {
+                    ForEach(DateDisplayStyle.allCases) { style in
+                        // Each option shows today in that style (in the chosen
+                        // order), so the choice is concrete.
+                        Text("\(style.displayName) — \(AppDateFormat(order: dateOrder, style: style).string(Date()))")
+                            .tag(style.rawValue)
+                    }
+                }
+                LabeledContent("Example") {
+                    Text(AppDateFormat(order: dateOrder, style: dateStyle).string(Date()))
+                        .foregroundStyle(.secondary)
+                }
+                Text("Applies to every date shown in the app. Compact spots (dashboards, month columns) keep the same day/month order without the year.")
                     .scaledFont(.caption)
                     .foregroundStyle(.secondary)
             }
