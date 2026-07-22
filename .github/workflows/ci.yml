@@ -34,7 +34,7 @@ jobs:
           - Reports
           - Shared
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Select Xcode 26 (Swift 6.2)
         run: |
           app=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
@@ -58,7 +58,7 @@ jobs:
     name: SPDX license header check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Every Swift source carries an SPDX header
         run: |
           missing=0
@@ -76,7 +76,7 @@ jobs:
     runs-on: macos-15
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Select Xcode 26 (Swift 6.2 / macOS 26 SDK)
         run: |
           app=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
