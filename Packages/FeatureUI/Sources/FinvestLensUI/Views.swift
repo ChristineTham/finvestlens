@@ -1083,10 +1083,15 @@ struct EditActivation: ViewModifier {
 
     func body(content: Content) -> some View {
         if active {
-            content
-                .frame(maxWidth: .infinity, alignment: alignment)
-                .contentShape(Rectangle())
-                .onTapGesture(perform: action)
+            // A plain Button, not a tap gesture: buttons reliably receive
+            // clicks inside Table rows (the row-selection machinery swallows
+            // bare tap gestures), and the label renders the content unchanged.
+            Button(action: action) {
+                content
+                    .frame(maxWidth: .infinity, alignment: alignment)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         } else {
             content
         }
@@ -1183,6 +1188,19 @@ struct RegisterView: View {
     @State private var registerWidth: CGFloat = 800
     /// The row in in-place edit mode (second click on the selected row).
     @State private var editingRowID: GncGUID?
+    /// Which of the editing row's fields has keyboard focus. Set to the field
+    /// the activating click landed on; Tab/Shift-Tab then move along the row.
+    enum EditField: Hashable {
+        case date, description, transfer, amount, memo, notes, legAccount, legMemo
+    }
+    @FocusState private var focusedField: EditField?
+
+    /// Enters edit mode on `row` with focus on the clicked field. The focus is
+    /// assigned a tick later — the field has to exist before it can take it.
+    private func beginEdit(_ rowID: GncGUID, focus field: EditField) {
+        editingRowID = rowID
+        Task { focusedField = field }
+    }
     /// GnuCash's View ▸ Double Line. A preference rather than per-register
     /// state, as in GnuCash, so it survives moving between accounts.
     @AppStorage("registerDoubleLine") private var doubleLine = false
@@ -1483,10 +1501,11 @@ struct RegisterView: View {
                             ), displayedComponents: .date)
                             .labelsHidden()
                             .scaledFont(.body)
+                            .focused($focusedField, equals: .date)
                         } else {
                             Text(dateFormat.short(main.date))
                                 .scaledFont(.body)
-                                .editActivation(canActivateEdit(row)) { editingRowID = row.id }
+                                .editActivation(canActivateEdit(row)) { beginEdit(row.id, focus: .date) }
                         }
                     }
                 }
@@ -1502,6 +1521,7 @@ struct RegisterView: View {
                                 model.inlineSetDescription(splitID: row.id, to: $0)
                             }
                             .id(row.id)
+                            .focused($focusedField, equals: .description)
                         } else {
                             Text(main.description).scaledFont(.body)
                         }
@@ -1532,10 +1552,12 @@ struct RegisterView: View {
                                     model.inlineSetMemo(splitID: row.id, to: $0)
                                 }
                                 .id(row.id)
+                                .focused($focusedField, equals: .memo)
                                 InlineTextCell(value: main.notes, placeholder: "Notes") {
                                     model.inlineSetNotes(splitID: row.id, to: $0)
                                 }
                                 .id(row.id)
+                                .focused($focusedField, equals: .notes)
                             } else if !main.secondLine.isEmpty {
                                 Text(main.secondLine)
                                     .scaledFont(.caption)
@@ -1544,7 +1566,7 @@ struct RegisterView: View {
                             }
                         }
                     }
-                    .editActivation(canActivateEdit(row)) { editingRowID = row.id }
+                    .editActivation(canActivateEdit(row)) { beginEdit(row.id, focus: .description) }
                 } else {
                     // An expanded leg: the account it posts to, indented under
                     // its transaction, with action · memo beneath — composed the
@@ -1553,10 +1575,12 @@ struct RegisterView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         if isEditingRow(row) {
                             LegAccountPicker(model: model, splitID: row.id)
+                                .focused($focusedField, equals: .legAccount)
                             InlineTextCell(value: row.legMemo, placeholder: "Memo") {
                                 model.inlineSetMemo(splitID: row.id, to: $0)
                             }
                             .id(row.id)
+                            .focused($focusedField, equals: .legMemo)
                         } else {
                             Text(row.legAccount)
                                 .scaledFont(.body)
@@ -1569,7 +1593,7 @@ struct RegisterView: View {
                             }
                         }
                     }
-                    .editActivation(canActivateEdit(row)) { editingRowID = row.id }
+                    .editActivation(canActivateEdit(row)) { beginEdit(row.id, focus: .legAccount) }
                     .padding(.leading, 18 * appFontScale)
                 }
             }
@@ -1598,11 +1622,12 @@ struct RegisterView: View {
                                 }
                             }
                             .labelsHidden()
+                            .focused($focusedField, equals: .transfer)
                         } else {
                             Text(main.transfer).scaledFont(.body).foregroundStyle(.secondary)
                                 .help(isEditingRow(row)
                                       ? "Multi-split or multi-currency — edit in the inspector (⌘E)" : "")
-                                .editActivation(canActivateEdit(row)) { editingRowID = row.id }
+                                .editActivation(canActivateEdit(row)) { beginEdit(row.id, focus: .transfer) }
                         }
                     }
                 }
@@ -1626,6 +1651,7 @@ struct RegisterView: View {
                             }
                             .id(row.id)
                             .monospacedDigit()
+                            .focused($focusedField, equals: .amount)
                         } else {
                             Text(AmountFormat.string(main.amount, code: currencyCode))
                                 .scaledFont(.body)
@@ -1643,7 +1669,7 @@ struct RegisterView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
-                    .editActivation(canActivateEdit(row), alignment: .trailing) { editingRowID = row.id }
+                    .editActivation(canActivateEdit(row), alignment: .trailing) { beginEdit(row.id, focus: .amount) }
                 } else {
                     Text(AmountFormat.string(row.legAmount, code: row.legCurrencyCode))
                         .scaledFont(.body)
@@ -1789,6 +1815,16 @@ struct JournalView: View {
     @AppStorage("registerDoubleLine") private var doubleLine = false
     /// The row in in-place edit mode (second click on the selected row).
     @State private var editingRowID: GncGUID?
+    /// Which field of the editing row has focus (set to the clicked field).
+    enum EditField: Hashable { case date, text, notes, legAccount, legMemo }
+    @FocusState private var focusedField: EditField?
+
+    /// Enters edit mode on `rowID` with focus on the clicked field. The focus
+    /// is assigned a tick later — the field has to exist before it can take it.
+    private func beginEdit(_ rowID: GncGUID, focus field: EditField) {
+        editingRowID = rowID
+        Task { focusedField = field }
+    }
 
     var body: some View {
         let rows = model.journalRows(forAccountID: accountID)
@@ -1852,10 +1888,11 @@ struct JournalView: View {
                             ), displayedComponents: .date)
                             .labelsHidden()
                             .scaledFont(.body)
+                            .focused($focusedField, equals: .date)
                         } else {
                             Text(dateFormat.short(date))
                                 .scaledFont(.body).fontWeight(.medium)
-                                .editActivation(row.isHeading && canActivateEdit(row)) { editingRowID = row.id }
+                                .editActivation(row.isHeading && canActivateEdit(row)) { beginEdit(row.id, focus: .date) }
                         }
                     }
                 }
@@ -1874,18 +1911,22 @@ struct JournalView: View {
                                 model.inlineSetDescription(transactionID: row.transactionID, to: $0)
                             }
                             .id(row.id)
+                            .focused($focusedField, equals: .text)
                             if doubleLine {
                                 InlineTextCell(value: row.notes, placeholder: "Notes") {
                                     model.inlineSetNotes(transactionID: row.transactionID, to: $0)
                                 }
                                 .id(row.id)
+                                .focused($focusedField, equals: .notes)
                             }
                         } else {
                             LegAccountPicker(model: model, splitID: row.id)
+                                .focused($focusedField, equals: .legAccount)
                             InlineTextCell(value: row.memo, placeholder: "Memo") {
                                 model.inlineSetMemo(splitID: row.id, to: $0)
                             }
                             .id(row.id)
+                            .focused($focusedField, equals: .legMemo)
                         }
                     } else {
                         Text(row.text)
@@ -1905,7 +1946,9 @@ struct JournalView: View {
                         }
                     }
                 }
-                .editActivation(canActivateEdit(row)) { editingRowID = row.id }
+                .editActivation(canActivateEdit(row)) {
+                    beginEdit(row.id, focus: row.isHeading ? .text : .legAccount)
+                }
                 .padding(.leading, row.isHeading ? 0 : 18 * appFontScale)
             }
             TableColumn("R") { row in
