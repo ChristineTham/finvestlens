@@ -134,6 +134,10 @@ public enum SidebarSelection: Hashable, Sendable {
     case dashboard
     case account(GncGUID)
     case reports
+    /// The whole book in journal form — GnuCash's Tools ▸ General Ledger, a
+    /// destination of its own rather than a register style (GnuCash's register
+    /// has only Basic / Auto-Split / Journal).
+    case generalLedger
     case budgets
     case scheduled
     case rules
@@ -1757,6 +1761,10 @@ public final class AppModel {
     }
 
     private func refreshRegister() {
+        // The journal styles honour the same sort/filter/subaccounts settings,
+        // and their caches were built under the old ones.
+        journalTransactionCache = [:]
+        journalRowCache = [:]
         guard let book, let id = selectedAccountID, let account = book.account(with: id) else {
             registerRows = []
             return

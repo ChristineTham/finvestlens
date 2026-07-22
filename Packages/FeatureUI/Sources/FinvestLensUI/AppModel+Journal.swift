@@ -117,14 +117,15 @@ public struct AutoSplitRow: Identifiable, Hashable, Sendable {
     public var amount: Decimal { main?.amount ?? legAmount }
 }
 
-/// How the register presents transactions (`FR-REG-01`).
+/// How the register presents transactions (`FR-REG-01`) — GnuCash's three
+/// styles. The General Ledger (the whole book in journal form) is a sidebar
+/// destination, as it is a separate tool in GnuCash, not a register style.
 public enum RegisterStyle: String, CaseIterable, Identifiable, Sendable {
     case basic = "Basic"
     /// GnuCash's Auto-Split Ledger: one line per transaction, and the selected
     /// one opened out into its legs.
     case autoSplit = "Auto-Split"
     case journal = "Journal"
-    case generalLedger = "General Ledger"
     public var id: String { rawValue }
 }
 
@@ -141,9 +142,37 @@ extension AppModel {
     public func journalRows(forAccountID accountID: GncGUID?) -> [JournalRow] {
         if let cached = journalRowCache[accountID] { return cached }
         guard let book else { return [] }
-        let focus = accountID.flatMap { book.account(with: $0) }
+        let focusSet = journalFocusSet(forAccountID: accountID)
+        func inFocus(_ split: Split) -> Bool {
+            split.account.map { focusSet.contains(ObjectIdentifier($0)) } ?? false
+        }
+
+        // Balances accumulate in canonical date order over *every* focus split —
+        // before the filter hides transactions and before any sort rearranges
+        // them, exactly the Basic register's rule (a hidden or reordered split
+        // still moved the account). Dropped for a mixed-commodity subtree, where
+        // the sum would be a number of nothing.
+        let trackBalance: Bool = {
+            guard !focusSet.isEmpty, let accountID,
+                  let account = book.account(with: accountID) else { return false }
+            guard registerIncludesSubaccounts else { return true }
+            return Set(([account] + account.descendants).map(\.commodity)).count == 1
+        }()
+        var balances: [GncGUID: Decimal] = [:]
+        if trackBalance {
+            var running = Decimal(0)
+            let dated = book.transactions.sorted {
+                Transaction.canonicalOrder($0, action: "", $1, action: "") < 0
+            }
+            for txn in dated {
+                for split in txn.splits where inFocus(split) {
+                    if split.reconcileState != .voided { running += split.quantity }
+                    balances[split.guid] = running
+                }
+            }
+        }
+
         var rows: [JournalRow] = []
-        var focusBalance = Decimal(0)
         rows.reserveCapacity(journalTransactions(forAccountID: accountID).count * 3)
         for txn in journalTransactions(forAccountID: accountID) {
             rows.append(JournalRow(
@@ -152,8 +181,7 @@ extension AppModel {
                 amount: nil, currencyCode: txn.currency.mnemonic, isFocusAccount: false,
                 notes: txn.notes))
             for split in txn.splits {
-                let isFocus = focus != nil && split.account === focus
-                if isFocus { focusBalance += split.value }
+                let isFocus = inFocus(split)
                 rows.append(JournalRow(
                     id: split.guid, transactionID: txn.guid, isHeading: false,
                     date: nil, text: split.account?.name ?? "—",
@@ -161,7 +189,7 @@ extension AppModel {
                     isFocusAccount: isFocus,
                     memo: split.memo, action: split.action,
                     reconcile: split.reconcileState.rawValue,
-                    runningBalance: isFocus ? focusBalance : nil))
+                    runningBalance: isFocus ? balances[split.guid] : nil))
             }
         }
         journalRowCache[accountID] = rows
@@ -205,20 +233,78 @@ extension AppModel {
         return out
     }
 
+    /// The set of accounts a single-account journal is *about*: the account,
+    /// plus its subtree when Subaccounts is on. Empty for the general ledger.
+    private func journalFocusSet(forAccountID accountID: GncGUID?) -> Set<ObjectIdentifier> {
+        guard let accountID, let book, let account = book.account(with: accountID) else { return [] }
+        let accounts = registerIncludesSubaccounts ? [account] + account.descendants : [account]
+        return Set(accounts.map(ObjectIdentifier.init))
+    }
+
     /// Transactions for `accountID` (its postings), or every transaction when
-    /// `accountID` is `nil` (general ledger). Sorted oldest first, and cached
-    /// until the book changes — filtering and sorting the whole book on every
-    /// body pass is what made the general ledger unusable.
+    /// `accountID` is `nil` (general ledger). Cached until the book — or a
+    /// register view setting — changes: filtering and sorting the whole book on
+    /// every body pass is what made the general ledger unusable.
+    ///
+    /// A single-account journal honours the register's Subaccounts, Filter and
+    /// Sort settings, applied per *transaction*: a transaction is shown when any
+    /// of its focus-account legs passes the filter, and sorts by its own fields
+    /// (amount/memo meaning the focus legs' net value / first memo). The general
+    /// ledger is always the whole book, oldest first.
     func journalTransactions(forAccountID accountID: GncGUID?) -> [Transaction] {
         if let cached = journalTransactionCache[accountID] { return cached }
         guard let book else { return [] }
-        let focus = accountID.flatMap { book.account(with: $0) }
-        let transactions = book.transactions
+        let focusSet = journalFocusSet(forAccountID: accountID)
+
+        func inFocus(_ split: Split) -> Bool {
+            split.account.map { focusSet.contains(ObjectIdentifier($0)) } ?? false
+        }
+
+        var transactions = book.transactions
             .filter { txn in
-                guard let focus else { return true }
-                return txn.splits.contains { $0.account === focus }
+                focusSet.isEmpty || txn.splits.contains(where: inFocus)
             }
             .sorted { $0.datePosted < $1.datePosted }
+
+        if !focusSet.isEmpty {
+            let filter = registerFilter
+            if !filter.isShowingEverything {
+                let calendar = Calendar.current
+                let start = filter.startDate.map { calendar.startOfDay(for: $0) }
+                let end = filter.endDate.map { calendar.startOfDay(for: $0) }
+                transactions = transactions.filter { txn in
+                    let day = calendar.startOfDay(for: txn.datePosted)
+                    if let start, day < start { return false }
+                    if let end, day > end { return false }
+                    return txn.splits.contains { inFocus($0) && filter.statuses.contains($0.reconcileState) }
+                }
+            }
+
+            func focusValue(_ txn: Transaction) -> Decimal {
+                txn.splits.reduce(Decimal(0)) { $0 + (inFocus($1) ? $1.value : 0) }
+            }
+            switch registerSort {
+            case .standard, .date:
+                break   // already oldest first
+            case .dateEntered:
+                transactions.sort { $0.dateEntered < $1.dateEntered }
+            case .number:
+                transactions.sort { Transaction.numOrString($0.number, $1.number) < 0 }
+            case .amount:
+                transactions.sort { focusValue($0) < focusValue($1) }
+            case .description:
+                transactions.sort {
+                    $0.transactionDescription.localizedCaseInsensitiveCompare($1.transactionDescription) == .orderedAscending
+                }
+            case .memo:
+                func memo(_ txn: Transaction) -> String {
+                    txn.splits.first(where: inFocus)?.memo ?? ""
+                }
+                transactions.sort { memo($0).localizedCaseInsensitiveCompare(memo($1)) == .orderedAscending }
+            }
+            if registerSortReversed { transactions.reverse() }
+        }
+
         journalTransactionCache[accountID] = transactions
         return transactions
     }

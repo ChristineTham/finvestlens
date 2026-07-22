@@ -277,6 +277,7 @@ public struct FinvestLensRootView: View {
         case .dashboard: DashboardView(model: model)
         case .account: RegisterView(model: model)
         case .reports: ReportsHome(model: model)
+        case .generalLedger: GeneralLedgerView(model: model)
         case .budgets: BudgetView(model: model)
         case .scheduled: ScheduledView(model: model)
         case .rules: RulesView(model: model)
@@ -910,6 +911,7 @@ struct AccountsSidebar: View {
                 Section {
                     Label("Dashboard", systemImage: "square.grid.2x2").tag(SidebarSelection.dashboard)
                     Label("Reports", systemImage: "chart.pie").tag(SidebarSelection.reports)
+                    Label("General Ledger", systemImage: "text.book.closed").tag(SidebarSelection.generalLedger)
                 }
                 Section("Planning") {
                     Label("Budgets", systemImage: "chart.bar.doc.horizontal").tag(SidebarSelection.budgets)
@@ -1121,26 +1123,24 @@ struct RegisterView: View {
                 .pickerStyle(.segmented).labelsHidden()
                 .fixedSize()
                 Spacer()
-                // Basic and Auto-Split are the same table, so every control
-                // applies to both; only the journal styles disable them.
-                // Double Line (notes/memo on the transaction row) is a different
-                // thing from the journal styles' always-on leg detail
-                // (account + action · memo) — hence a control here at all.
-                let journalStyle = style == .journal || style == .generalLedger
+                // Every control applies to every style: Subaccounts, Sort and
+                // Filter shape which transactions all three styles show, and
+                // Double Line toggles the detail lines (notes; and in Journal
+                // the per-leg action · memo).
                 if model.selectedAccountHasChildren {
-                    subaccountsToggle.disabled(journalStyle)
+                    subaccountsToggle
                 }
-                doubleLineToggle.disabled(journalStyle)
-                sortMenu.disabled(journalStyle)
-                filterButton.disabled(journalStyle)
+                doubleLineToggle
+                sortMenu
+                filterButton
             }
             .padding(6)
             Divider()
             content
-                // The entry bar belongs to whichever single-account style is
-                // showing, not just Basic — same reason as the summary bar.
+                // The entry bar belongs to every single-account style, not just
+                // Basic — same reason as the summary bar.
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if style != .generalLedger, let accountID = model.selectedAccountID,
+                    if let accountID = model.selectedAccountID,
                        !model.registerIncludesSubaccounts {
                         VStack(spacing: 0) {
                             Divider()
@@ -1148,15 +1148,12 @@ struct RegisterView: View {
                         }
                     }
                 }
-            // The status strip describes the selected account, which every style
-            // but the general ledger has — keeping it up avoids the table
-            // growing/shrinking on a style switch.
-            if style != .generalLedger, let summary = model.registerSummary {
+            if let summary = model.registerSummary {
                 Divider()
                 summaryBar(summary)
             }
         }
-        .navigationTitle(style == .generalLedger ? "General Ledger" : selectedName)
+        .navigationTitle(selectedName)
         .background { jumpShortcuts }
         .sheet(isPresented: $filterShown) {
             RegisterFilterSheet(model: model)
@@ -1272,9 +1269,6 @@ struct RegisterView: View {
                 JournalView(model: model, accountID: model.selectedAccountID,
                             editingTransactionID: $editingTransactionID, jump: $jump)
             }
-        case .generalLedger:
-            JournalView(model: model, accountID: nil,
-                        editingTransactionID: $editingTransactionID, jump: $jump)
         }
     }
 
@@ -1579,6 +1573,20 @@ struct RegisterView: View {
 /// before it, so jumping to either end is instant across 46k transactions and
 /// no windowing is needed. The nested-section version had to be paged, and
 /// scrolling it to the far end never settled.
+/// The whole book in journal form — a sidebar destination, mirroring GnuCash's
+/// Tools ▸ General Ledger (a separate tool there too, not a register style).
+struct GeneralLedgerView: View {
+    @Bindable var model: AppModel
+    @State private var editingTransactionID: GncGUID?
+    @State private var jump: RegisterEnd?
+
+    var body: some View {
+        JournalView(model: model, accountID: nil,
+                    editingTransactionID: $editingTransactionID, jump: $jump)
+            .navigationTitle("General Ledger")
+    }
+}
+
 struct JournalView: View {
     @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
@@ -1589,6 +1597,9 @@ struct JournalView: View {
     @Environment(\.appFontScale) private var appFontScale
     /// Measured width, driving the proportional column widths (RegisterColumns).
     @State private var tableWidth: CGFloat = 800
+    /// Double Line: the detail lines (heading notes, per-leg action · memo) —
+    /// the same preference the Basic-table styles use.
+    @AppStorage("registerDoubleLine") private var doubleLine = false
 
     var body: some View {
         let rows = model.journalRows(forAccountID: accountID)
@@ -1643,10 +1654,9 @@ struct JournalView: View {
             }
             TableColumn("Transaction / Account") { row in
                 // Legs are indented under their heading, so the grouping still
-                // reads even though the rows are flat. Notes (on headings) and
-                // action/memo (on legs) sit under the text — the journal styles
-                // are the detailed view, so they show unconditionally here
-                // (Basic keeps them behind its Double Line toggle).
+                // reads even though the rows are flat. Double Line shows the
+                // detail beneath the text: notes on headings, action · memo on
+                // legs — the same toggle the Basic-table styles use.
                 VStack(alignment: .leading, spacing: 1) {
                     Text(row.text)
                         .scaledFont(.body)
@@ -1657,7 +1667,7 @@ struct JournalView: View {
                             .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    if !row.detailLine.isEmpty {
+                    if doubleLine, !row.detailLine.isEmpty {
                         Text(row.detailLine)
                             .scaledFont(.caption)
                             .foregroundStyle(.secondary)
