@@ -38,6 +38,11 @@ public struct JournalRow: Identifiable, Hashable, Sendable {
     /// The split's reconcile glyph (legs only): n/c/y/f/v, as in the Basic
     /// register — empty on headings.
     public var reconcile: String = ""
+    /// The focused account's balance as of this leg (single-account journals
+    /// only; `nil` on headings, other accounts' legs, and the general ledger).
+    /// Gives the journal styles the same Balance column as Basic, so switching
+    /// styles doesn't reflow the trailing columns.
+    public var runningBalance: Decimal?
 
     /// The secondary detail line for this row: notes on a heading, action and
     /// memo on a leg. Empty when there is nothing to say.
@@ -80,6 +85,7 @@ extension AppModel {
         guard let book else { return [] }
         let focus = accountID.flatMap { book.account(with: $0) }
         var rows: [JournalRow] = []
+        var focusBalance = Decimal(0)
         rows.reserveCapacity(journalTransactions(forAccountID: accountID).count * 3)
         for txn in journalTransactions(forAccountID: accountID) {
             rows.append(JournalRow(
@@ -88,13 +94,16 @@ extension AppModel {
                 amount: nil, currencyCode: txn.currency.mnemonic, isFocusAccount: false,
                 notes: txn.notes))
             for split in txn.splits {
+                let isFocus = focus != nil && split.account === focus
+                if isFocus { focusBalance += split.value }
                 rows.append(JournalRow(
                     id: split.guid, transactionID: txn.guid, isHeading: false,
                     date: nil, text: split.account?.name ?? "—",
                     amount: split.value, currencyCode: txn.currency.mnemonic,
-                    isFocusAccount: focus != nil && split.account === focus,
+                    isFocusAccount: isFocus,
                     memo: split.memo, action: split.action,
-                    reconcile: split.reconcileState.rawValue))
+                    reconcile: split.reconcileState.rawValue,
+                    runningBalance: isFocus ? focusBalance : nil))
             }
         }
         journalRowCache[accountID] = rows

@@ -1010,6 +1010,15 @@ enum RegisterEnd {
 /// needs, and Description (the one unconstrained column) takes the rest.
 /// Shared by the Basic and journal tables so the styles line up.
 enum RegisterColumns {
+    // Responsive breakpoints. Nothing is ever clipped: as width shrinks, columns
+    // *fold into extra lines* of the surviving columns rather than truncate —
+    // Account/Transfer under the description, then Balance under the amount,
+    // then Date under the description. The thresholds guarantee the remaining
+    // columns' minimum widths always fit.
+    static func showsSide(_ width: CGFloat, _ scale: CGFloat) -> Bool { width >= 640 * scale }
+    static func showsBalance(_ width: CGFloat, _ scale: CGFloat) -> Bool { width >= 500 * scale }
+    static func showsDate(_ width: CGFloat, _ scale: CGFloat) -> Bool { width >= 380 * scale }
+
     private static func clamp(_ value: CGFloat, _ lo: CGFloat, _ hi: CGFloat,
                               _ scale: CGFloat) -> CGFloat {
         min(max(value, lo * scale), hi * scale)
@@ -1102,24 +1111,41 @@ struct RegisterView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // One stable control row for every style — controls that only apply
+            // to Basic are disabled elsewhere rather than removed, so switching
+            // styles doesn't pop the header around.
             HStack {
                 Picker("Style", selection: $style) {
                     ForEach(RegisterStyle.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented).labelsHidden()
                 .fixedSize()
-                if style == .basic {
-                    Spacer()
-                    if model.selectedAccountHasChildren { subaccountsToggle }
-                    doubleLineToggle
-                    sortMenu
-                    filterButton
+                Spacer()
+                if model.selectedAccountHasChildren {
+                    subaccountsToggle.disabled(style != .basic)
                 }
+                doubleLineToggle.disabled(style != .basic)
+                sortMenu.disabled(style != .basic)
+                filterButton.disabled(style != .basic)
             }
             .padding(6)
             Divider()
             content
-            if style == .basic, let summary = model.registerSummary {
+                // The entry bar belongs to whichever single-account style is
+                // showing, not just Basic — same reason as the summary bar.
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if style != .generalLedger, let accountID = model.selectedAccountID,
+                       !model.registerIncludesSubaccounts {
+                        VStack(spacing: 0) {
+                            Divider()
+                            RegisterEntryBar(model: model, accountID: accountID)
+                        }
+                    }
+                }
+            // The status strip describes the selected account, which every style
+            // but the general ledger has — keeping it up avoids the table
+            // growing/shrinking on a style switch.
+            if style != .generalLedger, let summary = model.registerSummary {
                 Divider()
                 summaryBar(summary)
             }
@@ -1256,17 +1282,6 @@ struct RegisterView: View {
                 }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { registerWidth = $0 }
-        // GnuCash's blank transaction row, at the foot of the register where
-        // GnuCash keeps it. Not in the subtree view: an entry needs to know
-        // which single account it is entering into.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if let accountID = model.selectedAccountID, !model.registerIncludesSubaccounts {
-                VStack(spacing: 0) {
-                    Divider()
-                    RegisterEntryBar(model: model, accountID: accountID)
-                }
-            }
-        }
     }
 
     /// Lands on the row a jump asked for, or the newest when nothing did.
@@ -1319,30 +1334,40 @@ struct RegisterView: View {
             })
     }
 
-    /// Below this, the Account/Transfer columns fold into a second description
-    /// line so Description keeps readable width.
-    private var compact: Bool { registerWidth < 640 * appFontScale }
+    // Responsive folds (see RegisterColumns): side columns → description line,
+    // balance → under the amount, date → description line. Nothing clips.
+    private var showsSide: Bool { RegisterColumns.showsSide(registerWidth, appFontScale) }
+    private var showsBalance: Bool { RegisterColumns.showsBalance(registerWidth, appFontScale) }
+    private var showsDate: Bool { RegisterColumns.showsDate(registerWidth, appFontScale) }
 
     private var registerTableBody: some View {
         Table(model.registerRows, selection: $selection, sortOrder: tableSortOrder) {
-            TableColumn("Date", value: \.date) { row in
-                Text(dateFormat.short(row.date))
-                    .scaledFont(.body)
+            if showsDate {
+                TableColumn("Date", value: \.date) { row in
+                    Text(dateFormat.short(row.date))
+                        .scaledFont(.body)
+                }
+                .width(RegisterColumns.date(registerWidth, appFontScale))
             }
-            .width(RegisterColumns.date(registerWidth, appFontScale))
             // Description is the flexible column: everything else is pinned near
             // its content width, so spare width lands here.
             TableColumn("Description", value: \.description) { row in
                 VStack(alignment: .leading, spacing: 1) {
                     Text(row.description).scaledFont(.body)
-                    // Narrow window: the folded Transfer (and subtree Account)
-                    // columns surface here instead of vanishing.
-                    if compact, !row.transfer.isEmpty {
+                    // Folded columns surface as caption lines instead of
+                    // vanishing: date on very narrow windows, then transfer
+                    // (and the subtree account).
+                    if !showsDate {
+                        Text(dateFormat.short(row.date))
+                            .scaledFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !showsSide, !row.transfer.isEmpty {
                         Text("→ \(row.transfer)")
                             .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    if compact, model.registerIncludesSubaccounts, !row.accountName.isEmpty {
+                    if !showsSide, model.registerIncludesSubaccounts, !row.accountName.isEmpty {
                         Text(row.accountName)
                             .scaledFont(.caption)
                             .foregroundStyle(.tertiary)
@@ -1360,13 +1385,13 @@ struct RegisterView: View {
             // Which account a row posted to, which only a subtree register has
             // to answer — in a single-account register every row is the same
             // account and the column would say nothing.
-            if !compact, model.registerIncludesSubaccounts {
+            if showsSide, model.registerIncludesSubaccounts {
                 TableColumn("Account") { row in
                     Text(row.accountName).scaledFont(.body).foregroundStyle(.secondary)
                 }
                 .width(RegisterColumns.account(registerWidth, appFontScale))
             }
-            if !compact {
+            if showsSide {
                 TableColumn("Transfer") { row in
                     Text(row.transfer).scaledFont(.body).foregroundStyle(.secondary)
                 }
@@ -1379,35 +1404,47 @@ struct RegisterView: View {
             }
             .width(24 * appFontScale)
             TableColumn("Amount", value: \.amount) { row in
-                Text(AmountFormat.string(row.amount, code: currencyCode))
-                    .scaledFont(.body)
-                    .monospacedDigit()
-                    .foregroundStyle(row.amount < 0 ? .red : .primary)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .accessibilityLabel(AmountFormat.spoken(row.amount, code: currencyCode))
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(AmountFormat.string(row.amount, code: currencyCode))
+                        .scaledFont(.body)
+                        .monospacedDigit()
+                        .foregroundStyle(row.amount < 0 ? .red : .primary)
+                        .accessibilityLabel(AmountFormat.spoken(row.amount, code: currencyCode))
+                    // The folded Balance column: under the amount, not gone.
+                    if !showsBalance, let balance = row.runningBalance {
+                        Text(AmountFormat.string(balance, code: currencyCode))
+                            .scaledFont(.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Balance \(AmountFormat.spoken(balance, code: currencyCode))")
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .width(RegisterColumns.amount(registerWidth, appFontScale))
             .alignment(.numeric)
             // Balance has no sort on purpose: each row's balance is the
             // account's balance *as of that posting*, computed in date order —
             // ordering by it would order by an artefact.
-            TableColumn("Balance") { row in
-                // Absent for a subtree spanning several commodities: a running
-                // total of shares and dollars is a number of nothing.
-                if let balance = row.runningBalance {
-                    Text(AmountFormat.string(balance, code: currencyCode))
-                        .scaledFont(.body)
-                        .monospacedDigit()
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .accessibilityLabel("Balance \(AmountFormat.spoken(balance, code: currencyCode))")
-                } else {
-                    Text("—").foregroundStyle(.tertiary)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .accessibilityLabel("No running balance")
+            if showsBalance {
+                TableColumn("Balance") { row in
+                    // Absent for a subtree spanning several commodities: a running
+                    // total of shares and dollars is a number of nothing.
+                    if let balance = row.runningBalance {
+                        Text(AmountFormat.string(balance, code: currencyCode))
+                            .scaledFont(.body)
+                            .monospacedDigit()
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .accessibilityLabel("Balance \(AmountFormat.spoken(balance, code: currencyCode))")
+                    } else {
+                        Text("—").foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .accessibilityLabel("No running balance")
+                    }
                 }
+                .width(RegisterColumns.balance(registerWidth, appFontScale))
+                .alignment(.numeric)
             }
-            .width(RegisterColumns.balance(registerWidth, appFontScale))
-            .alignment(.numeric)
         }
         .tableColumnHeaders(.visible)
         // A dense financial table reads better with a crisp cutoff where rows
@@ -1548,18 +1585,24 @@ struct JournalView: View {
         proxy.scrollTo(target, anchor: end == .newest ? .bottom : .top)
     }
 
+    // The same responsive folds as the Basic register (see RegisterColumns).
+    private var showsBalance: Bool { RegisterColumns.showsBalance(tableWidth, appFontScale) }
+    private var showsDate: Bool { RegisterColumns.showsDate(tableWidth, appFontScale) }
+
     private func table(_ rows: [JournalRow]) -> some View {
-        // Column widths mirror the Basic register so switching styles doesn't
-        // reflow the frame: date and amount stay where they were, and the
-        // description column keeps the spare width.
+        // The column skeleton mirrors the Basic register — Date | text | R |
+        // Amount | Balance, at the same computed widths — so switching styles
+        // keeps every shared column edge exactly where it was.
         Table(rows, selection: $selection) {
-            TableColumn("Date") { row in
-                if let date = row.date {
-                    Text(dateFormat.short(date))
-                        .scaledFont(.body).fontWeight(.medium)
+            if showsDate {
+                TableColumn("Date") { row in
+                    if let date = row.date {
+                        Text(dateFormat.short(date))
+                            .scaledFont(.body).fontWeight(.medium)
+                    }
                 }
+                .width(RegisterColumns.date(tableWidth, appFontScale))
             }
-            .width(RegisterColumns.date(tableWidth, appFontScale))
             TableColumn("Transaction / Account") { row in
                 // Legs are indented under their heading, so the grouping still
                 // reads even though the rows are flat. Notes (on headings) and
@@ -1571,6 +1614,11 @@ struct JournalView: View {
                         .scaledFont(.body)
                         .fontWeight(row.isHeading ? .medium : (row.isFocusAccount ? .semibold : .regular))
                         .foregroundStyle(row.isHeading ? .primary : .secondary)
+                    if !showsDate, row.isHeading, let date = row.date {
+                        Text(dateFormat.short(date))
+                            .scaledFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     if !row.detailLine.isEmpty {
                         Text(row.detailLine)
                             .scaledFont(.caption)
@@ -1590,15 +1638,39 @@ struct JournalView: View {
             .width(24 * appFontScale)
             TableColumn("Amount") { row in
                 if let amount = row.amount {
-                    Text(AmountFormat.string(amount, code: row.currencyCode))
-                        .scaledFont(.body)
-                        .monospacedDigit()
-                        .foregroundStyle(amount < 0 ? .red : .primary)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(AmountFormat.string(amount, code: row.currencyCode))
+                            .scaledFont(.body)
+                            .monospacedDigit()
+                            .foregroundStyle(amount < 0 ? .red : .primary)
+                        // The folded Balance column: under the amount, not gone.
+                        if !showsBalance, let balance = row.runningBalance {
+                            Text(AmountFormat.string(balance, code: row.currencyCode))
+                                .scaledFont(.caption)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
             .width(RegisterColumns.amount(tableWidth, appFontScale))
             .alignment(.numeric)
+            // The focused account's running balance on its own legs — the same
+            // trailing column as Basic, so the style switch doesn't reflow. The
+            // general ledger (no focus account) leaves it empty.
+            if showsBalance {
+                TableColumn("Balance") { row in
+                    if let balance = row.runningBalance {
+                        Text(AmountFormat.string(balance, code: row.currencyCode))
+                            .scaledFont(.body)
+                            .monospacedDigit()
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                }
+                .width(RegisterColumns.balance(tableWidth, appFontScale))
+                .alignment(.numeric)
+            }
         }
         .contextMenu(forSelectionType: GncGUID.self) { ids in
             // A journal row is a heading or a leg. A heading has no split of its
