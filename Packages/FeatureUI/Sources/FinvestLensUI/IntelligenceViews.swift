@@ -214,7 +214,9 @@ struct AutoCategorizeSheet: View {
     private func suggest() {
         suggesting = true
         errorMessage = nil
-        let pending = items
+        // Only the items the rule-based matcher could not place: Apple
+        // Intelligence is the last resort, after learned-transaction matching.
+        let pending = pickerItems
         Task {
             defer { suggesting = false; progress = nil }
             do {
