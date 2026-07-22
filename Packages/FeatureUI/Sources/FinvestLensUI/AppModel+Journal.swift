@@ -69,26 +69,42 @@ public struct AutoSplitRow: Identifiable, Hashable, Sendable {
     /// Leg fields (empty on main rows).
     public let legAccount: String
     public let legMemo: String
+    public let legAction: String
     public let legReconcile: String
     public let legAmount: Decimal
     public let legCurrencyCode: String
+
+    /// The leg's secondary detail — action and memo, composed exactly as the
+    /// journal styles compose theirs, so the expansion reads the same there.
+    public var legDetailLine: String {
+        let action = legAction.trimmingCharacters(in: .whitespaces)
+        let memo = legMemo.trimmingCharacters(in: .whitespaces)
+        switch (action.isEmpty, memo.isEmpty) {
+        case (false, false): return "\(action) · \(memo)"
+        case (false, true): return action
+        case (true, false): return memo
+        case (true, true): return ""
+        }
+    }
 
     init(main: RegisterRow) {
         id = main.id
         self.main = main
         legAccount = ""
         legMemo = ""
+        legAction = ""
         legReconcile = ""
         legAmount = 0
         legCurrencyCode = ""
     }
 
-    init(legID: GncGUID, account: String, memo: String, reconcile: String,
-         amount: Decimal, currencyCode: String) {
+    init(legID: GncGUID, account: String, memo: String, action: String,
+         reconcile: String, amount: Decimal, currencyCode: String) {
         id = legID
         main = nil
         legAccount = account
         legMemo = memo
+        legAction = action
         legReconcile = reconcile
         legAmount = amount
         legCurrencyCode = currencyCode
@@ -179,6 +195,7 @@ extension AppModel {
                         legID: split.guid,
                         account: split.account?.fullName ?? "—",
                         memo: split.memo,
+                        action: split.action,
                         reconcile: split.reconcileState.rawValue,
                         amount: split.value,
                         currencyCode: txn.currency.mnemonic))

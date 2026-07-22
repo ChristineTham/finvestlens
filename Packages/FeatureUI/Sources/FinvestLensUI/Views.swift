@@ -1121,12 +1121,18 @@ struct RegisterView: View {
                 .pickerStyle(.segmented).labelsHidden()
                 .fixedSize()
                 Spacer()
+                // Basic and Auto-Split are the same table, so every control
+                // applies to both; only the journal styles disable them.
+                // Double Line (notes/memo on the transaction row) is a different
+                // thing from the journal styles' always-on leg detail
+                // (account + action · memo) — hence a control here at all.
+                let journalStyle = style == .journal || style == .generalLedger
                 if model.selectedAccountHasChildren {
-                    subaccountsToggle.disabled(style != .basic)
+                    subaccountsToggle.disabled(journalStyle)
                 }
-                doubleLineToggle.disabled(style != .basic)
-                sortMenu.disabled(style != .basic)
-                filterButton.disabled(style != .basic)
+                doubleLineToggle.disabled(journalStyle)
+                sortMenu.disabled(journalStyle)
+                filterButton.disabled(journalStyle)
             }
             .padding(6)
             Divider()
@@ -1400,15 +1406,16 @@ struct RegisterView: View {
                     }
                 } else {
                     // An expanded leg: the account it posts to, indented under
-                    // its transaction, with the memo beneath.
+                    // its transaction, with action · memo beneath — composed the
+                    // same way the journal styles compose their leg detail.
                     VStack(alignment: .leading, spacing: 1) {
                         Text(row.legAccount)
                             .scaledFont(.body)
                             .foregroundStyle(.secondary)
-                        if !row.legMemo.isEmpty {
-                            Text(row.legMemo)
+                        if !row.legDetailLine.isEmpty {
+                            Text(row.legDetailLine)
                                 .scaledFont(.caption)
-                                .foregroundStyle(.tertiary)
+                                .foregroundStyle(.secondary)
                                 .lineLimit(2)
                         }
                     }
