@@ -114,6 +114,75 @@ extension AppModel {
         return true
     }
 
+    // MARK: Bulk edit
+
+    /// A uniform change to apply across a selection: `nil` fields are left as
+    /// they are. Set string fields apply verbatim (empty clears memo/notes; an
+    /// empty description is ignored — a transaction needs one).
+    public struct BulkTransactionEdit: Sendable, Equatable {
+        public var date: Date?
+        public var description: String?
+        public var notes: String?
+        public var memo: String?
+        public var reconcile: ReconcileState?
+        public var transferAccountID: GncGUID?
+
+        public var isEmpty: Bool {
+            date == nil && description == nil && notes == nil && memo == nil
+                && reconcile == nil && transferAccountID == nil
+        }
+
+        public init() {}
+    }
+
+    /// Applies `edit` uniformly to every selected row: transaction fields
+    /// (date, description, notes) once per transaction; split fields (memo,
+    /// reconcile) to each selected row's leg; transfer by moving the counter
+    /// leg of simple two-leg transactions (others are counted, not touched).
+    /// One undoable action.
+    @discardableResult
+    public func applyBulkEdit(_ edit: BulkTransactionEdit,
+                              toSplits splitIDs: Set<GncGUID>) -> (edited: Int, transferSkipped: Int) {
+        guard let book, !edit.isEmpty else { return (0, 0) }
+        let splits = splitIDs.compactMap { book.split(with: $0) }
+        var seen = Set<GncGUID>()
+        var transactions: [Transaction] = []
+        for split in splits {
+            if let txn = split.transaction, seen.insert(txn.guid).inserted {
+                transactions.append(txn)
+            }
+        }
+        guard !transactions.isEmpty else { return (0, 0) }
+
+        let transferAccount = edit.transferAccountID.flatMap { book.account(with: $0) }
+        let description = edit.description?.trimmingCharacters(in: .whitespaces)
+        var transferSkipped = 0
+
+        editing(transactions.map(\.guid), named: "Bulk Edit Transactions") {
+            for txn in transactions {
+                if let date = edit.date { txn.datePosted = date }
+                if let description, !description.isEmpty { txn.transactionDescription = description }
+                if let notes = edit.notes { txn.notes = notes.trimmingCharacters(in: .whitespaces) }
+            }
+            for split in splits {
+                if let memo = edit.memo { split.memo = memo.trimmingCharacters(in: .whitespaces) }
+                if let state = edit.reconcile, split.reconcileState != state {
+                    split.reconcileState = state
+                    split.reconcileDate = state == .reconciled ? Date() : split.reconcileDate
+                }
+                if let account = transferAccount {
+                    guard let txn = split.transaction, txn.splits.count == 2,
+                          txn.splits.allSatisfy({ $0.account?.commodity == txn.currency }),
+                          account.commodity == txn.currency,
+                          let other = txn.splits.first(where: { $0 !== split })
+                    else { transferSkipped += 1; continue }
+                    if other.account !== account { other.account = account }
+                }
+            }
+        }
+        return (transactions.count, transferSkipped)
+    }
+
     /// Moves the counter leg to another account (re-categorising the row).
     /// Two-leg transactions, same-currency destination only.
     @discardableResult

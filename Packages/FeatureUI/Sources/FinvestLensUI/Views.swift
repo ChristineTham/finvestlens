@@ -405,6 +405,7 @@ public struct FinvestLensRootView: View {
                     ReconcileView(model: model, accountID: id)
                 }
             case .autoCategorize: AutoCategorizeSheet(model: model)
+            case .bulkEdit: BulkEditSheet(model: model)
             case .linkedDocuments: LinkedDocumentsView(model: model)
             case .loanCalculator: LoanCalculatorView(model: model)
             case .closeBook: CloseBookView(model: model)
@@ -1956,6 +1957,14 @@ public struct TransactionActions: View {
                 model.presentedPanel = .autoCategorize
             }
             .disabled(needsRow)
+            Button("Bulk Edit…", systemImage: "square.and.pencil") {
+                model.selectedSplitIDs = selectionSplitIDs
+                model.selectedSplitID = selectionSplitIDs.first
+                model.presentedPanel = .bulkEdit
+            }
+            // A uniform change needs a set to change; one row edits in place or
+            // in the inspector.
+            .disabled(selectionSplitIDs.count < 2)
             Button("Attach File…", systemImage: "paperclip") {
                 if let txnID { model.attachDocumentRequestTxnID = txnID }
             }
