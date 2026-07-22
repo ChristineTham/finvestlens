@@ -1072,6 +1072,34 @@ struct InlineTextCell: View {
     }
 }
 
+/// Second-click activation for in-place editing: selecting a row leaves its
+/// fields static; a further click inside the already-selected row switches it
+/// into edit mode. Attached to a cell's static content, and only while the row
+/// is the single selection — the first click on an unselected row just selects.
+struct EditActivation: ViewModifier {
+    let active: Bool
+    var alignment: Alignment = .leading
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        if active {
+            content
+                .frame(maxWidth: .infinity, alignment: alignment)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: action)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    func editActivation(_ active: Bool, alignment: Alignment = .leading,
+                        action: @escaping () -> Void) -> some View {
+        modifier(EditActivation(active: active, alignment: alignment, action: action))
+    }
+}
+
 /// Account picker for a journal / expanded Auto-Split leg — moves that split in
 /// place (same-currency destinations; richer moves belong in the editor).
 struct LegAccountPicker: View {
@@ -1153,6 +1181,8 @@ struct RegisterView: View {
     @State private var goToDateShown = false
     /// The register's current width, for folding side columns on narrow windows.
     @State private var registerWidth: CGFloat = 800
+    /// The row in in-place edit mode (second click on the selected row).
+    @State private var editingRowID: GncGUID?
     /// GnuCash's View ▸ Double Line. A preference rather than per-register
     /// state, as in GnuCash, so it survives moving between accounts.
     @AppStorage("registerDoubleLine") private var doubleLine = false
@@ -1425,11 +1455,16 @@ struct RegisterView: View {
     private var showsBalance: Bool { RegisterColumns.showsBalance(registerWidth, appFontScale) }
     private var showsDate: Bool { RegisterColumns.showsDate(registerWidth, appFontScale) }
 
-    /// The row whose fields edit in place: the single selected row — a
-    /// transaction row or an expanded leg (GnuCash edits the current row; a
-    /// multi-selection is for bulk actions).
+    /// The row whose fields edit in place. Selection alone does NOT edit: a
+    /// first click selects the row (fields stay static); a further click inside
+    /// the selected row activates editing. Any selection change deactivates.
     private func isEditingRow(_ row: AutoSplitRow) -> Bool {
-        selection.count == 1 && selection.first == row.id
+        editingRowID == row.id
+    }
+
+    /// Whether a static cell should arm the second-click activation.
+    private func canActivateEdit(_ row: AutoSplitRow) -> Bool {
+        selection.count == 1 && selection.first == row.id && editingRowID != row.id
     }
 
     private var registerTableBody: some View {
@@ -1451,6 +1486,7 @@ struct RegisterView: View {
                         } else {
                             Text(dateFormat.short(main.date))
                                 .scaledFont(.body)
+                                .editActivation(canActivateEdit(row)) { editingRowID = row.id }
                         }
                     }
                 }
@@ -1508,6 +1544,7 @@ struct RegisterView: View {
                             }
                         }
                     }
+                    .editActivation(canActivateEdit(row)) { editingRowID = row.id }
                 } else {
                     // An expanded leg: the account it posts to, indented under
                     // its transaction, with action · memo beneath — composed the
@@ -1532,6 +1569,7 @@ struct RegisterView: View {
                             }
                         }
                     }
+                    .editActivation(canActivateEdit(row)) { editingRowID = row.id }
                     .padding(.leading, 18 * appFontScale)
                 }
             }
@@ -1564,6 +1602,7 @@ struct RegisterView: View {
                             Text(main.transfer).scaledFont(.body).foregroundStyle(.secondary)
                                 .help(isEditingRow(row)
                                       ? "Multi-split or multi-currency — edit in the inspector (⌘E)" : "")
+                                .editActivation(canActivateEdit(row)) { editingRowID = row.id }
                         }
                     }
                 }
@@ -1604,6 +1643,7 @@ struct RegisterView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
+                    .editActivation(canActivateEdit(row), alignment: .trailing) { editingRowID = row.id }
                 } else {
                     Text(AmountFormat.string(row.legAmount, code: row.legCurrencyCode))
                         .scaledFont(.body)
@@ -1661,6 +1701,8 @@ struct RegisterView: View {
         .onChange(of: selection) {
             model.selectedSplitID = selection.first
             model.selectedSplitIDs = selection
+            // Moving the selection ends any in-place edit.
+            if let editing = editingRowID, selection != [editing] { editingRowID = nil }
         }
     }
 
@@ -1745,6 +1787,8 @@ struct JournalView: View {
     /// Double Line: the detail lines (heading notes, per-leg action · memo) —
     /// the same preference the Basic-table styles use.
     @AppStorage("registerDoubleLine") private var doubleLine = false
+    /// The row in in-place edit mode (second click on the selected row).
+    @State private var editingRowID: GncGUID?
 
     var body: some View {
         let rows = model.journalRows(forAccountID: accountID)
@@ -1783,9 +1827,14 @@ struct JournalView: View {
     private var showsBalance: Bool { RegisterColumns.showsBalance(tableWidth, appFontScale) }
     private var showsDate: Bool { RegisterColumns.showsDate(tableWidth, appFontScale) }
 
-    /// The single selected row edits in place — same rule as the Basic table.
+    /// The row in in-place edit mode. Selection alone does not edit — a second
+    /// click inside the selected row activates it, same rule as the Basic table.
     private func isEditingRow(_ row: JournalRow) -> Bool {
-        selection.count == 1 && selection.first == row.id
+        editingRowID == row.id
+    }
+
+    private func canActivateEdit(_ row: JournalRow) -> Bool {
+        selection.count == 1 && selection.first == row.id && editingRowID != row.id
     }
 
     private func table(_ rows: [JournalRow]) -> some View {
@@ -1806,6 +1855,7 @@ struct JournalView: View {
                         } else {
                             Text(dateFormat.short(date))
                                 .scaledFont(.body).fontWeight(.medium)
+                                .editActivation(row.isHeading && canActivateEdit(row)) { editingRowID = row.id }
                         }
                     }
                 }
@@ -1855,6 +1905,7 @@ struct JournalView: View {
                         }
                     }
                 }
+                .editActivation(canActivateEdit(row)) { editingRowID = row.id }
                 .padding(.leading, row.isHeading ? 0 : 18 * appFontScale)
             }
             TableColumn("R") { row in
@@ -1931,6 +1982,8 @@ struct JournalView: View {
             })
             model.selectedSplitIDs = splitIDs
             model.selectedSplitID = splitIDs.first
+            // Moving the selection ends any in-place edit.
+            if let editing = editingRowID, selection != [editing] { editingRowID = nil }
         }
     }
 }
