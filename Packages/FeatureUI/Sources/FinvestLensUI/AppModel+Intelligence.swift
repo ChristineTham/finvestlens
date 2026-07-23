@@ -190,13 +190,24 @@ extension AppModel {
 
     // MARK: Categorise from attachment
 
+    /// What an attachment read proposes for its transaction: a category, and —
+    /// when it differs from the current description — a friendly payee to
+    /// rename to (the raw narrative moves to the money-leg memo on apply, the
+    /// smart categoriser's convention).
+    public struct AttachmentCategorySuggestion: Sendable {
+        public let accountID: GncGUID
+        public let accountName: String
+        public let friendlyDescription: String?
+    }
+
     /// Reads the transaction's linked attachment (PDF or image — OCR as
     /// needed) and asks the on-device model for the best category from the
-    /// book's chart of accounts. Returns `nil` when the model has no confident
-    /// answer.
+    /// book's chart *and* a friendly payee. Works whether or not the
+    /// transaction is already categorised. Returns `nil` when the model has no
+    /// confident answer.
     public func suggestCategoryFromAttachment(
         for transactionID: GncGUID
-    ) async throws -> (accountID: GncGUID, accountName: String)? {
+    ) async throws -> AttachmentCategorySuggestion? {
         try requireIntelligence()
         guard #available(macOS 26.0, iOS 26.0, *) else {
             throw IntelligenceError.unavailable("Apple Intelligence requires macOS 26 or iOS 26.")
@@ -210,14 +221,19 @@ extension AppModel {
         // The uncategorised leg gives the model the amount's sign; else any leg.
         let imbalance = txn.splits.first { $0.account?.isImbalanceOrOrphan ?? false }
         let amount = -(imbalance?.value ?? txn.splits.first?.value ?? 0)
-        let item = CategorizationItem(payee: txn.transactionDescription,
-                                      memo: String(text.prefix(1200)),
-                                      amount: amount)
-        let suggested = try await TransactionCategorizer.suggest(items: [item],
-                                                                 candidates: categoryCandidates())
-        guard let accountID = suggested[item.id],
-              let account = book.account(with: accountID) else { return nil }
-        return (accountID, account.fullName)
+        guard let insight = try await AttachmentInsight.analyze(
+            documentText: String(text.prefix(1600)),
+            currentDescription: txn.transactionDescription,
+            amount: amount,
+            candidates: categoryCandidates())
+        else { return nil }
+        guard let account = book.account(with: insight.accountID) else { return nil }
+        let friendly = insight.friendlyDescription
+        return AttachmentCategorySuggestion(
+            accountID: insight.accountID,
+            accountName: account.fullName,
+            friendlyDescription: (friendly.isEmpty || friendly == txn.transactionDescription)
+                ? nil : friendly)
     }
 
     /// Attachment-driven suggestions for uncategorised items — the opt-in
@@ -259,22 +275,56 @@ extension AppModel {
                                                         candidates: categoryCandidates())
     }
 
-    /// Applies an attachment-derived category: moves the uncategorised leg when
-    /// there is one, else re-targets the counter leg of a simple two-leg
-    /// transaction (the same rule as inline transfer editing).
+    /// Applies an attachment-derived suggestion as ONE undoable edit — on
+    /// uncategorised *and* already-categorised transactions:
+    /// - category: moves the uncategorised leg when there is one, else
+    ///   re-targets the counter leg of a simple two-leg transaction;
+    /// - friendly rename: the description becomes the friendly payee and the
+    ///   raw bank narrative moves to the money-leg memo (only when that memo is
+    ///   empty) — the smart categoriser's convention.
+    /// Multi-split fully-categorised transactions are refused (edit those in
+    /// the inspector, where every leg is visible).
     @discardableResult
-    public func applyAttachmentCategory(_ accountID: GncGUID, to transactionID: GncGUID) -> Bool {
-        guard let book, let txn = book.transaction(with: transactionID) else { return false }
-        if let imbalance = txn.splits.first(where: { $0.account?.isImbalanceOrOrphan ?? false }) {
-            return applyCategoryAssignments([imbalance.guid: accountID]) > 0
-        }
-        guard txn.splits.count == 2 else { return false }
+    public func applyAttachmentSuggestion(_ suggestion: AttachmentCategorySuggestion,
+                                          to transactionID: GncGUID) -> Bool {
+        guard let book, let txn = book.transaction(with: transactionID),
+              let account = book.account(with: suggestion.accountID),
+              account.commodity == txn.currency else { return false }
         let moneyTypes: Set<AccountType> = [.bank, .cash, .credit, .asset, .liability,
                                             .receivable, .payable]
-        guard let money = txn.splits.first(where: { split in
-            split.account.map { moneyTypes.contains($0.type) } ?? false
-        }) else { return false }
-        return inlineSetTransfer(splitID: money.guid, to: accountID)
+        func isMoney(_ split: Split) -> Bool {
+            split.account.map { moneyTypes.contains($0.type) && !$0.isImbalanceOrOrphan } ?? false
+        }
+
+        // The leg to re-target: the uncategorised one, else the counter leg of
+        // a simple two-leg transaction.
+        let target: Split?
+        if let imbalance = txn.splits.first(where: { $0.account?.isImbalanceOrOrphan ?? false }) {
+            target = imbalance
+        } else if txn.splits.count == 2,
+                  txn.splits.allSatisfy({ $0.account?.commodity == txn.currency }),
+                  let money = txn.splits.first(where: isMoney) {
+            target = txn.splits.first { $0 !== money }
+        } else {
+            target = nil
+        }
+        guard let target else { return false }
+
+        editing([transactionID], named: "Categorise from Attachment") {
+            if let friendly = suggestion.friendlyDescription?.trimmingCharacters(in: .whitespaces),
+               !friendly.isEmpty, friendly != txn.transactionDescription {
+                let narrative = txn.transactionDescription
+                for split in txn.splits where isMoney(split) && split !== target {
+                    if split.memo.trimmingCharacters(in: .whitespaces).isEmpty {
+                        split.memo = narrative
+                    }
+                }
+                txn.transactionDescription = friendly
+            }
+            target.account = account
+            target.quantity = target.value   // same-currency by the guard above
+        }
+        return true
     }
 
     // MARK: FR-AI-03 — Invoice splitting

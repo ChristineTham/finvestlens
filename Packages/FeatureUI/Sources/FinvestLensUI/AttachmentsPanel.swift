@@ -70,7 +70,7 @@ struct AttachmentsPanel: View {
     /// Full-window Quick Look (the expand button) — non-nil presents it.
     @State private var previewURL: URL?
     @State private var categorising = false
-    @State private var categorySuggestion: (id: GncGUID, name: String)?
+    @State private var categorySuggestion: AppModel.AttachmentCategorySuggestion?
     @State private var categoriseError: String?
 
     /// The single selected transaction, if the selection is exactly one.
@@ -136,19 +136,26 @@ struct AttachmentsPanel: View {
             .help(model.intelligenceUnavailableReason
                   ?? "Read the attachment (OCR) and suggest a category for this transaction")
             if let suggestion = categorySuggestion {
-                HStack(spacing: 6) {
-                    Label(suggestion.name, systemImage: "arrow.right.circle")
-                        .scaledFont(.callout)
-                        .lineLimit(2)
-                    Spacer()
-                    Button("Apply") {
-                        if model.applyAttachmentCategory(suggestion.id, to: transactionID) {
-                            categorySuggestion = nil
-                        } else {
-                            categoriseError = "Couldn’t apply — edit the splits in the inspector (⌘E)."
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Label(suggestion.accountName, systemImage: "arrow.right.circle")
+                            .scaledFont(.callout)
+                            .lineLimit(2)
+                        Spacer()
+                        Button("Apply") {
+                            if model.applyAttachmentSuggestion(suggestion, to: transactionID) {
+                                categorySuggestion = nil
+                            } else {
+                                categoriseError = "Couldn’t apply — edit the splits in the inspector (⌘E)."
+                            }
                         }
+                        .controlSize(.small)
                     }
-                    .controlSize(.small)
+                    if let friendly = suggestion.friendlyDescription {
+                        Text("Rename to “\(friendly)” — bank text kept in the memo")
+                            .scaledFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             if let categoriseError {
@@ -167,7 +174,7 @@ struct AttachmentsPanel: View {
             defer { categorising = false }
             do {
                 if let result = try await model.suggestCategoryFromAttachment(for: transactionID) {
-                    categorySuggestion = (id: result.accountID, name: result.accountName)
+                    categorySuggestion = result
                 } else {
                     categoriseError = "No confident suggestion from the attachment."
                 }
