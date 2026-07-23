@@ -247,7 +247,7 @@ struct AutoCategorizeSheet: View {
                     .monospacedDigit()
                     .foregroundStyle(item.amount > 0 ? .red : .primary)
             }
-            AccountField(prompt: "Category",
+            AccountField(prompt: "Search category…",
                          nodes: model.postableAccounts,
                          selection: binding(for: item.splitID))
         }

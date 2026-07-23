@@ -262,6 +262,8 @@ extension AppModel {
         public var documentDate: Date?
         public var candidateAmounts: [Decimal] = []
         public var vendor: String?
+        /// A foreign currency the document names (ISO code, or "RM" → MYR).
+        public var currencyHint: String?
     }
 
     /// Matches a batch of picked files to transactions: each file is OCR'd, its
@@ -345,6 +347,7 @@ extension AppModel {
             // A dividend statement pays IN; every other document is a purchase.
             let spending = doc.dividend == nil
             match.vendor = doc.invoice?.vendor
+            match.currencyHint = doc.currencyHint
             if let already = attachedByName[url.lastPathComponent.lowercased()] {
                 match.note = "This file is already attached to \(transactionSummary(already))."
                 continue
@@ -429,6 +432,8 @@ extension AppModel {
         var fallbackAmounts: [Decimal] = []
         /// Plausible dates scanned from the OCR text (day-first, sane-bounded).
         var textDates: [Date] = []
+        /// A foreign currency the document names, when one is.
+        var currencyHint: String?
 
         var amount: Decimal? {
             if let dividend, dividend.netPayment > 0 { return dividend.netPayment }
@@ -466,7 +471,23 @@ extension AppModel {
         }
         doc.fallbackAmounts = Self.amountCandidates(in: text)
         doc.textDates = Self.datesInText(text)
+        doc.currencyHint = Self.currencyHint(in: text)
         return doc
+    }
+
+    /// The first foreign currency the text names: an ISO code from the common
+    /// set, or a well-known symbol ("RM" → MYR). `nil` when only the base
+    /// currency (or none) appears — matching then proceeds as a local charge.
+    nonisolated static func currencyHint(in text: String) -> String? {
+        let codes = ["MYR", "USD", "EUR", "GBP", "JPY", "SGD", "THB", "IDR",
+                     "INR", "HKD", "CNY", "NZD", "CHF", "CAD", "KRW", "VND"]
+        guard let regex = try? NSRegularExpression(
+            pattern: #"\b(\#(codes.joined(separator: "|"))|RM)\b"#,
+            options: [.caseInsensitive]) else { return nil }
+        guard let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range, in: text) else { return nil }
+        let code = text[range].uppercased()
+        return code == "RM" ? "MYR" : code
     }
 
     /// Every distinct money-looking amount in the text (`1,234.56`), largest

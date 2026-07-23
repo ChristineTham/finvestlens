@@ -2897,6 +2897,8 @@ struct TransactionEditorSheet: View {
         var description: String?
         var date: Date?
         var amount: Decimal?
+        /// A foreign currency the document names (e.g. "MYR"), when detected.
+        var currencyCode: String?
     }
 
     @State private var loaded = false
@@ -2921,6 +2923,7 @@ struct TransactionEditorSheet: View {
     @State private var fxRateText = ""
     @State private var fxLocalText = ""
     @State private var fxFetching = false
+    @State private var fxError: String?
     /// A transaction currency differing from the accounts' (an FX purchase):
     /// split `value`s are in this currency, `quantity` moves each account in
     /// its own. Set by the converter's Apply, or by loading such a transaction.
@@ -3193,6 +3196,20 @@ struct TransactionEditorSheet: View {
             tagsText = edit.tags.joined(separator: ", ")
         }
         guard let prefill = documentPrefill else { return }
+        // Linking a document whose amount differs from the transaction's is the
+        // FX signature: prefill the converter — foreign amount from the
+        // document, local from the transaction — and back-solve the rate. The
+        // user only confirms the currency (preselected when the document names
+        // one).
+        if let docAmount = prefill.amount, docAmount > 0,
+           let localMagnitude = lines.compactMap({ $0.amount == 0 ? nil : abs($0.amount) }).max(),
+           docAmount != localMagnitude {
+            if let code = prefill.currencyCode { fxCode = code }
+            fxAmountText = NSDecimalNumber(decimal: docAmount).stringValue
+            fxLocalText = NSDecimalNumber(decimal: localMagnitude).stringValue
+            backSolveRate()
+            fxShown = true
+        }
         categorising = true
         Task {
             defer { categorising = false }
@@ -3326,6 +3343,9 @@ struct TransactionEditorSheet: View {
                 .help("Fill the split amounts with the local value, note the foreign amount in the memo, and record the rate")
         }
         .onAppear { if fxRateText.isEmpty { lookUpRate() } }
+        if let fxError {
+            Text(fxError).scaledFont(.caption).foregroundStyle(.red)
+        }
     }
 
     private func lookUpRate() {
@@ -3339,11 +3359,15 @@ struct TransactionEditorSheet: View {
 
     private func fetchRate() {
         fxFetching = true
+        fxError = nil
         Task {
             defer { fxFetching = false }
-            if let rate = await model.fetchLiveFxRate(code: fxCode) {
+            do {
+                let rate = try await model.fetchLiveFxRate(code: fxCode)
                 fxRateText = NSDecimalNumber(decimal: rate).stringValue
                 recomputeLocal()
+            } catch {
+                fxError = "Rate fetch failed: \(error.localizedDescription)"
             }
         }
     }
@@ -3407,6 +3431,7 @@ struct TransactionEditorSheet: View {
         } else if let prefill = documentPrefill {
             if let d = prefill.date { date = d }
             if let desc = prefill.description, !desc.isEmpty { description = desc }
+            if let code = prefill.currencyCode { fxCode = code }
             // A spending line prefilled with the read amount; the user picks the
             // paid-from and category accounts.
             if let amount = prefill.amount, amount != 0 {

@@ -50,14 +50,17 @@ extension AppModel {
 
     /// Fetches a live rate for one unit of `code` in the report currency
     /// (Yahoo `MYRAUD=X`, keyless) and stores it in the price DB so future
-    /// lookups — and reports — can use it.
-    public func fetchLiveFxRate(code: String) async -> Decimal? {
+    /// lookups — and reports — can use it. Throws with the provider's reason
+    /// so the UI can say why a fetch failed rather than doing nothing.
+    public func fetchLiveFxRate(code: String) async throws -> Decimal {
         let foreign = currencyCommodity(code)
         let symbol = "\(code)\(reportCurrency.mnemonic)=X"
         let service = QuoteService(keys: apiKeys, http: quoteHTTP)
-        guard let price = try? await service.latestPrice(
-            for: foreign, in: reportCurrency, using: .yahoo, symbolOverride: symbol),
-            price.value > 0 else { return nil }
+        let price = try await service.latestPrice(
+            for: foreign, in: reportCurrency, using: .yahoo, symbolOverride: symbol)
+        guard price.value > 0 else {
+            throw QuoteError.noData
+        }
         editingWholeBook(named: "Fetch Exchange Rate") {
             book?.addPrice(price)
         }
