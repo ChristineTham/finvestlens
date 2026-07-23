@@ -108,6 +108,9 @@ struct AttachmentsPanel: View {
         }
         .padding(12)
         .frame(width: 290, alignment: .topLeading)
+        // One size for every control — mixed large/small/icon-only buttons made
+        // the panel read as three different UIs.
+        .controlSize(.small)
         .quickLookPreview($previewURL)
         .onChange(of: transactionID) {
             categorySuggestion = nil
@@ -222,7 +225,7 @@ struct AttachmentsPanel: View {
             Button {
                 previewURL = url
             } label: {
-                Label("Preview", systemImage: "eye")
+                Label("Quick Look", systemImage: "eye")
             }
             Spacer()
             #endif
@@ -249,17 +252,6 @@ struct AttachmentsPanel: View {
                             Button("Copy Stored Link") { GeneralPasteboard.copy(link) }
                         }
                     }
-                Spacer()
-                if !isWeb, exists, let url {
-                    Button {
-                        previewURL = url
-                    } label: {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help("Open the full Quick Look window")
-                }
             }
             // The raw stored link — the relative path is the durable fact.
             Text(link)
@@ -277,18 +269,27 @@ struct AttachmentsPanel: View {
             }
         }
 
-        HStack {
+        HStack(spacing: 6) {
             if isWeb {
-                Button("Open") {
+                Button {
                     #if os(macOS)
                     if let webURL = URL(string: link) { NSWorkspace.shared.open(webURL) }
                     #endif
+                } label: {
+                    Label("Open", systemImage: "safari")
                 }
             } else {
                 Button {
+                    if !isWeb, exists, let url { previewURL = url }
+                } label: {
+                    Label("Quick Look", systemImage: "eye")
+                }
+                .disabled(!exists)
+                .help("Open the full Quick Look window")
+                Button {
                     model.openLinkedDocument(for: transactionID)
                 } label: {
-                    Image(systemName: "arrow.up.forward.app")
+                    Label("Open", systemImage: "arrow.up.forward.app")
                 }
                 .disabled(!exists)
                 .help("Open in its application")
@@ -297,7 +298,7 @@ struct AttachmentsPanel: View {
                     Button {
                         NSWorkspace.shared.activateFileViewerSelecting([url])
                     } label: {
-                        Image(systemName: "folder")
+                        Label("Reveal", systemImage: "folder")
                     }
                     .disabled(!exists)
                     .help("Reveal in Finder")
@@ -305,12 +306,7 @@ struct AttachmentsPanel: View {
                 #endif
             }
             Spacer()
-            Button("Remove", role: .destructive) {
-                model.setDocumentLink(nil, for: transactionID)
-            }
-            .help("Removes the link only — the file stays where it is")
         }
-        .controlSize(.small)
     }
 
     // MARK: Add / replace
@@ -348,12 +344,19 @@ struct AttachmentsPanel: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                 }
-                .controlSize(.small)
             } else {
                 Button(replacing ? "Replace with Web Link…" : "Add Web Link…",
                        systemImage: "link") {
                     webFieldShown = true
                 }
+            }
+            if replacing {
+                Button(role: .destructive) {
+                    model.setDocumentLink(nil, for: transactionID)
+                } label: {
+                    Label("Remove Link", systemImage: "trash")
+                }
+                .help("Removes the link only — the file stays where it is")
             }
         }
     }
