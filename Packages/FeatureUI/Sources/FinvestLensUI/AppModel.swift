@@ -122,6 +122,7 @@ public enum RootPanel: String, Identifiable, Sendable {
     case reconcile
     case autoCategorize
     case bulkEdit
+    case matchAttachments
     case linkedDocuments
     case loanCalculator
     case closeBook

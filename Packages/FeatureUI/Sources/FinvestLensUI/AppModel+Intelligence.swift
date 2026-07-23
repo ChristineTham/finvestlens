@@ -235,6 +235,110 @@ extension AppModel {
         split.account.map { attachmentMoneyTypes.contains($0.type) && !$0.isImbalanceOrOrphan } ?? false
     }
 
+    // MARK: Bulk attachment matching
+
+    /// One picked file's journey: the transaction it matched (by amount and
+    /// date, across every account), and what applying would do.
+    public struct AttachmentMatch: Identifiable, Sendable {
+        public let id = UUID()
+        public let url: URL
+        public var fileName: String { url.lastPathComponent }
+        public var transactionID: GncGUID?
+        public var transactionSummary: String = ""
+        public var suggestion: AttachmentCategorySuggestion?
+        /// Why there is nothing to apply, when there isn't.
+        public var note: String?
+    }
+
+    /// Matches a batch of picked files to transactions: each file is OCR'd, its
+    /// amount and date read (dividend statement or invoice), and the book
+    /// searched — any account — for an unlinked transaction with a money leg of
+    /// exactly that amount within ±14 days (closest date wins). Matched files
+    /// also get the full attachment categorisation suggestion. Nothing is
+    /// linked or applied here — the review sheet does that.
+    public func matchAttachments(
+        urls: [URL],
+        onProgress: (@MainActor (Int, Int) -> Void)? = nil
+    ) async -> [AttachmentMatch] {
+        var results: [AttachmentMatch] = []
+        for (index, url) in urls.enumerated() {
+            onProgress?(index, urls.count)
+            var match = AttachmentMatch(url: url)
+            defer { results.append(match) }
+
+            guard #available(macOS 26.0, iOS 26.0, *), isIntelligenceAvailable else {
+                match.note = intelligenceUnavailableReason ?? "Apple Intelligence is unavailable."
+                continue
+            }
+            let text: String
+            do {
+                text = try await Task.detached { try await DocumentText.extractText(from: url) }.value
+            } catch {
+                match.note = "Couldn’t read the file."
+                continue
+            }
+
+            // The file's amount and date, for finding its transaction.
+            var amount: Decimal?
+            var date: Date?
+            let lower = text.lowercased()
+            if lower.contains("dividend"), lower.contains("frank") || lower.contains("imputation"),
+               let details = try? await DividendExtractor.extract(text: String(text.prefix(4000))),
+               details.netPayment > 0 {
+                amount = details.netPayment
+                date = details.paymentDate
+            } else if let invoice = try? await InvoiceAnalyzer.analyze(
+                text: String(text.prefix(6000)), candidates: []),
+                invoice.total > 0 {
+                amount = invoice.total
+                date = invoice.date
+            }
+            guard let amount else {
+                match.note = "Couldn’t read an amount from the document."
+                continue
+            }
+            guard let txn = findTransaction(amount: amount, near: date) else {
+                match.note = "No unlinked transaction matches \(amount) around that date."
+                continue
+            }
+            match.transactionID = txn.guid
+            match.transactionSummary = transactionSummary(txn)
+            match.suggestion = try? await attachmentSuggestion(for: txn.guid, text: text)
+        }
+        onProgress?(urls.count, urls.count)
+        return results
+    }
+
+    /// The best unlinked transaction for an amount: a money leg of exactly that
+    /// magnitude, posted within ±14 days of the document date (closest wins;
+    /// no document date accepts any).
+    private func findTransaction(amount: Decimal, near date: Date?) -> Transaction? {
+        guard let book else { return nil }
+        let calendar = Calendar.current
+        var best: (txn: Transaction, days: Int)?
+        for txn in book.transactions {
+            guard txn.documentLink == nil else { continue }
+            guard txn.splits.contains(where: { Self.isMoneyLeg($0) && abs($0.value) == amount })
+            else { continue }
+            let days: Int
+            if let date {
+                days = abs(calendar.dateComponents([.day], from: calendar.startOfDay(for: date),
+                                                   to: calendar.startOfDay(for: txn.datePosted)).day ?? 999)
+                guard days <= 14 else { continue }
+            } else {
+                days = 0
+            }
+            if best == nil || days < best!.days { best = (txn, days) }
+        }
+        return best?.txn
+    }
+
+    private func transactionSummary(_ txn: Transaction) -> String {
+        let account = txn.splits.first(where: Self.isMoneyLeg)?.account?.name ?? "—"
+        let amount = txn.splits.first(where: Self.isMoneyLeg)?.value ?? 0
+        return "\(AppDateFormat.current.short(txn.datePosted)) · \(txn.transactionDescription) · \(account) · \(AmountFormat.string(amount, code: txn.currency.mnemonic))"
+    }
+
     /// Reads the transaction's linked attachment (PDF or image — OCR as
     /// needed) and asks the on-device model for the best category from the
     /// book's chart *and* a friendly payee. Works whether or not the
@@ -253,6 +357,17 @@ extension AppModel {
             throw IntelligenceError.unavailable("The transaction has no readable attachment.")
         }
         let text = try await Task.detached { try await DocumentText.extractText(from: url) }.value
+        return try await attachmentSuggestion(for: transactionID, text: text)
+    }
+
+    /// The suggestion core, over already-extracted document text — shared by
+    /// the sidebar (which resolves the transaction's link) and the bulk
+    /// match-attachments flow (which brings its own files).
+    @available(macOS 26.0, iOS 26.0, *)
+    func attachmentSuggestion(
+        for transactionID: GncGUID, text: String
+    ) async throws -> AttachmentCategorySuggestion? {
+        guard let book, let txn = book.transaction(with: transactionID) else { return nil }
         // The uncategorised leg gives the model the amount's sign; else any leg.
         let imbalance = txn.splits.first { $0.account?.isImbalanceOrOrphan ?? false }
         let amount = -(imbalance?.value ?? txn.splits.first?.value ?? 0)

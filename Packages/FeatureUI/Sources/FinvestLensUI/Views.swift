@@ -355,6 +355,12 @@ public struct FinvestLensRootView: View {
                         model.presentedPanel = .autoCategorize
                     }
                     .help("Assign categories to uncategorised transactions")
+                    Button("Match Attachments…", systemImage: "paperclip.badge.ellipsis") {
+                        model.presentedPanel = .matchAttachments
+                    }
+                    .disabled(!model.isIntelligenceAvailable)
+                    .help(model.intelligenceUnavailableReason
+                          ?? "Pick receipts and statements — each is matched to its transaction (any account), linked, and categorised")
                 } label: {
                     Label("Import", systemImage: "square.and.arrow.down")
                 }
@@ -406,6 +412,7 @@ public struct FinvestLensRootView: View {
                 }
             case .autoCategorize: AutoCategorizeSheet(model: model)
             case .bulkEdit: BulkEditSheet(model: model)
+            case .matchAttachments: MatchAttachmentsSheet(model: model)
             case .linkedDocuments: LinkedDocumentsView(model: model)
             case .loanCalculator: LoanCalculatorView(model: model)
             case .closeBook: CloseBookView(model: model)
