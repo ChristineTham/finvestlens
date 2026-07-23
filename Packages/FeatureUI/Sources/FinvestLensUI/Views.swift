@@ -3132,10 +3132,17 @@ struct TransactionEditorSheet: View {
                 }
 
                 Section {
-                    DisclosureGroup(isExpanded: $fxShown) {
-                        fxConverter
-                    } label: {
-                        Label("Foreign Amount", systemImage: "dollarsign.arrow.circlepath")
+                    if let foreign = fxCurrencyOverride {
+                        // The transaction IS foreign-denominated: show the FX
+                        // facts computed from the splits themselves — always in
+                        // sync, impossible to be blank.
+                        fxSummary(foreign)
+                    } else {
+                        DisclosureGroup(isExpanded: $fxShown) {
+                            fxConverter
+                        } label: {
+                            Label("Foreign Amount", systemImage: "dollarsign.arrow.circlepath")
+                        }
                     }
                 }
 
@@ -3305,6 +3312,46 @@ struct TransactionEditorSheet: View {
         fxRateText.trimmingCharacters(in: .whitespaces)) }
     private var fxLocal: Decimal? { EditableSplit.strictDecimal(
         fxLocalText.trimmingCharacters(in: .whitespaces)) }
+
+    /// The FX facts of a foreign-denominated transaction, read straight off
+    /// the split lines: foreign total (positive values), local total (positive
+    /// quantities), and the implied rate. No state to fill, nothing to desync.
+    @ViewBuilder
+    private func fxSummary(_ foreign: Commodity) -> some View {
+        let foreignTotal = lines.filter { $0.amount > 0 }.reduce(Decimal(0)) { $0 + $1.amount }
+        let localTotal = lines.reduce(Decimal(0)) { total, line in
+            let local = line.quantity ?? line.amount
+            return local > 0 ? total + local : total
+        }
+        let localCode = model.transactionCurrency(for: lines.compactMap(\.accountID)).mnemonic
+        LabeledContent("Foreign amount") {
+            Text("\(AmountFormat.string(foreignTotal, code: foreign.mnemonic))")
+                .monospacedDigit()
+        }
+        LabeledContent("Local amount") {
+            Text("\(AmountFormat.string(localTotal, code: localCode))")
+                .monospacedDigit()
+        }
+        if foreignTotal > 0 {
+            LabeledContent("Rate") {
+                Text("1 \(foreign.mnemonic) = \(NSDecimalNumber(decimal: Decimal(NSDecimalNumber(decimal: localTotal / foreignTotal * 1_000_000).intValue) / 1_000_000).stringValue) \(localCode)")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        Button("Remove Foreign Amount", role: .destructive) {
+            // Back to a plain local transaction: values return to the local
+            // amounts the quantities carry.
+            for index in lines.indices {
+                if let quantity = lines[index].quantity {
+                    lines[index].amountText = NSDecimalNumber(decimal: quantity).stringValue
+                    lines[index].quantityText = ""
+                }
+            }
+            fxCurrencyOverride = nil
+        }
+        .help("Re-denominate in \(model.transactionCurrency(for: lines.compactMap(\.accountID)).mnemonic), discarding the foreign figures")
+    }
 
     /// Enter the foreign amount; the rate fills from the book (or a live
     /// fetch); the local amount computes. Typing the local amount you *know*
