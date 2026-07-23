@@ -1097,19 +1097,7 @@ struct AccountMenuCell: View {
     let choose: (GncGUID) -> Void
 
     var body: some View {
-        Menu {
-            ForEach(model.postableAccounts) { node in
-                Button(node.fullName) { choose(node.id) }
-            }
-        } label: {
-            Text(label.isEmpty ? "—" : label)
-                .scaledFont(.body)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-        }
-        .menuIndicator(.hidden)
-        .buttonStyle(.plain)
+        AccountPickerButton(label: label, nodes: model.postableAccounts, onPick: choose)
     }
 }
 
@@ -2898,7 +2886,18 @@ struct TransactionEditorSheet: View {
     /// closing then just clears the selection (collapsing the inspector) and must
     /// NOT call `dismiss()`, which in that context would close the whole window.
     var inInspector = false
+    /// A source document to record: shown in Quick Look beside the editor,
+    /// prefills a new transaction, and is attached to whatever the editor
+    /// commits (a new transaction, or one adopted via "Link to Existing…").
+    var documentPrefill: DocumentPrefill?
     @Environment(\.dismiss) private var dismiss
+
+    struct DocumentPrefill {
+        var url: URL
+        var description: String?
+        var date: Date?
+        var amount: Decimal?
+    }
 
     @State private var loaded = false
     @State private var date = Date()
@@ -2910,6 +2909,9 @@ struct TransactionEditorSheet: View {
     @State private var commitError: String?
     @State private var invoicePickerShown = false
     @State private var analyzingInvoice = false
+    @State private var linkPickerShown = false
+    @State private var linkingToID: GncGUID?
+    @State private var categorising = false
     @Environment(\.appFontScale) private var appFontScale
     private var amountWidth: CGFloat { 100 * appFontScale }
 
@@ -2948,9 +2950,40 @@ struct TransactionEditorSheet: View {
     }
     private var isEditing: Bool { editingID != nil }
 
+    /// The document to show beside the editor: the prefill's, or the edited
+    /// transaction's own linked file.
+    private var documentURL: URL? {
+        if let documentPrefill { return documentPrefill.url }
+        if let editingID { return model.linkedDocumentURL(for: editingID) }
+        return nil
+    }
+
     var body: some View {
         NavigationStack {
+            HStack(spacing: 0) {
+                editorForm
+                #if os(macOS)
+                if let documentURL, FileManager.default.fileExists(atPath: documentURL.path) {
+                    Divider()
+                    EmbeddedQuickLook(url: documentURL)
+                        .frame(minWidth: 300, idealWidth: 400)
+                }
+                #endif
+            }
+        }
+    }
+
+    private var editorForm: some View {
             Form {
+                if categorising {
+                    Section {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Categorising from the linked transaction…")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 DatePicker("Date", selection: $date, displayedComponents: .date)
                 TextField("Description", text: $description)
                     .focused($descriptionFocused)
@@ -2989,13 +3022,8 @@ struct TransactionEditorSheet: View {
                     ForEach($lines) { $line in
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 8) {
-                                Picker("Account", selection: $line.accountID) {
-                                    Text("—").tag(GncGUID?.none)
-                                    ForEach(model.postableAccounts) { node in
-                                        Text(node.fullName).tag(GncGUID?.some(node.id))
-                                    }
-                                }
-                                .labelsHidden()
+                                AccountField(nodes: model.postableAccounts,
+                                             selection: $line.accountID)
                                 TextField("Amount", text: $line.amountText,
                                           prompt: Text("Amount"))
                                     .labelsHidden()
@@ -3088,15 +3116,65 @@ struct TransactionEditorSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { close() }.keyboardShortcut(.cancelAction)
                 }
+                if documentPrefill != nil {
+                    ToolbarItem {
+                        Button("Link to Existing…", systemImage: "link") { linkPickerShown = true }
+                            .help("Attach this document to an existing transaction instead of creating a new one")
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(isEditing ? "Save" : "Add") { commit() }
-                        .disabled(!isBalanced)
+                    Button(commitTitle) { commit() }
+                        .disabled(!isBalanced && linkingToID == nil)
                 }
             }
             .onAppear(perform: loadIfNeeded)
             .fileImporter(isPresented: $invoicePickerShown,
                           allowedContentTypes: [.pdf]) { result in
                 if case .success(let url) = result { analyzeInvoice(url) }
+            }
+            .sheet(isPresented: $linkPickerShown) {
+                if let prefill = documentPrefill {
+                    LinkToTransactionSheet(model: model,
+                                           match: AppModel.AttachmentMatch(url: prefill.url)) { id in
+                        adoptExisting(id)
+                    }
+                }
+            }
+    }
+
+    private var commitTitle: String {
+        if linkingToID != nil { return "Link & Save" }
+        return documentPrefill != nil ? "Add & Attach" : (isEditing ? "Save" : "Add")
+    }
+
+    /// Adopts an existing transaction for the document: loads it, attaches the
+    /// file, and auto-categorises from it — all shown for review before commit.
+    private func adoptExisting(_ id: GncGUID) {
+        linkingToID = id
+        if let edit = model.editData(forTransaction: id) {
+            date = edit.date
+            description = edit.description
+            notes = edit.notes
+            lines = edit.splits.map { EditableSplit($0) }
+            tagsText = edit.tags.joined(separator: ", ")
+        }
+        guard let prefill = documentPrefill else { return }
+        categorising = true
+        Task {
+            defer { categorising = false }
+            let data = try? await Task.detached { try Data(contentsOf: prefill.url) }.value
+            guard let data,
+                  (try? model.attachDocument(named: prefill.url.lastPathComponent,
+                                             data: data, to: id)) != nil else { return }
+            if let suggestion = try? await model.suggestCategoryFromAttachment(for: id) {
+                model.applyAttachmentSuggestion(suggestion, to: id)
+                if let refreshed = model.editData(forTransaction: id) {
+                    date = refreshed.date
+                    description = refreshed.description
+                    notes = refreshed.notes
+                    lines = refreshed.splits.map { EditableSplit($0) }
+                    tagsText = refreshed.tags.joined(separator: ", ")
+                }
             }
         }
     }
@@ -3173,6 +3251,15 @@ struct TransactionEditorSheet: View {
             notes = edit.notes
             lines = edit.splits.map { EditableSplit($0) }
             tagsText = edit.tags.joined(separator: ", ")
+        } else if let prefill = documentPrefill {
+            if let d = prefill.date { date = d }
+            if let desc = prefill.description, !desc.isEmpty { description = desc }
+            // A spending line prefilled with the read amount; the user picks the
+            // paid-from and category accounts.
+            if let amount = prefill.amount, amount != 0 {
+                lines = [EditableSplit(amountText: NSDecimalNumber(decimal: -amount).stringValue),
+                         EditableSplit(amountText: NSDecimalNumber(decimal: amount).stringValue)]
+            }
         }
         focusSoon { descriptionFocused = true }
     }
@@ -3199,14 +3286,21 @@ struct TransactionEditorSheet: View {
             .map(\.asInput)
         let currency = model.transactionCurrency(for: inputs.compactMap(\.accountID))
         do {
-            if let editingID {
-                try model.updateTransaction(id: editingID, date: date, description: description,
+            let targetID = linkingToID ?? editingID
+            if let targetID {
+                try model.updateTransaction(id: targetID, date: date, description: description,
                                             currency: currency, splits: inputs,
                                             tags: parsedTags, notes: notes)
             } else {
-                try model.addTransaction(date: date, description: description,
-                                         currency: currency, splits: inputs,
-                                         tags: parsedTags, notes: notes)
+                let newID = try model.addTransaction(date: date, description: description,
+                                                     currency: currency, splits: inputs,
+                                                     tags: parsedTags, notes: notes)
+                // Recording a document: copy it into the folder and link it.
+                if let prefill = documentPrefill,
+                   let data = try? Data(contentsOf: prefill.url) {
+                    _ = try? model.attachDocument(named: prefill.url.lastPathComponent,
+                                                  data: data, to: newID)
+                }
             }
             close()
         } catch {

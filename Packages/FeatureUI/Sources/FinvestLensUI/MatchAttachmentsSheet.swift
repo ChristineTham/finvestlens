@@ -29,10 +29,8 @@ struct MatchAttachmentsSheet: View {
     @State private var matches: [AppModel.AttachmentMatch] = []
     @State private var accepted: Set<UUID> = []
     @State private var appliedSummary: String?
-    /// The unmatched receipt being recorded as a fresh cash purchase.
-    @State private var recordTarget: AppModel.AttachmentMatch?
-    /// The unmatched receipt being linked to a manually-chosen transaction.
-    @State private var linkTarget: AppModel.AttachmentMatch?
+    /// The unmatched document opened in the manual transaction editor.
+    @State private var editTarget: AppModel.AttachmentMatch?
 
     private var applyCount: Int {
         matches.filter { accepted.contains($0.id) && $0.transactionID != nil }.count
@@ -109,17 +107,15 @@ struct MatchAttachmentsSheet: View {
                         .disabled(applyCount == 0 || processing || applying)
                 }
             }
-            .sheet(item: $linkTarget) { match in
-                LinkToTransactionSheet(model: model, match: match) { transactionID in
-                    attach(match, to: transactionID,
-                           summary: "Linked \(match.fileName) to the chosen transaction.")
-                }
-            }
-            .sheet(item: $recordTarget) { match in
-                RecordCashPurchaseSheet(model: model, match: match) { transactionID in
-                    attach(match, to: transactionID,
-                           summary: "Recorded \(match.fileName) as a cash purchase and attached it.")
-                }
+            .sheet(item: $editTarget) { match in
+                TransactionEditorSheet(
+                    model: model,
+                    documentPrefill: TransactionEditorSheet.DocumentPrefill(
+                        url: match.url,
+                        description: match.vendor,
+                        date: match.documentDate,
+                        amount: match.candidateAmounts.first))
+                    .onDisappear { matches.removeAll { $0.id == match.id } }
             }
             .fileImporter(isPresented: $importerShown,
                           allowedContentTypes: [.pdf, .image],
@@ -162,18 +158,11 @@ struct MatchAttachmentsSheet: View {
                     .controlSize(.small)
                     .help("Copy this row’s details")
                     if !matched {
-                        Button("Link to Transaction…", systemImage: "link") {
-                            linkTarget = match
+                        Button("Manually Edit…", systemImage: "square.and.pencil") {
+                            editTarget = match
                         }
                         .controlSize(.small)
-                        .help("Attach this document to a transaction you pick — for foreign-currency invoices, deposits, or future charges auto-match can’t find")
-                        if !match.candidateAmounts.isEmpty {
-                            Button("Record as Cash…", systemImage: "banknote") {
-                                recordTarget = match
-                            }
-                            .controlSize(.small)
-                            .help("The receipt matches no card/bank transaction — record it as a fresh cash purchase and attach the file")
-                        }
+                        .help("Open the transaction editor with the document beside it — enter a new transaction, or link the document to an existing one")
                     }
                 }
                 if matched {

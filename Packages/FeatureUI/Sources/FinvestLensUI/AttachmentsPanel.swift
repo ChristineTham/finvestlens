@@ -33,7 +33,7 @@ enum GeneralPasteboard {
 #if os(macOS)
 /// Quick Look embedded in the sidebar (`QLPreviewView`) — the attachment shows
 /// itself the moment its transaction is selected, no extra click.
-private struct EmbeddedQuickLook: NSViewRepresentable {
+struct EmbeddedQuickLook: NSViewRepresentable {
     let url: URL
 
     final class Coordinator { var url: URL? }

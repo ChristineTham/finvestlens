@@ -67,14 +67,9 @@ struct BulkEditSheet: View {
                         HStack {
                             Toggle("Transfer account", isOn: $setTransfer)
                             Spacer()
-                            Picker("", selection: $transferID) {
-                                Text("Choose…").tag(GncGUID?.none)
-                                ForEach(model.postableAccounts) { node in
-                                    Text(node.fullName).tag(GncGUID?.some(node.id))
-                                }
-                            }
-                            .labelsHidden()
-                            .disabled(!setTransfer)
+                            AccountField(nodes: model.postableAccounts, selection: $transferID)
+                                .frame(maxWidth: 220)
+                                .disabled(!setTransfer)
                         }
                         if setTransfer, simpleCount < splitIDs.count {
                             Text("Applies to the \(simpleCount) simple transfer\(simpleCount == 1 ? "" : "s") — multi-split, security and multi-currency transactions are left unchanged.")

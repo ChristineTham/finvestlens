@@ -150,9 +150,8 @@ private struct GoalEditorSheet: View {
         NavigationStack {
             Form {
                 TextField("Name", text: $name)
-                Picker("Account", selection: $accountID) {
-                    Text("Choose…").tag(GncGUID?.none)
-                    ForEach(model.goalEligibleAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+                LabeledContent("Account") {
+                    AccountField(nodes: model.goalEligibleAccounts, selection: $accountID)
                 }
                 TextField("Target amount", text: $target)
                 Toggle("Target date", isOn: $hasDate)

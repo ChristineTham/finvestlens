@@ -247,13 +247,9 @@ struct AutoCategorizeSheet: View {
                     .monospacedDigit()
                     .foregroundStyle(item.amount > 0 ? .red : .primary)
             }
-            Picker("Category", selection: binding(for: item.splitID)) {
-                Text("— keep uncategorised —").tag(GncGUID?.none)
-                ForEach(model.postableAccounts) { node in
-                    Text(node.fullName).tag(GncGUID?.some(node.id))
-                }
-            }
-            .labelsHidden()
+            AccountField(prompt: "Category",
+                         nodes: model.postableAccounts,
+                         selection: binding(for: item.splitID))
         }
     }
 

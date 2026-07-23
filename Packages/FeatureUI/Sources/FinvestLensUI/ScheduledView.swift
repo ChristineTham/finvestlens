@@ -196,13 +196,11 @@ struct AddScheduledSheet: View {
                         Text("= \(AmountFormat.string(value, code: model.reportCurrency.mnemonic))")
                             .scaledFont(.caption).foregroundStyle(.secondary)
                     }
-                    Picker("From", selection: $fromID) {
-                        Text("—").tag(GncGUID?.none)
-                        ForEach(model.postableAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+                    LabeledContent("From") {
+                        AccountField(nodes: model.postableAccounts, selection: $fromID)
                     }
-                    Picker("To", selection: $toID) {
-                        Text("—").tag(GncGUID?.none)
-                        ForEach(model.postableAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+                    LabeledContent("To") {
+                        AccountField(nodes: model.postableAccounts, selection: $toID)
                     }
                 }
                 Section("Schedule") {

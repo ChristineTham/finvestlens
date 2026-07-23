@@ -332,9 +332,9 @@ struct RuleEditorSheet: View {
                 }
 
                 Section("Then") {
-                    Picker("Set account", selection: $accountID) {
-                        Text("Leave account alone").tag(GncGUID?.none)
-                        ForEach(model.postableAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+                    LabeledContent("Set account") {
+                        AccountField(prompt: "Leave account alone",
+                                     nodes: model.postableAccounts, selection: $accountID)
                     }
                     Toggle("Set notes", isOn: $setsNotes)
                     if setsNotes {
