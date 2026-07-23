@@ -11,6 +11,7 @@ import QuickLook
 import FinvestLensEngine
 #if os(macOS)
 import AppKit
+import Quartz
 import UniformTypeIdentifiers
 #endif
 #if canImport(UIKit)
@@ -29,14 +30,44 @@ enum GeneralPasteboard {
     }
 }
 
+#if os(macOS)
+/// Quick Look embedded in the sidebar (`QLPreviewView`) — the attachment shows
+/// itself the moment its transaction is selected, no extra click.
+private struct EmbeddedQuickLook: NSViewRepresentable {
+    let url: URL
+
+    final class Coordinator { var url: URL? }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> QLPreviewView {
+        let view = QLPreviewView(frame: .zero, style: .compact) ?? QLPreviewView()
+        view.shouldCloseWithWindow = false
+        context.coordinator.url = url
+        view.previewItem = url as NSURL
+        return view
+    }
+
+    func updateNSView(_ view: QLPreviewView, context: Context) {
+        guard context.coordinator.url != url else { return }
+        context.coordinator.url = url
+        view.previewItem = url as NSURL
+    }
+
+    static func dismantleNSView(_ view: QLPreviewView, coordinator: Coordinator) {
+        view.close()
+    }
+}
+#endif
+
 /// A trailing sidebar for the register showing the selected transaction's
-/// document link (`assoc_uri`, FR-AI-08) — open, reveal, replace or remove it,
-/// link an existing file in place, or add a web link. Links are stored relative
-/// to the document folder (Settings ▸ Documents) when the file lives inside it.
+/// document link (`assoc_uri`, FR-AI-08). The attachment previews inline the
+/// moment its transaction is selected; the actions (open, reveal, replace,
+/// remove, web link) sit at the bottom. Links are stored relative to the
+/// document folder (Settings ▸ Documents) when the file lives inside it.
 struct AttachmentsPanel: View {
     @Bindable var model: AppModel
     @State private var webLinkText = ""
-    /// The file being previewed — non-nil presents the Quick Look panel.
+    /// Full-window Quick Look (the expand button) — non-nil presents it.
     @State private var previewURL: URL?
 
     /// The single selected transaction, if the selection is exactly one.
@@ -46,24 +77,21 @@ struct AttachmentsPanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Label("Attachment", systemImage: "paperclip")
                 .scaledFont(.headline)
             if let transactionID {
                 if let link = model.documentLink(for: transactionID) {
-                    linkDetails(transactionID: transactionID, link: link)
+                    linkContent(transactionID: transactionID, link: link)
                 } else {
                     Text("No attachment on this transaction.")
                         .scaledFont(.callout)
                         .foregroundStyle(.secondary)
+                    Spacer()
                 }
                 Divider()
                 addControls(transactionID: transactionID,
                             replacing: model.documentLink(for: transactionID) != nil)
-                Spacer()
-                Text("File links are stored relative to the document folder (Settings ▸ Documents ⌘,) when the file lives inside it, so the book and its documents can move together.")
-                    .scaledFont(.caption)
-                    .foregroundStyle(.tertiary)
             } else {
                 Text(model.selectedTransactionIDs.isEmpty
                      ? "Select a transaction to see its attachment."
@@ -74,52 +102,65 @@ struct AttachmentsPanel: View {
             }
         }
         .padding(12)
-        .frame(width: 270, alignment: .topLeading)
+        .frame(width: 290, alignment: .topLeading)
         .quickLookPreview($previewURL)
     }
 
+    // MARK: Link display
+
     @ViewBuilder
-    private func linkDetails(transactionID: GncGUID, link: String) -> some View {
+    private func linkContent(transactionID: GncGUID, link: String) -> some View {
         let isWeb = link.hasPrefix("http://") || link.hasPrefix("https://")
         let url = isWeb ? nil : model.linkedDocumentURL(for: transactionID)
         let exists = isWeb ? true
             : (url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false)
 
-        VStack(alignment: .leading, spacing: 6) {
-            // The name itself Quick Looks the file (web links open in the
-            // browser) — the fastest "what is this?" gesture.
+        // The preview fills the panel; details and actions sit under it.
+        if !isWeb, exists, let url {
+            #if os(macOS)
+            EmbeddedQuickLook(url: url)
+                .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
+            #else
             Button {
-                if isWeb {
-                    #if os(macOS)
-                    if let webURL = URL(string: link) { NSWorkspace.shared.open(webURL) }
-                    #endif
-                } else if exists {
-                    previewURL = url
-                }
+                previewURL = url
             } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: isWeb ? "link" : "doc")
-                        .foregroundStyle(.secondary)
-                    Text(isWeb ? link : (url?.lastPathComponent ?? link))
-                        .scaledFont(.body)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                }
-                .contentShape(Rectangle())
+                Label("Preview", systemImage: "eye")
             }
-            .buttonStyle(.plain)
-            .help(isWeb ? "Open in the browser" : "Quick Look")
-            // The name is a button (click = Quick Look), so text selection
-            // can't reach it — right-click copies instead.
-            .contextMenu {
-                Button("Copy Name") {
-                    GeneralPasteboard.copy(isWeb ? link : (url?.lastPathComponent ?? link))
-                }
-                Button(isWeb ? "Copy Link" : "Copy Full Path") {
-                    GeneralPasteboard.copy(isWeb ? link : (url?.path ?? link))
-                }
-                if !isWeb {
-                    Button("Copy Stored Link") { GeneralPasteboard.copy(link) }
+            Spacer()
+            #endif
+        } else {
+            Spacer()
+        }
+
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: isWeb ? "link" : "doc")
+                    .foregroundStyle(.secondary)
+                Text(isWeb ? link : (url?.lastPathComponent ?? link))
+                    .scaledFont(.callout)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .contextMenu {
+                        Button("Copy Name") {
+                            GeneralPasteboard.copy(isWeb ? link : (url?.lastPathComponent ?? link))
+                        }
+                        Button(isWeb ? "Copy Link" : "Copy Full Path") {
+                            GeneralPasteboard.copy(isWeb ? link : (url?.path ?? link))
+                        }
+                        if !isWeb {
+                            Button("Copy Stored Link") { GeneralPasteboard.copy(link) }
+                        }
+                    }
+                Spacer()
+                if !isWeb, exists, let url {
+                    Button {
+                        previewURL = url
+                    } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help("Open the full Quick Look window")
                 }
             }
             // The raw stored link — the relative path is the durable fact.
@@ -127,7 +168,7 @@ struct AttachmentsPanel: View {
                 .scaledFont(.caption)
                 .monospaced()
                 .foregroundStyle(.secondary)
-                .lineLimit(3)
+                .lineLimit(2)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
             if !exists {
@@ -136,44 +177,45 @@ struct AttachmentsPanel: View {
                     .scaledFont(.caption)
                     .foregroundStyle(.orange)
             }
-            HStack {
-                if isWeb {
-                    Button("Open") {
-                        #if os(macOS)
-                        if let webURL = URL(string: link) { NSWorkspace.shared.open(webURL) }
-                        #endif
-                    }
-                } else {
-                    Button("Quick Look", systemImage: "eye") { previewURL = url }
-                        .disabled(!exists)
-                    Button {
-                        model.openLinkedDocument(for: transactionID)
-                    } label: {
-                        Image(systemName: "arrow.up.forward.app")
-                    }
-                    .disabled(!exists)
-                    .help("Open in its application")
+        }
+
+        HStack {
+            if isWeb {
+                Button("Open") {
                     #if os(macOS)
-                    if let url {
-                        Button {
-                            NSWorkspace.shared.activateFileViewerSelecting([url])
-                        } label: {
-                            Image(systemName: "folder")
-                        }
-                        .disabled(!exists)
-                        .help("Reveal in Finder")
-                    }
+                    if let webURL = URL(string: link) { NSWorkspace.shared.open(webURL) }
                     #endif
                 }
-                Spacer()
-                Button("Remove", role: .destructive) {
-                    model.setDocumentLink(nil, for: transactionID)
+            } else {
+                Button {
+                    model.openLinkedDocument(for: transactionID)
+                } label: {
+                    Image(systemName: "arrow.up.forward.app")
                 }
-                .help("Removes the link only — the file stays where it is")
+                .disabled(!exists)
+                .help("Open in its application")
+                #if os(macOS)
+                if let url {
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                    .disabled(!exists)
+                    .help("Reveal in Finder")
+                }
+                #endif
             }
-            .controlSize(.small)
+            Spacer()
+            Button("Remove", role: .destructive) {
+                model.setDocumentLink(nil, for: transactionID)
+            }
+            .help("Removes the link only — the file stays where it is")
         }
+        .controlSize(.small)
     }
+
+    // MARK: Add / replace
 
     @ViewBuilder
     private func addControls(transactionID: GncGUID, replacing: Bool) -> some View {
@@ -186,7 +228,7 @@ struct AttachmentsPanel: View {
                     model.linkDocument(at: url, to: transactionID)
                 }
             }
-            .help("Links the file in place — stored relative to the document folder when inside it")
+            .help("Links the file in place — stored relative to the document folder (Settings ▸ Documents) when inside it")
             #endif
             HStack(spacing: 6) {
                 TextField("https://…", text: $webLinkText)
