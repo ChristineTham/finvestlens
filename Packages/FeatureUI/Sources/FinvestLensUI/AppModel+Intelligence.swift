@@ -482,7 +482,7 @@ extension AppModel {
         let codes = ["MYR", "USD", "EUR", "GBP", "JPY", "SGD", "THB", "IDR",
                      "INR", "HKD", "CNY", "NZD", "CHF", "CAD", "KRW", "VND"]
         guard let regex = try? NSRegularExpression(
-            pattern: #"\b(\#(codes.joined(separator: "|"))|RM)\b"#,
+            pattern: #"(?<![A-Za-z])(\#(codes.joined(separator: "|"))|RM)(?![A-Za-z])"#,
             options: [.caseInsensitive]) else { return nil }
         guard let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range, in: text) else { return nil }

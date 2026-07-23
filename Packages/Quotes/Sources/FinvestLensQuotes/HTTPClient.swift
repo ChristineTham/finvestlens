@@ -53,7 +53,8 @@ extension HTTPFetching {
 /// A browser-like User-Agent; Yahoo's public endpoints reject the default
 /// `URLSession` agent with 429/401.
 enum HTTPDefaults {
-    static let userAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 " +
-        "(KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+    // A plain, honest agent. Yahoo bot-flags the full Safari string when it
+    // arrives without a browser's cookies (429 on every endpoint — verified),
+    // while simple agents pass.
+    static let userAgent = "finvestlens/1.0"
 }

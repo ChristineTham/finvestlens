@@ -3051,6 +3051,13 @@ struct TransactionEditorSheet: View {
                     ForEach($lines) { $line in
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 8) {
+                                // The split's role, from its amount's sign —
+                                // the label lives OUTSIDE the field.
+                                Text(line.amount > 0 ? "Debit"
+                                     : (line.amount < 0 ? "Credit" : "Account"))
+                                    .scaledFont(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 52 * appFontScale, alignment: .leading)
                                 AccountField(nodes: model.postableAccounts,
                                              selection: $line.accountID)
                                 TextField("Amount", text: $line.amountText,
@@ -3197,18 +3204,22 @@ struct TransactionEditorSheet: View {
         }
         guard let prefill = documentPrefill else { return }
         // Linking a document whose amount differs from the transaction's is the
-        // FX signature: prefill the converter — foreign amount from the
-        // document, local from the transaction — and back-solve the rate. The
-        // user only confirms the currency (preselected when the document names
-        // one).
+        // FX signature: fill the whole converter — foreign amount from the
+        // document, local from the transaction, the implied rate computed here
+        // and now (no chained field updates to rely on) — and auto-apply once
+        // categorisation settles, so the user does nothing.
+        var autoApplyFx = false
         if let docAmount = prefill.amount, docAmount > 0,
            let localMagnitude = lines.compactMap({ $0.amount == 0 ? nil : abs($0.amount) }).max(),
            docAmount != localMagnitude {
             if let code = prefill.currencyCode { fxCode = code }
             fxAmountText = NSDecimalNumber(decimal: docAmount).stringValue
             fxLocalText = NSDecimalNumber(decimal: localMagnitude).stringValue
-            backSolveRate()
+            let implied = localMagnitude / docAmount
+            let sixDp = Decimal(NSDecimalNumber(decimal: implied * 1_000_000).intValue) / 1_000_000
+            fxRateText = NSDecimalNumber(decimal: sixDp).stringValue
             fxShown = true
+            autoApplyFx = true
         }
         categorising = true
         Task {
@@ -3227,6 +3238,9 @@ struct TransactionEditorSheet: View {
                     tagsText = refreshed.tags.joined(separator: ", ")
                 }
             }
+            // The document's foreign amount + the transaction's local amount →
+            // the structural FX form, applied without further clicks.
+            if autoApplyFx { applyFx() }
         }
     }
 
@@ -3349,12 +3363,9 @@ struct TransactionEditorSheet: View {
     }
 
     private func lookUpRate() {
-        if let rate = model.storedFxRate(code: fxCode, on: date) {
-            fxRateText = NSDecimalNumber(decimal: displayCurrency.round(rate * 10_000) / 10_000).stringValue
-            recomputeLocal()
-        } else {
-            fxRateText = ""
-        }
+        guard let rate = model.storedFxRate(code: fxCode, on: date) else { return }
+        fxRateText = NSDecimalNumber(decimal: displayCurrency.round(rate * 10_000) / 10_000).stringValue
+        recomputeLocal()
     }
 
     private func fetchRate() {
