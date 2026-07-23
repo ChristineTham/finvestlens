@@ -67,6 +67,7 @@ private struct EmbeddedQuickLook: NSViewRepresentable {
 struct AttachmentsPanel: View {
     @Bindable var model: AppModel
     @State private var webLinkText = ""
+    @State private var webFieldShown = false
     /// Full-window Quick Look (the expand button) — non-nil presents it.
     @State private var previewURL: URL?
     @State private var categorising = false
@@ -111,6 +112,8 @@ struct AttachmentsPanel: View {
         .onChange(of: transactionID) {
             categorySuggestion = nil
             categoriseError = nil
+            webFieldShown = false
+            webLinkText = ""
         }
     }
 
@@ -323,21 +326,43 @@ struct AttachmentsPanel: View {
                     model.linkDocument(at: url, to: transactionID)
                 }
             }
-            .help("Links the file in place — stored relative to the document folder (Settings ▸ Documents) when inside it")
+            .help("Opens a file dialog — the chosen file is linked in place, stored relative to the document folder (Settings ▸ Documents) when inside it")
             #endif
-            HStack(spacing: 6) {
-                TextField("https://…", text: $webLinkText)
-                    .textFieldStyle(.roundedBorder)
-                    .scaledFont(.callout)
-                Button(replacing ? "Replace" : "Add") {
-                    let trimmed = webLinkText.trimmingCharacters(in: .whitespaces)
-                    guard trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") else { return }
-                    model.setDocumentLink(trimmed, for: transactionID)
-                    webLinkText = ""
+            // The URL field only appears on demand: a permanently visible blank
+            // field read like the replace control.
+            if webFieldShown {
+                HStack(spacing: 6) {
+                    TextField("https://…", text: $webLinkText)
+                        .textFieldStyle(.roundedBorder)
+                        .scaledFont(.callout)
+                        .onSubmit { setWebLink(transactionID: transactionID) }
+                    Button("Set") { setWebLink(transactionID: transactionID) }
+                        .disabled(!(webLinkText.hasPrefix("http://")
+                                    || webLinkText.hasPrefix("https://")))
+                    Button {
+                        webFieldShown = false
+                        webLinkText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
                 }
-                .disabled(!(webLinkText.hasPrefix("http://") || webLinkText.hasPrefix("https://")))
+                .controlSize(.small)
+            } else {
+                Button(replacing ? "Replace with Web Link…" : "Add Web Link…",
+                       systemImage: "link") {
+                    webFieldShown = true
+                }
             }
-            .controlSize(.small)
         }
+    }
+
+    private func setWebLink(transactionID: GncGUID) {
+        let trimmed = webLinkText.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") else { return }
+        model.setDocumentLink(trimmed, for: transactionID)
+        webLinkText = ""
+        webFieldShown = false
     }
 }
