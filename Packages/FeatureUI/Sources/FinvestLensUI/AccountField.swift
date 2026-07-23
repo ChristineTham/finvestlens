@@ -35,7 +35,7 @@ enum AccountSearch {
 /// account's full name; focusing turns it into a search box with a dropdown of
 /// matches beneath.
 struct AccountField: View {
-    var prompt: String = "Search account…"
+    var prompt: String = "Search…"
     let nodes: [AccountNode]
     @Binding var selection: GncGUID?
     /// Rows shown in the dropdown at once.

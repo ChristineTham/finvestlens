@@ -67,6 +67,43 @@ extension AppModel {
         return price.value
     }
 
+    /// Restructures a simple local transaction into proper multi-currency form
+    /// for a document denominated in `currencyCode` with foreign total
+    /// `foreignAmount`: the transaction currency becomes the foreign one, split
+    /// `value`s carry ±foreign (balancing the transaction), and each split's
+    /// `quantity` keeps the local amount that moves its account. The implied
+    /// rate is recorded in the price DB. One undoable action.
+    ///
+    /// Only the simple shape is restructured — two legs, both in the (current)
+    /// transaction currency; anything richer is left for the editor. Returns
+    /// whether the restructure happened.
+    @discardableResult
+    public func restructureAsForeign(transactionID: GncGUID,
+                                     foreignAmount: Decimal,
+                                     currencyCode: String) -> Bool {
+        guard let book, foreignAmount > 0,
+              let txn = book.transaction(with: transactionID),
+              txn.splits.count == 2,
+              txn.splits.allSatisfy({ $0.account?.commodity == txn.currency }),
+              currencyCode != txn.currency.mnemonic
+        else { return false }
+        let local = txn.splits.map { abs($0.value) }.max() ?? 0
+        guard local > 0, local != foreignAmount else { return false }
+
+        let foreign = currencyCommodity(currencyCode)
+        let rounded = foreign.round(foreignAmount)
+        editing([transactionID], named: "Record Foreign Amount") {
+            txn.currency = foreign
+            for split in txn.splits {
+                let localValue = split.value
+                split.value = localValue > 0 ? rounded : -rounded
+                split.quantity = localValue   // what moves the account, unchanged
+            }
+        }
+        recordFxRate(code: currencyCode, rate: local / rounded, date: txn.datePosted)
+        return true
+    }
+
     /// Records a user-confirmed rate (e.g. the implied rate of a purchase whose
     /// foreign and local amounts are both known) into the price DB.
     public func recordFxRate(code: String, rate: Decimal, date: Date) {

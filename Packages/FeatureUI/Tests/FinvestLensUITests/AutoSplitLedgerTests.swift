@@ -64,25 +64,26 @@ struct AutoSplitLedgerTests {
     func collapsed() throws {
         let f = try makeFixture()
         defer { f.model.close(); try? FileManager.default.removeItem(at: f.url) }
-        let rows = f.model.autoSplitRows(forAccountID: f.bank, expanding: nil)
-        let allHeadings = rows.filter { !$0.isHeading }.isEmpty
+        f.model.selectedAccountID = f.bank
+        let rows = f.model.autoSplitRows(expanding: nil)
         #expect(rows.count == 2)
-        #expect(allHeadings)
-        #expect(rows.map(\.text) == ["Lunch", "Shop"])
+        #expect(rows.allSatisfy { $0.main != nil })
+        #expect(rows.compactMap(\.main?.description) == ["Lunch", "Shop"])
     }
 
-    /// The point of the style: the one you are looking at opens out.
+    /// The point of the style: the one you are looking at opens out. Legs that
+    /// are already on screen as main rows (the bank leg) are not repeated.
     @Test("The selected transaction opens out into its legs")
     func expanded() throws {
         let f = try makeFixture()
         defer { f.model.close(); try? FileManager.default.removeItem(at: f.url) }
-        let rows = f.model.autoSplitRows(forAccountID: f.bank, expanding: f.multi)
-        // Two headings, plus the four legs of the selected one.
-        #expect(rows.count == 6)
-        #expect(rows.filter(\.isHeading).count == 2)
-        let legs = rows.filter { !$0.isHeading }
-        #expect(legs.allSatisfy { $0.transactionID == f.multi })
-        #expect(legs.map(\.text).sorted() == ["Bank", "Fees", "Food", "Fuel"])
+        f.model.selectedAccountID = f.bank
+        let rows = f.model.autoSplitRows(expanding: f.multi)
+        // Two transaction rows, plus the three counter-legs of the multi.
+        #expect(rows.count == 5)
+        #expect(rows.filter { $0.main != nil }.count == 2)
+        let legs = rows.filter { $0.main == nil }
+        #expect(legs.map(\.legAccount).sorted() == ["Fees", "Food", "Fuel"])
     }
 
     /// …and only that one. Expanding everyone is the Journal, which is a
@@ -91,49 +92,50 @@ struct AutoSplitLedgerTests {
     func onlyTheSelectedOne() throws {
         let f = try makeFixture()
         defer { f.model.close(); try? FileManager.default.removeItem(at: f.url) }
-        let rows = f.model.autoSplitRows(forAccountID: f.bank, expanding: f.simple)
-        #expect(rows.filter { !$0.isHeading }.allSatisfy { $0.transactionID == f.simple })
-        #expect(rows.filter { !$0.isHeading }.count == 2)
+        f.model.selectedAccountID = f.bank
+        let rows = f.model.autoSplitRows(expanding: f.simple)
+        // The simple transaction's one counter-leg (Food); Shop stays closed.
+        #expect(rows.filter { $0.main == nil }.map(\.legAccount) == ["Food"])
         // The journal, by contrast, opens out all six legs at once.
         #expect(f.model.journalRows(forAccountID: f.bank).filter { !$0.isHeading }.count == 6)
     }
 
-    @Test("Headings stay in date order with their legs beneath them")
+    @Test("Rows stay in date order with the expanded legs beneath their row")
     func ordering() throws {
         let f = try makeFixture()
         defer { f.model.close(); try? FileManager.default.removeItem(at: f.url) }
-        let rows = f.model.autoSplitRows(forAccountID: f.bank, expanding: f.multi)
-        #expect(rows.first?.text == "Lunch")
-        #expect(rows[1].text == "Shop")
-        // Everything after the "Shop" heading is one of its legs.
-        #expect(rows.dropFirst(2).allSatisfy { !$0.isHeading && $0.transactionID == f.multi })
+        f.model.selectedAccountID = f.bank
+        let rows = f.model.autoSplitRows(expanding: f.multi)
+        #expect(rows.first?.main?.description == "Lunch")
+        #expect(rows[1].main?.description == "Shop")
+        // Everything after the "Shop" row is one of its legs.
+        #expect(rows.dropFirst(2).allSatisfy { $0.main == nil })
     }
 
-    /// A leg posted to the register's own account is marked, as in the journal —
-    /// the style changes which rows are shown, not what they say.
-    @Test("Rows say the same things the journal's do")
-    func rowsMatchJournal() throws {
+    /// Auto-Split IS the Basic register: its main rows are the register's rows,
+    /// amounts and running balances included.
+    @Test("Main rows are the Basic register's rows")
+    func rowsMatchRegister() throws {
         let f = try makeFixture()
         defer { f.model.close(); try? FileManager.default.removeItem(at: f.url) }
-        let auto = f.model.autoSplitRows(forAccountID: f.bank, expanding: f.multi)
-        let journal = f.model.journalRows(forAccountID: f.bank)
-        for row in auto {
-            let same = try #require(journal.first { $0.id == row.id })
-            #expect(same.text == row.text)
-            #expect(same.amount == row.amount)
-            #expect(same.isFocusAccount == row.isFocusAccount)
+        f.model.selectedAccountID = f.bank
+        let auto = f.model.autoSplitRows(expanding: f.multi)
+        let register = f.model.registerRows
+        for row in auto where row.main != nil {
+            let same = try #require(register.first { $0.id == row.id })
+            #expect(same.description == row.main?.description)
+            #expect(same.amount == row.main?.amount)
         }
-        #expect(auto.contains { $0.text == "Bank" && $0.isFocusAccount })
     }
 
     @Test("Expanding something not in this register changes nothing")
     func unknownExpansion() throws {
         let f = try makeFixture()
         defer { f.model.close(); try? FileManager.default.removeItem(at: f.url) }
-        let rows = f.model.autoSplitRows(forAccountID: f.bank, expanding: .random())
-        let allHeadings = rows.filter { !$0.isHeading }.isEmpty
+        f.model.selectedAccountID = f.bank
+        let rows = f.model.autoSplitRows(expanding: .random())
         #expect(rows.count == 2)
-        #expect(allHeadings)
+        #expect(rows.allSatisfy { $0.main != nil })
     }
 
     @Test("An account with no postings has no rows")
@@ -141,6 +143,7 @@ struct AutoSplitLedgerTests {
         let f = try makeFixture()
         defer { f.model.close(); try? FileManager.default.removeItem(at: f.url) }
         let unused = try #require(f.model.addAccount(name: "Unused", type: .expense))
-        #expect(f.model.autoSplitRows(forAccountID: unused, expanding: nil).isEmpty)
+        f.model.selectedAccountID = unused
+        #expect(f.model.autoSplitRows(expanding: nil).isEmpty)
     }
 }

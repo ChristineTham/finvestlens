@@ -3191,57 +3191,49 @@ struct TransactionEditorSheet: View {
         return documentPrefill != nil ? "Add & Attach" : (isEditing ? "Save" : "Add")
     }
 
-    /// Adopts an existing transaction for the document: loads it, attaches the
-    /// file, and auto-categorises from it — all shown for review before commit.
+    /// Adopts an existing transaction for the document. All the work — attach,
+    /// categorise, FX restructure — happens in ONE model call
+    /// (``AppModel/adoptDocument``); the editor then reloads the finished
+    /// transaction from the book. No view-state choreography to go wrong.
     private func adoptExisting(_ id: GncGUID) {
-        linkingToID = id
-        if let edit = model.editData(forTransaction: id) {
-            date = edit.date
-            description = edit.description
-            notes = edit.notes
-            lines = edit.splits.map { EditableSplit($0) }
-            tagsText = edit.tags.joined(separator: ", ")
-        }
         guard let prefill = documentPrefill else { return }
-        // Linking a document whose amount differs from the transaction's is the
-        // FX signature: fill the whole converter — foreign amount from the
-        // document, local from the transaction, the implied rate computed here
-        // and now (no chained field updates to rely on) — and auto-apply once
-        // categorisation settles, so the user does nothing.
-        var autoApplyFx = false
-        if let docAmount = prefill.amount, docAmount > 0,
-           let localMagnitude = lines.compactMap({ $0.amount == 0 ? nil : abs($0.amount) }).max(),
-           docAmount != localMagnitude {
-            if let code = prefill.currencyCode { fxCode = code }
-            fxAmountText = NSDecimalNumber(decimal: docAmount).stringValue
-            fxLocalText = NSDecimalNumber(decimal: localMagnitude).stringValue
-            let implied = localMagnitude / docAmount
-            let sixDp = Decimal(NSDecimalNumber(decimal: implied * 1_000_000).intValue) / 1_000_000
-            fxRateText = NSDecimalNumber(decimal: sixDp).stringValue
-            fxShown = true
-            autoApplyFx = true
-        }
+        linkingToID = id
+        reloadFromBook(id)   // show the picked transaction immediately
         categorising = true
         Task {
             defer { categorising = false }
-            let data = try? await Task.detached { try Data(contentsOf: prefill.url) }.value
-            guard let data,
-                  (try? model.attachDocument(named: prefill.url.lastPathComponent,
-                                             data: data, to: id)) != nil else { return }
-            if let suggestion = try? await model.suggestCategoryFromAttachment(for: id) {
-                model.applyAttachmentSuggestion(suggestion, to: id)
-                if let refreshed = model.editData(forTransaction: id) {
-                    date = refreshed.date
-                    description = refreshed.description
-                    notes = refreshed.notes
-                    lines = refreshed.splits.map { EditableSplit($0) }
-                    tagsText = refreshed.tags.joined(separator: ", ")
-                }
+            await model.adoptDocument(url: prefill.url,
+                                      foreignAmount: prefill.amount,
+                                      currencyCode: prefill.currencyCode,
+                                      into: id)
+            reloadFromBook(id)
+            // Amounts mismatch but the document named no currency: hand the
+            // converter every fact — the currency pick is the one human step.
+            if fxCurrencyOverride == nil, prefill.currencyCode == nil,
+               let docAmount = prefill.amount, docAmount > 0,
+               let local = lines.compactMap({ $0.amount == 0 ? nil : abs($0.amount) }).max(),
+               docAmount != local {
+                fxAmountText = NSDecimalNumber(decimal: docAmount).stringValue
+                fxLocalText = NSDecimalNumber(decimal: local).stringValue
+                let implied = local / docAmount
+                let sixDp = Decimal(NSDecimalNumber(decimal: implied * 1_000_000).intValue) / 1_000_000
+                fxRateText = NSDecimalNumber(decimal: sixDp).stringValue
+                fxShown = true
             }
-            // The document's foreign amount + the transaction's local amount →
-            // the structural FX form, applied without further clicks.
-            if autoApplyFx { applyFx() }
         }
+    }
+
+    /// One reload point: the editor's state always mirrors the book's version
+    /// of the transaction, FX currency override included.
+    private func reloadFromBook(_ id: GncGUID) {
+        guard let edit = model.editData(forTransaction: id) else { return }
+        date = edit.date
+        description = edit.description
+        notes = edit.notes
+        lines = edit.splits.map { EditableSplit($0) }
+        tagsText = edit.tags.joined(separator: ", ")
+        let derived = model.transactionCurrency(for: edit.splits.compactMap(\.accountID))
+        fxCurrencyOverride = edit.currency != derived ? edit.currency : nil
     }
 
     /// Reads a linked invoice PDF and replaces the counter-splits with its

@@ -476,18 +476,30 @@ extension AppModel {
     }
 
     /// The first foreign currency the text names: an ISO code from the common
-    /// set, or a well-known symbol ("RM" → MYR). `nil` when only the base
-    /// currency (or none) appears — matching then proceeds as a local charge.
+    /// set, or an unambiguous alias/symbol ("RM" → MYR, "Rp" → IDR, "฿" → THB…).
+    /// Ambiguous symbols ($, ¥, £) are never guessed — the user picks. `nil`
+    /// when only the base currency (or none) appears.
     nonisolated static func currencyHint(in text: String) -> String? {
         let codes = ["MYR", "USD", "EUR", "GBP", "JPY", "SGD", "THB", "IDR",
                      "INR", "HKD", "CNY", "NZD", "CHF", "CAD", "KRW", "VND"]
+        // Aliases whose meaning is unambiguous in practice. Regex-escaped where
+        // needed; matched case-insensitively like the codes.
+        let aliases: [(pattern: String, code: String)] = [
+            ("RM", "MYR"), ("Rp", "IDR"), ("฿", "THB"), ("₹", "INR"),
+            ("₩", "KRW"), ("₫", "VND"), ("€", "EUR"),
+            ("S\\$", "SGD"), ("HK\\$", "HKD"), ("NZ\\$", "NZD"),
+        ]
+        let alternation = (codes + aliases.map(\.pattern)).joined(separator: "|")
         guard let regex = try? NSRegularExpression(
-            pattern: #"(?<![A-Za-z])(\#(codes.joined(separator: "|"))|RM)(?![A-Za-z])"#,
+            pattern: "(?<![A-Za-z])(\(alternation))(?![A-Za-z])",
             options: [.caseInsensitive]) else { return nil }
         guard let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
               let range = Range(match.range, in: text) else { return nil }
-        let code = text[range].uppercased()
-        return code == "RM" ? "MYR" : code
+        let hit = String(text[range]).uppercased()
+        if let alias = aliases.first(where: { $0.pattern.replacingOccurrences(of: "\\", with: "").uppercased() == hit }) {
+            return alias.code
+        }
+        return hit
     }
 
     /// Every distinct money-looking amount in the text (`1,234.56`), largest
@@ -997,6 +1009,26 @@ extension AppModel {
     /// - friendly rename: the description becomes the friendly payee and the
     ///   raw bank narrative moves to the money-leg memo (only when that memo is
     ///   empty) — the smart categoriser's convention.
+    /// Everything "link this document to that transaction" means, in one model
+    /// call: attach the file, auto-categorise from it (best effort), and — when
+    /// the document's amount differs and its currency is known — restructure
+    /// into the proper multi-currency form. The editor just reloads afterwards.
+    public func adoptDocument(url: URL, foreignAmount: Decimal?,
+                              currencyCode: String?, into transactionID: GncGUID) async {
+        if let data = try? await Task.detached(operation: { try Data(contentsOf: url) }).value {
+            _ = try? attachDocument(named: url.lastPathComponent, data: data, to: transactionID)
+        }
+        if #available(macOS 26.0, iOS 26.0, *),
+           let suggestion = try? await suggestCategoryFromAttachment(for: transactionID) {
+            applyAttachmentSuggestion(suggestion, to: transactionID)
+        }
+        // FX last: categorisation expects the local form.
+        if let foreignAmount, let currencyCode {
+            restructureAsForeign(transactionID: transactionID,
+                                 foreignAmount: foreignAmount, currencyCode: currencyCode)
+        }
+    }
+
     /// Multi-split fully-categorised transactions are refused (edit those in
     /// the inspector, where every leg is visible).
     @discardableResult
