@@ -85,6 +85,11 @@ struct ForeignRestructureTests {
         // Same amount: no mismatch, no restructure.
         #expect(!model.restructureAsForeign(transactionID: txnID,
                                             foreignAmount: 50, currencyCode: "MYR"))
+        // Near-parity difference (a surcharge, not a currency): refused. The
+        // Trip A Deal case — an 87.98 invoice against an ~89.65 charge.
+        #expect(!model.restructureAsForeign(transactionID: txnID,
+                                            foreignAmount: Decimal(string: "49.10")!,
+                                            currencyCode: "USD"))
         let txn = try #require(model.book?.transaction(with: txnID))
         #expect(txn.currency.mnemonic == base)
     }

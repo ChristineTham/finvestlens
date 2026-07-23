@@ -405,7 +405,7 @@ extension AppModel {
             match.transactionID = txn.guid
             match.transactionSummary = transactionSummary(txn)
             match.note = nil
-            match.suggestion = suggestion(for: txn, from: doc)
+            match.suggestion = await suggestion(for: txn, from: doc)
         }
         return results
     }
@@ -434,6 +434,10 @@ extension AppModel {
         var textDates: [Date] = []
         /// A foreign currency the document names, when one is.
         var currencyHint: String?
+        /// The OCR text's head — for the categorisation fallback when the
+        /// invoice pass yielded no per-line categories.
+        var textExcerpt = ""
+
 
         var amount: Decimal? {
             if let dividend, dividend.netPayment > 0 { return dividend.netPayment }
@@ -472,6 +476,7 @@ extension AppModel {
         doc.fallbackAmounts = Self.amountCandidates(in: text)
         doc.textDates = Self.datesInText(text)
         doc.currencyHint = Self.currencyHint(in: text)
+        doc.textExcerpt = String(text.prefix(1600))
         return doc
     }
 
@@ -636,7 +641,7 @@ extension AppModel {
     /// category — with the vendor / ticker as the friendly rename.
     @available(macOS 26.0, iOS 26.0, *)
     private func suggestion(for txn: Transaction,
-                            from doc: ParsedAttachment) -> AttachmentCategorySuggestion? {
+                            from doc: ParsedAttachment) async -> AttachmentCategorySuggestion? {
         if let details = doc.dividend, let lines = dividendSplitLines(for: txn, details: details) {
             let ticker = details.ticker.trimmingCharacters(in: .whitespaces).uppercased()
             let friendly = ticker.isEmpty ? nil : "\(ticker) dividend"
@@ -647,13 +652,19 @@ extension AppModel {
                 currencyCode: txn.currency.mnemonic,
                 lines: lines)
         }
-        guard let book, let invoice = doc.invoice else { return nil }
+        guard let book else { return nil }
         // The dominant per-line category anchors both the single suggestion and
-        // any lines the model couldn't place.
-        let counted = Dictionary(grouping: invoice.lineItems.compactMap(\.suggestedCategoryID),
+        // any lines the model couldn't place. When the invoice pass yielded no
+        // per-line categories at all — or no invoice parsed (fallback-amount
+        // matches) — fall back to the single-call insight over the OCR text, so
+        // a matched file is categorised rather than merely attached.
+        let counted = Dictionary(grouping: (doc.invoice?.lineItems ?? []).compactMap(\.suggestedCategoryID),
                                  by: { $0 }).mapValues(\.count)
-        guard let dominant = counted.max(by: { $0.value < $1.value })?.key,
-              let account = book.account(with: dominant) else { return nil }
+        guard let invoice = doc.invoice,
+              let dominant = counted.max(by: { $0.value < $1.value })?.key,
+              let account = book.account(with: dominant) else {
+            return await insightFallback(for: txn, from: doc)
+        }
         let vendor = invoice.vendor.trimmingCharacters(in: .whitespaces)
         let friendly = (vendor.isEmpty || vendor == txn.transactionDescription) ? nil : vendor
         return AttachmentCategorySuggestion(
@@ -915,6 +926,30 @@ extension AppModel {
         guard let analysis = try? await InvoiceAnalyzer.analyze(
             text: String(text.prefix(4000)), candidates: candidates) else { return nil }
         return invoiceLines(from: analysis, for: txn, fallbackAccountID: fallbackAccountID)
+    }
+
+    /// One model call over the stored OCR excerpt — the categorisation of last
+    /// resort for a matched file whose invoice pass placed nothing.
+    @available(macOS 26.0, iOS 26.0, *)
+    private func insightFallback(for txn: Transaction,
+                                 from doc: ParsedAttachment) async -> AttachmentCategorySuggestion? {
+        guard let book, !doc.textExcerpt.isEmpty, isIntelligenceAvailable else { return nil }
+        let amount = -(txn.splits.first { $0.account?.isImbalanceOrOrphan ?? false }?.value
+                       ?? txn.splits.first?.value ?? 0)
+        guard let insight = try? await AttachmentInsight.analyze(
+            documentText: doc.textExcerpt,
+            currentDescription: txn.transactionDescription,
+            amount: amount,
+            candidates: categoryCandidates()),
+            let account = book.account(with: insight.accountID) else { return nil }
+        let friendly = insight.friendlyDescription
+        return AttachmentCategorySuggestion(
+            accountID: insight.accountID,
+            accountName: account.fullName,
+            friendlyDescription: (friendly.isEmpty || friendly == txn.transactionDescription)
+                ? nil : friendly,
+            currencyCode: txn.currency.mnemonic,
+            lines: nil)
     }
 
     /// Builds the per-item legs from an already-run invoice analysis — pure

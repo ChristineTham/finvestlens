@@ -89,6 +89,13 @@ extension AppModel {
         else { return false }
         let local = txn.splits.map { abs($0.value) }.max() ?? 0
         guard local > 0, local != foreignAmount else { return false }
+        // A near-parity "rate" is a surcharge or fee difference, not a foreign
+        // currency: a card FX margin or booking fee sits within a few percent,
+        // while real currency pairs (even NZD/AUD ≈ 0.92) sit outside this
+        // band. Refusing here keeps a deposit-with-surcharge local.
+        let implied = local / foreignAmount
+        guard implied < Decimal(string: "0.95")! || implied > Decimal(string: "1.05")!
+        else { return false }
 
         let foreign = currencyCommodity(currencyCode)
         let rounded = foreign.round(foreignAmount)
