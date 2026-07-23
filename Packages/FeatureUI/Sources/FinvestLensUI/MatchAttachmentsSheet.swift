@@ -28,6 +28,8 @@ struct MatchAttachmentsSheet: View {
     @State private var matches: [AppModel.AttachmentMatch] = []
     @State private var accepted: Set<UUID> = []
     @State private var appliedSummary: String?
+    /// The unmatched receipt being recorded as a fresh cash purchase.
+    @State private var recordTarget: AppModel.AttachmentMatch?
 
     private var applyCount: Int {
         matches.filter { accepted.contains($0.id) && $0.transactionID != nil }.count
@@ -98,6 +100,22 @@ struct MatchAttachmentsSheet: View {
                         .disabled(applyCount == 0 || processing)
                 }
             }
+            .sheet(item: $recordTarget) { match in
+                RecordCashPurchaseSheet(model: model, match: match) { transactionID in
+                    Task {
+                        let url = match.url
+                        let accessing = url.startAccessingSecurityScopedResource()
+                        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                        let data = try? await Task.detached { try Data(contentsOf: url) }.value
+                        if let data {
+                            _ = try? model.attachDocument(named: match.fileName, data: data,
+                                                          to: transactionID)
+                        }
+                        matches.removeAll { $0.id == match.id }
+                        appliedSummary = "Recorded \(match.fileName) as a cash purchase and attached it."
+                    }
+                }
+            }
             .fileImporter(isPresented: $importerShown,
                           allowedContentTypes: [.pdf, .image],
                           allowsMultipleSelection: true) { result in
@@ -129,6 +147,22 @@ struct MatchAttachmentsSheet: View {
                     Text(match.fileName).fontWeight(.medium)
                         .lineLimit(1).truncationMode(.middle)
                         .textSelection(.enabled)
+                    Button {
+                        GeneralPasteboard.copy(details(of: match))
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .controlSize(.small)
+                    .help("Copy this row’s details")
+                    if !matched, !match.candidateAmounts.isEmpty {
+                        Button("Record as Cash…", systemImage: "banknote") {
+                            recordTarget = match
+                        }
+                        .controlSize(.small)
+                        .help("The receipt matches no card/bank transaction — record it as a fresh cash purchase and attach the file")
+                    }
                 }
                 if matched {
                     Text(match.transactionSummary)
@@ -171,9 +205,10 @@ struct MatchAttachmentsSheet: View {
                         .textSelection(.enabled)
                 }
             }
-            .contextMenu {
-                Button("Copy Details") { GeneralPasteboard.copy(details(of: match)) }
-            }
+        }
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("Copy Details") { GeneralPasteboard.copy(details(of: match)) }
         }
     }
 
@@ -241,5 +276,111 @@ struct MatchAttachmentsSheet: View {
             matches.removeAll { accepted.contains($0.id) && $0.transactionID != nil }
             accepted.removeAll()
         }
+    }
+}
+
+
+/// Records an unmatched receipt as a fresh two-leg purchase — cash accounts
+/// don't appear on statements, so a cash receipt never has a transaction to
+/// match. Prefilled from the document (vendor, date, amounts read); the file
+/// is attached to the new transaction on save.
+struct RecordCashPurchaseSheet: View {
+    @Bindable var model: AppModel
+    let match: AppModel.AttachmentMatch
+    let onRecorded: (GncGUID) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var descriptionText = ""
+    @State private var date = Date()
+    @State private var amountText = ""
+    @State private var payFromID: GncGUID?
+    @State private var categoryID: GncGUID?
+
+    private var cashAccounts: [AccountNode] {
+        let cash = model.postableAccounts.filter { $0.typeName == "Cash" }
+        return cash.isEmpty ? model.postableAccounts.filter { $0.typeName == "Bank" } : cash
+    }
+
+    private var amount: Decimal? { EditableSplit.strictDecimal(
+        amountText.trimmingCharacters(in: .whitespaces)) }
+
+    private var canRecord: Bool {
+        payFromID != nil && categoryID != nil && (amount ?? 0) > 0
+            && !descriptionText.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Description", text: $descriptionText)
+                DatePicker("Date", selection: $date, displayedComponents: .date)
+                HStack {
+                    TextField("Amount", text: $amountText)
+                        .multilineTextAlignment(.trailing)
+                    if match.candidateAmounts.count > 1 {
+                        Menu {
+                            ForEach(match.candidateAmounts, id: \.self) { candidate in
+                                Button("\(candidate)") { amountText = "\(candidate)" }
+                            }
+                        } label: {
+                            Image(systemName: "chevron.up.chevron.down")
+                        }
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help("Amounts read from the receipt")
+                    }
+                }
+                Picker("Pay from", selection: $payFromID) {
+                    Text("Choose…").tag(GncGUID?.none)
+                    ForEach(cashAccounts) { node in
+                        Text(node.fullName).tag(GncGUID?.some(node.id))
+                    }
+                }
+                Picker("Category", selection: $categoryID) {
+                    Text("Choose…").tag(GncGUID?.none)
+                    ForEach(model.postableAccounts) { node in
+                        Text(node.fullName).tag(GncGUID?.some(node.id))
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("Record Cash Purchase")
+            .onEscapeCommand { dismiss() }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Record & Attach") {
+                        guard let payFromID, let categoryID, let amount else { return }
+                        if let id = model.quickEnter(
+                            into: payFromID, transferFrom: categoryID,
+                            amount: -amount, date: date,
+                            description: descriptionText.trimmingCharacters(in: .whitespaces)) {
+                            onRecorded(id)
+                        }
+                        dismiss()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canRecord)
+                }
+            }
+            .onAppear {
+                descriptionText = match.vendor?.trimmingCharacters(in: .whitespaces)
+                    ?? Self.cleanName(match.fileName)
+                date = match.documentDate ?? Date()
+                if let first = match.candidateAmounts.first { amountText = "\(first)" }
+            }
+        }
+        .frame(minWidth: 420, minHeight: 320)
+    }
+
+    /// "2026-03-06 Spago.png" → "Spago".
+    private static func cleanName(_ fileName: String) -> String {
+        var name = (fileName as NSString).deletingPathExtension
+        if let range = name.range(of: #"^\d{4}-\d{2}-\d{2}\s*"#, options: .regularExpression) {
+            name.removeSubrange(range)
+        }
+        return name.trimmingCharacters(in: .whitespaces)
     }
 }

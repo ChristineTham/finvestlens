@@ -248,6 +248,11 @@ extension AppModel {
         public var suggestion: AttachmentCategorySuggestion?
         /// Why there is nothing to apply, when there isn't.
         public var note: String?
+        /// What the document itself said — for recording an unmatched receipt
+        /// as a fresh (e.g. cash) transaction.
+        public var documentDate: Date?
+        public var candidateAmounts: [Decimal] = []
+        public var vendor: String?
     }
 
     /// Matches a batch of picked files to transactions: each file is OCR'd, its
@@ -297,11 +302,25 @@ extension AppModel {
         // Transactions matched earlier in this batch: two files must not claim
         // the same one (links only land on Apply, so the book can't tell).
         var claimed = Set<GncGUID>()
+        // Files already attached in earlier runs, by resolved file name.
+        var attachedByName: [String: Transaction] = [:]
+        for txn in book?.transactions ?? [] {
+            guard let link = txn.documentLink else { continue }
+            let name = ((link.removingPercentEncoding ?? link) as NSString).lastPathComponent
+            attachedByName[name.lowercased()] = txn
+        }
         for (index, url) in urls.enumerated() {
             if Task.isCancelled { break }
             var match = AttachmentMatch(url: url)
             defer { results.append(match) }
             guard let doc = parsed[index] else { match.note = "Cancelled."; continue }
+            match.documentDate = doc.date ?? doc.fallbackDate
+            match.candidateAmounts = (doc.amount.map { [$0] } ?? []) + doc.fallbackAmounts
+            match.vendor = doc.invoice?.vendor
+            if let already = attachedByName[url.lastPathComponent.lowercased()] {
+                match.note = "This file is already attached to \(transactionSummary(already))."
+                continue
+            }
             if let note = doc.note { match.note = note; continue }
 
             // Extracted dates are the weak link (OCR garbling, day/month
@@ -316,20 +335,14 @@ extension AppModel {
                    let hit = findTransaction(amount: amount, near: swapped, excluding: claimed) {
                     return hit
                 }
-                return findSoleTransaction(amount: amount, excluding: claimed)
+                return findSoleTransaction(amount: amount, near: date, excluding: claimed)
             }
             // When a fit exists but already has an attachment, say which — far
-            // more useful than a generic "no match". Date-free too: the point
+            // more useful than a generic "no match". Date-tolerant: the point
             // is diagnosis, and the amount narrows it enough.
             func linkedNote(amount: Decimal, near date: Date?) -> String? {
-                for candidate in [date, date.flatMap(Self.swappedDayMonth), nil] {
-                    if let linked = findTransaction(amount: amount, near: candidate,
-                                                    excluding: claimed, includeLinked: true),
-                       linked.documentLink != nil {
-                        return "Matches \(transactionSummary(linked)) — but that transaction already has an attachment."
-                    }
-                }
-                return nil
+                guard let linked = linkedCandidate(amount: amount, near: date) else { return nil }
+                return "Matches \(transactionSummary(linked)) — but that transaction already has an attachment."
             }
 
             var matched: Transaction?
@@ -487,14 +500,19 @@ extension AppModel {
     }
 
     /// The transaction an amount identifies on its own: exactly one candidate
-    /// in the whole book (linked ones count as candidates — if a linked twin
-    /// exists the amount is ambiguous and no date-free match is safe).
-    private func findSoleTransaction(amount: Decimal,
+    /// within a sane recency window (±180 days of the document date, else ±365
+    /// days of today — a receipt never belongs to a decades-old posting), and
+    /// no linked twin inside it (that would make the amount ambiguous). Tiny
+    /// amounts (< 2) are refused outright: they are line items, not totals.
+    private func findSoleTransaction(amount: Decimal, near date: Date?,
                                      excluding claimed: Set<GncGUID>) -> Transaction? {
-        guard let book else { return nil }
+        guard let book, amount >= 2 else { return nil }
+        let reference = date ?? Date()
+        let window: TimeInterval = (date != nil ? 180 : 365) * 86_400
         var sole: Transaction?
         for txn in book.transactions {
             guard !claimed.contains(txn.guid) else { continue }
+            guard abs(txn.datePosted.timeIntervalSince(reference)) <= window else { continue }
             guard txn.splits.contains(where: { Self.isMoneyLeg($0) && abs($0.value) == amount })
             else { continue }
             guard txn.documentLink == nil else { return nil }   // linked twin → ambiguous
@@ -502,6 +520,23 @@ extension AppModel {
             sole = txn
         }
         return sole
+    }
+
+    /// The already-linked transaction an amount most plausibly refers to: the
+    /// one closest to the document date (else closest to now), within a year.
+    private func linkedCandidate(amount: Decimal, near date: Date?) -> Transaction? {
+        guard let book else { return nil }
+        let reference = date ?? Date()
+        var best: (txn: Transaction, distance: TimeInterval)?
+        for txn in book.transactions {
+            guard txn.documentLink != nil else { continue }
+            guard txn.splits.contains(where: { Self.isMoneyLeg($0) && abs($0.value) == amount })
+            else { continue }
+            let distance = abs(txn.datePosted.timeIntervalSince(reference))
+            if best == nil || distance < best!.distance { best = (txn, distance) }
+        }
+        guard let best, best.distance <= 365 * 86_400 else { return nil }
+        return best.txn
     }
 
     /// The suggestion for a matched file, built from its one parse — dividend
