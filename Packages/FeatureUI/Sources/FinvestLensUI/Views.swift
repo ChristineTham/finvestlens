@@ -2921,6 +2921,10 @@ struct TransactionEditorSheet: View {
     @State private var fxRateText = ""
     @State private var fxLocalText = ""
     @State private var fxFetching = false
+    /// A transaction currency differing from the accounts' (an FX purchase):
+    /// split `value`s are in this currency, `quantity` moves each account in
+    /// its own. Set by the converter's Apply, or by loading such a transaction.
+    @State private var fxCurrencyOverride: Commodity?
     @Environment(\.appFontScale) private var appFontScale
     private var amountWidth: CGFloat { 100 * appFontScale }
 
@@ -2949,9 +2953,10 @@ struct TransactionEditorSheet: View {
     }
 
     private var imbalance: Decimal { lines.reduce(Decimal(0)) { $0 + $1.amount } }
-    /// Currency of the transaction being built (first cash account's, else base).
+    /// Currency of the transaction being built: an FX override (the foreign
+    /// currency of a converted purchase), else the first cash account's.
     private var displayCurrency: Commodity {
-        model.transactionCurrency(for: lines.compactMap(\.accountID))
+        fxCurrencyOverride ?? model.transactionCurrency(for: lines.compactMap(\.accountID))
     }
     private var validLineCount: Int { lines.filter { $0.accountID != nil }.count }
     private var isBalanced: Bool {
@@ -3361,17 +3366,27 @@ struct TransactionEditorSheet: View {
         }
     }
 
+    /// Applies the conversion **structurally** (GnuCash's multi-currency form,
+    /// not a memo): the transaction is denominated in the foreign currency —
+    /// split `value`s carry ±1,773.84 MYR and balance the transaction — while
+    /// each split's `quantity` carries ±600 AUD, which is what moves the
+    /// account. The rate is thereby embedded as value/quantity, auditable and
+    /// GnuCash-round-trippable; it is also recorded in the price DB.
     private func applyFx() {
-        guard let fxLocal, fxLocal != 0, let fxAmount else { return }
+        guard let fxLocal, fxLocal != 0, let fxAmount, fxAmount != 0 else { return }
+        let foreign = model.currencyCommodity(fxCode)
+        let foreignText = NSDecimalNumber(decimal: foreign.round(fxAmount)).stringValue
         let localText = NSDecimalNumber(decimal: fxLocal).stringValue
-        let memo = "\(NSDecimalNumber(decimal: fxAmount).stringValue) \(fxCode) @ \(fxRateText) \(displayCurrency.mnemonic)/\(fxCode)"
-        // Fill the classic two-leg shape: money out of the first leg, the
-        // category leg carries the foreign note.
         if lines.count < 2 { lines = [EditableSplit(), EditableSplit()] }
-        lines[0].amountText = "-" + localText
-        lines[1].amountText = localText
-        if lines[1].memo.isEmpty { lines[1].memo = memo }
-        // The implied/entered rate is real data — teach the price DB.
+        fxCurrencyOverride = foreign
+        // Money out of the first leg, into the category leg — values in the
+        // foreign currency, quantities in the accounts' own (the local amount).
+        lines[0].amountText = "-" + foreignText
+        lines[0].quantityText = "-" + localText
+        lines[1].amountText = foreignText
+        lines[1].quantityText = localText
+        // The implied/entered rate is real data — teach the price DB. Stored as
+        // local-per-foreign (the price of one MYR in AUD).
         if let fxRate { model.recordFxRate(code: fxCode, rate: fxRate, date: date) }
         fxShown = false
     }
@@ -3385,6 +3400,10 @@ struct TransactionEditorSheet: View {
             notes = edit.notes
             lines = edit.splits.map { EditableSplit($0) }
             tagsText = edit.tags.joined(separator: ", ")
+            // An FX transaction's currency is its own fact — re-deriving it
+            // from the accounts would re-save the values in the wrong unit.
+            let derived = model.transactionCurrency(for: edit.splits.compactMap(\.accountID))
+            if edit.currency != derived { fxCurrencyOverride = edit.currency }
         } else if let prefill = documentPrefill {
             if let d = prefill.date { date = d }
             if let desc = prefill.description, !desc.isEmpty { description = desc }
@@ -3418,7 +3437,7 @@ struct TransactionEditorSheet: View {
         let inputs = lines
             .filter { $0.accountID != nil }
             .map(\.asInput)
-        let currency = model.transactionCurrency(for: inputs.compactMap(\.accountID))
+        let currency = displayCurrency
         do {
             let targetID = linkingToID ?? editingID
             if let targetID {
