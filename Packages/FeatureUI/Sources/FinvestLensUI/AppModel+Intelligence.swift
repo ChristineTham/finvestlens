@@ -188,6 +188,56 @@ extension AppModel {
         return applied
     }
 
+    // MARK: Categorise from attachment
+
+    /// Reads the transaction's linked attachment (PDF or image — OCR as
+    /// needed) and asks the on-device model for the best category from the
+    /// book's chart of accounts. Returns `nil` when the model has no confident
+    /// answer.
+    public func suggestCategoryFromAttachment(
+        for transactionID: GncGUID
+    ) async throws -> (accountID: GncGUID, accountName: String)? {
+        try requireIntelligence()
+        guard #available(macOS 26.0, iOS 26.0, *) else {
+            throw IntelligenceError.unavailable("Apple Intelligence requires macOS 26 or iOS 26.")
+        }
+        guard let book, let txn = book.transaction(with: transactionID) else { return nil }
+        guard let url = linkedDocumentURL(for: transactionID),
+              FileManager.default.fileExists(atPath: url.path) else {
+            throw IntelligenceError.unavailable("The transaction has no readable attachment.")
+        }
+        let text = try await Task.detached { try await DocumentText.extractText(from: url) }.value
+        // The uncategorised leg gives the model the amount's sign; else any leg.
+        let imbalance = txn.splits.first { $0.account?.isImbalanceOrOrphan ?? false }
+        let amount = -(imbalance?.value ?? txn.splits.first?.value ?? 0)
+        let item = CategorizationItem(payee: txn.transactionDescription,
+                                      memo: String(text.prefix(1200)),
+                                      amount: amount)
+        let suggested = try await TransactionCategorizer.suggest(items: [item],
+                                                                 candidates: categoryCandidates())
+        guard let accountID = suggested[item.id],
+              let account = book.account(with: accountID) else { return nil }
+        return (accountID, account.fullName)
+    }
+
+    /// Applies an attachment-derived category: moves the uncategorised leg when
+    /// there is one, else re-targets the counter leg of a simple two-leg
+    /// transaction (the same rule as inline transfer editing).
+    @discardableResult
+    public func applyAttachmentCategory(_ accountID: GncGUID, to transactionID: GncGUID) -> Bool {
+        guard let book, let txn = book.transaction(with: transactionID) else { return false }
+        if let imbalance = txn.splits.first(where: { $0.account?.isImbalanceOrOrphan ?? false }) {
+            return applyCategoryAssignments([imbalance.guid: accountID]) > 0
+        }
+        guard txn.splits.count == 2 else { return false }
+        let moneyTypes: Set<AccountType> = [.bank, .cash, .credit, .asset, .liability,
+                                            .receivable, .payable]
+        guard let money = txn.splits.first(where: { split in
+            split.account.map { moneyTypes.contains($0.type) } ?? false
+        }) else { return false }
+        return inlineSetTransfer(splitID: money.guid, to: accountID)
+    }
+
     // MARK: FR-AI-03 — Invoice splitting
 
     /// Analyses an invoice PDF into line items with expense-account

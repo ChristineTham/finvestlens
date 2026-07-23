@@ -69,6 +69,9 @@ struct AttachmentsPanel: View {
     @State private var webLinkText = ""
     /// Full-window Quick Look (the expand button) — non-nil presents it.
     @State private var previewURL: URL?
+    @State private var categorising = false
+    @State private var categorySuggestion: (id: GncGUID, name: String)?
+    @State private var categoriseError: String?
 
     /// The single selected transaction, if the selection is exactly one.
     private var transactionID: GncGUID? {
@@ -83,6 +86,7 @@ struct AttachmentsPanel: View {
             if let transactionID {
                 if let link = model.documentLink(for: transactionID) {
                     linkContent(transactionID: transactionID, link: link)
+                    categoriseControls(transactionID: transactionID, link: link)
                 } else {
                     Text("No attachment on this transaction.")
                         .scaledFont(.callout)
@@ -104,6 +108,73 @@ struct AttachmentsPanel: View {
         .padding(12)
         .frame(width: 290, alignment: .topLeading)
         .quickLookPreview($previewURL)
+        .onChange(of: transactionID) {
+            categorySuggestion = nil
+            categoriseError = nil
+        }
+    }
+
+    // MARK: Categorise from attachment (OCR + on-device model)
+
+    @ViewBuilder
+    private func categoriseControls(transactionID: GncGUID, link: String) -> some View {
+        let isWeb = link.hasPrefix("http://") || link.hasPrefix("https://")
+        let readable = !isWeb && (model.linkedDocumentURL(for: transactionID)
+            .map { FileManager.default.fileExists(atPath: $0.path) } ?? false)
+
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                runCategorise(transactionID)
+            } label: {
+                if categorising {
+                    HStack { ProgressView().controlSize(.small); Text("Reading…") }
+                } else {
+                    Label("Categorise from Attachment", systemImage: "sparkles")
+                }
+            }
+            .disabled(!readable || categorising || !model.isIntelligenceAvailable)
+            .help(model.intelligenceUnavailableReason
+                  ?? "Read the attachment (OCR) and suggest a category for this transaction")
+            if let suggestion = categorySuggestion {
+                HStack(spacing: 6) {
+                    Label(suggestion.name, systemImage: "arrow.right.circle")
+                        .scaledFont(.callout)
+                        .lineLimit(2)
+                    Spacer()
+                    Button("Apply") {
+                        if model.applyAttachmentCategory(suggestion.id, to: transactionID) {
+                            categorySuggestion = nil
+                        } else {
+                            categoriseError = "Couldn’t apply — edit the splits in the inspector (⌘E)."
+                        }
+                    }
+                    .controlSize(.small)
+                }
+            }
+            if let categoriseError {
+                Text(categoriseError)
+                    .scaledFont(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    private func runCategorise(_ transactionID: GncGUID) {
+        categorising = true
+        categoriseError = nil
+        categorySuggestion = nil
+        Task {
+            defer { categorising = false }
+            do {
+                if let result = try await model.suggestCategoryFromAttachment(for: transactionID) {
+                    categorySuggestion = (id: result.accountID, name: result.accountName)
+                } else {
+                    categoriseError = "No confident suggestion from the attachment."
+                }
+            } catch {
+                categoriseError = error.localizedDescription
+            }
+        }
     }
 
     // MARK: Link display

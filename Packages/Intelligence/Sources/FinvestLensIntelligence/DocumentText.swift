@@ -7,6 +7,9 @@
 //
 
 import Foundation
+#if canImport(ImageIO)
+import ImageIO
+#endif
 #if canImport(PDFKit)
 import PDFKit
 #endif
@@ -33,24 +36,27 @@ public enum DocumentText {
 
     public static func extractPages(from url: URL) async throws -> [Page] {
         #if canImport(PDFKit)
-        guard let document = PDFDocument(url: url) else {
-            throw IntelligenceError.emptyDocument
+        if let document = PDFDocument(url: url) {
+            return try await extractPages(from: document)
         }
-        return try await extractPages(from: document)
-        #else
-        throw IntelligenceError.unavailable("PDF reading is not supported on this platform.")
         #endif
+        // Not a PDF — attachments are often PNG/JPEG scans; try it as an image.
+        return try await extractPages(from: Data(contentsOf: url))
     }
 
     public static func extractPages(from data: Data) async throws -> [Page] {
         #if canImport(PDFKit)
-        guard let document = PDFDocument(data: data) else {
-            throw IntelligenceError.emptyDocument
+        if let document = PDFDocument(data: data) {
+            return try await extractPages(from: document)
         }
-        return try await extractPages(from: document)
-        #else
-        throw IntelligenceError.unavailable("PDF reading is not supported on this platform.")
         #endif
+        #if canImport(Vision)
+        if let image = cgImage(from: data),
+           let text = try await recognize(image: image), !text.isEmpty {
+            return [Page(number: 1, text: text)]
+        }
+        #endif
+        throw IntelligenceError.emptyDocument
     }
 
     #if canImport(PDFKit)
@@ -188,10 +194,16 @@ public enum DocumentText {
         page.draw(with: .mediaBox, to: context)
         guard let image = context.makeImage() else { return nil }
 
-        // Prefer the structured document reader (Vision 26): it groups a
-        // statement grid into tables, so rows/columns survive as tab-separated
-        // text instead of collapsing into loose lines. Fall back to plain text
-        // recognition when it finds no structure.
+        return try await recognize(image: image)
+    }
+    #endif
+
+    #if canImport(Vision)
+    /// Recognises text in any image: the structured document reader first
+    /// (Vision 26 — it groups a statement grid into tables, so rows/columns
+    /// survive as tab-separated text), plain text recognition as fallback.
+    /// Shared by the PDF scanned-page path and direct image attachments.
+    private static func recognize(image: CGImage) async throws -> String? {
         if let structured = try? await recognizeDocument(image), !structured.isEmpty {
             return structured
         }
@@ -201,6 +213,12 @@ public enum DocumentText {
         let observations = try await request.perform(on: image)
         let lines = observations.compactMap { $0.topCandidates(1).first?.string }
         return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    /// Decodes image data (PNG/JPEG/HEIC…) to a `CGImage` for recognition.
+    private static func cgImage(from data: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 
     /// Reads a rendered page as a structured document, reconstructing detected
