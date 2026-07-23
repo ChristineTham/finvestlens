@@ -198,6 +198,41 @@ extension AppModel {
         public let accountID: GncGUID
         public let accountName: String
         public let friendlyDescription: String?
+        public let currencyCode: String
+        /// Invoice line items (two or more) to split across instead of the
+        /// single category — one leg per item, already scaled so they sum to
+        /// exactly what the replaced leg must carry.
+        public let lines: [SplitLine]?
+
+        public struct SplitLine: Sendable, Identifiable {
+            public let id = UUID()
+            public let accountID: GncGUID
+            public let accountName: String
+            public let memo: String
+            public let value: Decimal
+        }
+    }
+
+    /// The leg an attachment suggestion may replace: the uncategorised one, or
+    /// the counter leg of a simple two-leg transaction. `nil` for multi-split
+    /// fully-categorised transactions (inspector territory).
+    private func attachmentTargetSplit(in txn: Transaction) -> Split? {
+        if let imbalance = txn.splits.first(where: { $0.account?.isImbalanceOrOrphan ?? false }) {
+            return imbalance
+        }
+        guard txn.splits.count == 2,
+              txn.splits.allSatisfy({ $0.account?.commodity == txn.currency }),
+              let money = txn.splits.first(where: { Self.isMoneyLeg($0) })
+        else { return nil }
+        return txn.splits.first { $0 !== money }
+    }
+
+    private static let attachmentMoneyTypes: Set<AccountType> = [
+        .bank, .cash, .credit, .asset, .liability, .receivable, .payable,
+    ]
+
+    private static func isMoneyLeg(_ split: Split) -> Bool {
+        split.account.map { attachmentMoneyTypes.contains($0.type) && !$0.isImbalanceOrOrphan } ?? false
     }
 
     /// Reads the transaction's linked attachment (PDF or image — OCR as
@@ -221,11 +256,12 @@ extension AppModel {
         // The uncategorised leg gives the model the amount's sign; else any leg.
         let imbalance = txn.splits.first { $0.account?.isImbalanceOrOrphan ?? false }
         let amount = -(imbalance?.value ?? txn.splits.first?.value ?? 0)
+        let candidates = categoryCandidates()
         guard let insight = try await AttachmentInsight.analyze(
             documentText: String(text.prefix(1600)),
             currentDescription: txn.transactionDescription,
             amount: amount,
-            candidates: categoryCandidates())
+            candidates: candidates)
         else { return nil }
         guard let account = book.account(with: insight.accountID) else { return nil }
         let friendly = insight.friendlyDescription
@@ -233,7 +269,65 @@ extension AppModel {
             accountID: insight.accountID,
             accountName: account.fullName,
             friendlyDescription: (friendly.isEmpty || friendly == txn.transactionDescription)
-                ? nil : friendly)
+                ? nil : friendly,
+            currencyCode: txn.currency.mnemonic,
+            lines: await invoiceSplitLines(for: txn, text: text,
+                                           fallbackAccountID: insight.accountID,
+                                           candidates: candidates))
+    }
+
+    /// When the document is an invoice with several line items, the per-item
+    /// legs that should replace the single category: each item's amount scaled
+    /// so the legs sum to exactly what the replaced leg must carry (an invoice
+    /// often quotes GST or shipping apart from its lines), with the rounding
+    /// residual absorbed by the largest. `nil` when the document doesn't read
+    /// as a multi-item invoice, the amounts are nowhere near the charge, or
+    /// the transaction has no replaceable leg.
+    @available(macOS 26.0, iOS 26.0, *)
+    private func invoiceSplitLines(
+        for txn: Transaction, text: String,
+        fallbackAccountID: GncGUID,
+        candidates: [CategoryCandidate]
+    ) async -> [AttachmentCategorySuggestion.SplitLine]? {
+        guard let book, let target = attachmentTargetSplit(in: txn) else { return nil }
+        guard let analysis = try? await InvoiceAnalyzer.analyze(
+            text: String(text.prefix(4000)), candidates: candidates),
+            analysis.lineItems.count >= 2 else { return nil }
+
+        let magnitudes = analysis.lineItems.map { max($0.amount, 0) }
+        let total = magnitudes.reduce(Decimal(0), +)
+        let targetValue = target.value
+        guard total > 0, targetValue != 0 else { return nil }
+        // The lines must be in the same ballpark as the charge — a factor-of-two
+        // mismatch means the OCR missed half the invoice, and splitting by it
+        // would fabricate numbers.
+        let ratio = abs((targetValue as NSDecimalNumber).doubleValue)
+            / (total as NSDecimalNumber).doubleValue
+        guard ratio > 0.66, ratio < 1.5 else { return nil }
+
+        let currency = txn.currency
+        let scale = targetValue / total
+        var lines: [AttachmentCategorySuggestion.SplitLine] = []
+        for (item, magnitude) in zip(analysis.lineItems, magnitudes) where magnitude > 0 {
+            let accountID = item.suggestedCategoryID ?? fallbackAccountID
+            guard let account = book.account(with: accountID),
+                  account.commodity == currency else { return nil }
+            lines.append(AttachmentCategorySuggestion.SplitLine(
+                accountID: accountID, accountName: account.fullName,
+                memo: item.itemDescription,
+                value: currency.round(magnitude * scale)))
+        }
+        guard lines.count >= 2 else { return nil }
+        // Exact balance: the legs must sum to precisely the replaced leg's value.
+        let residual = targetValue - lines.reduce(Decimal(0)) { $0 + $1.value }
+        if residual != 0,
+           let biggest = lines.indices.max(by: { abs(lines[$0].value) < abs(lines[$1].value) }) {
+            let line = lines[biggest]
+            lines[biggest] = AttachmentCategorySuggestion.SplitLine(
+                accountID: line.accountID, accountName: line.accountName,
+                memo: line.memo, value: line.value + residual)
+        }
+        return lines
     }
 
     /// Attachment-driven suggestions for uncategorised items — the opt-in
@@ -289,40 +383,41 @@ extension AppModel {
                                           to transactionID: GncGUID) -> Bool {
         guard let book, let txn = book.transaction(with: transactionID),
               let account = book.account(with: suggestion.accountID),
-              account.commodity == txn.currency else { return false }
-        let moneyTypes: Set<AccountType> = [.bank, .cash, .credit, .asset, .liability,
-                                            .receivable, .payable]
-        func isMoney(_ split: Split) -> Bool {
-            split.account.map { moneyTypes.contains($0.type) && !$0.isImbalanceOrOrphan } ?? false
-        }
+              account.commodity == txn.currency,
+              let target = attachmentTargetSplit(in: txn) else { return false }
 
-        // The leg to re-target: the uncategorised one, else the counter leg of
-        // a simple two-leg transaction.
-        let target: Split?
-        if let imbalance = txn.splits.first(where: { $0.account?.isImbalanceOrOrphan ?? false }) {
-            target = imbalance
-        } else if txn.splits.count == 2,
-                  txn.splits.allSatisfy({ $0.account?.commodity == txn.currency }),
-                  let money = txn.splits.first(where: isMoney) {
-            target = txn.splits.first { $0 !== money }
-        } else {
-            target = nil
+        // An invoice split only applies when its legs still sum to exactly what
+        // the replaced leg carries — if the transaction changed since the
+        // suggestion was made, refuse rather than unbalance.
+        let lines = suggestion.lines
+        if let lines {
+            guard lines.reduce(Decimal(0), { $0 + $1.value }) == target.value,
+                  lines.allSatisfy({ book.account(with: $0.accountID)?.commodity == txn.currency })
+            else { return false }
         }
-        guard let target else { return false }
 
         editing([transactionID], named: "Categorise from Attachment") {
             if let friendly = suggestion.friendlyDescription?.trimmingCharacters(in: .whitespaces),
                !friendly.isEmpty, friendly != txn.transactionDescription {
                 let narrative = txn.transactionDescription
-                for split in txn.splits where isMoney(split) && split !== target {
+                for split in txn.splits where Self.isMoneyLeg(split) && split !== target {
                     if split.memo.trimmingCharacters(in: .whitespaces).isEmpty {
                         split.memo = narrative
                     }
                 }
                 txn.transactionDescription = friendly
             }
-            target.account = account
-            target.quantity = target.value   // same-currency by the guard above
+            if let lines {
+                // One leg per invoice item, replacing the single target leg.
+                txn.removeSplit(target)
+                for line in lines {
+                    guard let lineAccount = book.account(with: line.accountID) else { continue }
+                    txn.addSplit(account: lineAccount, value: line.value, memo: line.memo)
+                }
+            } else {
+                target.account = account
+                target.quantity = target.value   // same-currency by the guard above
+            }
         }
         return true
     }

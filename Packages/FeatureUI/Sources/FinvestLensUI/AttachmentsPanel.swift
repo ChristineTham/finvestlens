@@ -156,6 +156,23 @@ struct AttachmentsPanel: View {
                             .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    // A multi-item invoice: one leg per line item.
+                    if let lines = suggestion.lines {
+                        ForEach(lines) { line in
+                            HStack(spacing: 4) {
+                                Text("→ \(line.accountName)")
+                                    .scaledFont(.caption)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .help(line.memo)
+                                Spacer()
+                                Text(AmountFormat.string(line.value, code: suggestion.currencyCode))
+                                    .scaledFont(.caption)
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 }
             }
             if let categoriseError {
