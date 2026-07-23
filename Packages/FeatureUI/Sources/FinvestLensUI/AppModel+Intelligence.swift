@@ -220,6 +220,45 @@ extension AppModel {
         return (accountID, account.fullName)
     }
 
+    /// Attachment-driven suggestions for uncategorised items — the opt-in
+    /// "Read Attachments" pass in Auto-Categorise. Each item whose transaction
+    /// carries a readable linked document is OCR'd, and the text handed to the
+    /// on-device model as context beside the description and amount. Keyed by
+    /// item ID; items without attachments or a confident answer are absent.
+    public func suggestCategoriesFromAttachments(
+        _ items: [UncategorizedItem],
+        onProgress: (@MainActor (Int, Int) -> Void)? = nil
+    ) async throws -> [UUID: GncGUID] {
+        try requireIntelligence()
+        guard #available(macOS 26.0, iOS 26.0, *) else { return [:] }
+        let withDocs = items.filter { item in
+            guard let url = linkedDocumentURL(for: item.transactionID) else { return false }
+            return FileManager.default.fileExists(atPath: url.path)
+        }
+        guard !withDocs.isEmpty else { return [:] }
+
+        var categorizables: [CategorizationItem] = []
+        for (index, item) in withDocs.enumerated() {
+            onProgress?(index, withDocs.count)
+            guard let url = linkedDocumentURL(for: item.transactionID) else { continue }
+            let text: String
+            do {
+                text = try await Task.detached { try await DocumentText.extractText(from: url) }.value
+            } catch {
+                continue   // unreadable attachment — the item just isn't suggested
+            }
+            categorizables.append(CategorizationItem(
+                id: item.id,
+                payee: item.transactionDescription,
+                memo: String(text.prefix(1200)),
+                amount: -item.amount))
+        }
+        onProgress?(withDocs.count, withDocs.count)
+        guard !categorizables.isEmpty else { return [:] }
+        return try await TransactionCategorizer.suggest(items: categorizables,
+                                                        candidates: categoryCandidates())
+    }
+
     /// Applies an attachment-derived category: moves the uncategorised leg when
     /// there is one, else re-targets the counter leg of a simple two-leg
     /// transaction (the same rule as inline transfer editing).

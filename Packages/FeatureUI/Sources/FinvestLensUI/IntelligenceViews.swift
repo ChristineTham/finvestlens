@@ -32,6 +32,8 @@ struct AutoCategorizeSheet: View {
     @State private var loaded = false
     @State private var suggesting = false
     @State private var progress: (done: Int, total: Int)?
+    @State private var readingAttachments = false
+    @State private var attachmentProgress: (done: Int, total: Int)?
     @State private var errorMessage: String?
 
     /// Uncategorised splits with no smart-match plan — the ones needing a manual
@@ -90,6 +92,20 @@ struct AutoCategorizeSheet: View {
                                 .disabled(suggesting || !model.isIntelligenceAvailable)
                                 .help(model.intelligenceUnavailableReason
                                       ?? "Let Apple Intelligence propose a category for each transaction")
+                                let attachmentCount = pickerItems
+                                    .filter { model.hasLinkedDocument($0.transactionID) }.count
+                                if attachmentCount > 0 {
+                                    Button {
+                                        suggestFromAttachments()
+                                    } label: {
+                                        Label(readingAttachments ? readingLabel
+                                              : "Read Attachments (\(attachmentCount))",
+                                              systemImage: "doc.text.viewfinder")
+                                    }
+                                    .disabled(readingAttachments || suggesting
+                                              || !model.isIntelligenceAvailable)
+                                    .help("OCR each item’s linked attachment and use its text to suggest the category")
+                                }
                                 if let errorMessage {
                                     Text(errorMessage).scaledFont(.caption).foregroundStyle(.red)
                                 }
@@ -181,6 +197,37 @@ struct AutoCategorizeSheet: View {
         return "Suggesting…"
     }
 
+    private var readingLabel: String {
+        if let attachmentProgress {
+            return "Reading… (\(attachmentProgress.done)/\(attachmentProgress.total))"
+        }
+        return "Reading…"
+    }
+
+    /// The opt-in attachment pass: OCR each unplaced item's linked document and
+    /// let the model suggest with the text as context. Fills only empty
+    /// assignments, like the plain Suggest.
+    private func suggestFromAttachments() {
+        readingAttachments = true
+        errorMessage = nil
+        let pending = pickerItems.filter { model.hasLinkedDocument($0.transactionID) }
+        Task {
+            defer { readingAttachments = false; attachmentProgress = nil }
+            do {
+                let suggested = try await model.suggestCategoriesFromAttachments(pending) { done, total in
+                    attachmentProgress = (done, total)
+                }
+                for item in pending {
+                    if assignments[item.splitID] == nil, let accountID = suggested[item.id] {
+                        assignments[item.splitID] = accountID
+                    }
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
     @ViewBuilder
     private func row(_ item: AppModel.UncategorizedItem) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -189,6 +236,12 @@ struct AutoCategorizeSheet: View {
                     .foregroundStyle(.secondary)
                     .frame(width: dateWidth, alignment: .leading)
                 Text(item.transactionDescription)
+                if model.hasLinkedDocument(item.transactionID) {
+                    Image(systemName: "paperclip")
+                        .imageScale(.small)
+                        .foregroundStyle(.secondary)
+                        .help("Has an attachment — Read Attachments can use it")
+                }
                 Spacer()
                 Text(AmountFormat.string(-item.amount, code: item.currencyCode))
                     .monospacedDigit()
