@@ -233,6 +233,10 @@ struct finvestlensApp: App {
                           ?? "Import bank statements, dividend statements, and invoices — each PDF is identified and handled automatically")
                 Button("Auto-Categorise Transactions…") { model.presentedPanel = .autoCategorize }
                     .disabled(!model.isOpen)
+                Button("Match Attachments…") { model.presentedPanel = .matchAttachments }
+                    .disabled(!model.isOpen || !model.isIntelligenceAvailable)
+                    .help(model.intelligenceUnavailableReason
+                          ?? "Pick receipts and statements — each is matched to its transaction, linked, and categorised")
                 Divider()
                 Button("Dashboard") { model.selectedAccountID = nil }
                     .keyboardShortcut("d", modifiers: .command)
