@@ -105,8 +105,14 @@ extension AppModel {
     /// Makes sure `url`'s content is local, asking the cloud to download when
     /// it isn't and polling briefly. Returns whether the file is readable.
     public func ensureLocalFile(_ url: URL, timeout: TimeInterval = 30) async -> Bool {
+        await Self.waitForLocalFile(url, timeout: timeout)
+    }
+
+    /// The actor-free core of ``ensureLocalFile(_:timeout:)`` — usable from
+    /// parallel pipelines.
+    nonisolated static func waitForLocalFile(_ url: URL, timeout: TimeInterval = 30) async -> Bool {
         if FileManager.default.fileExists(atPath: url.path) { return true }
-        guard Self.cloudPlaceholderExists(url) else { return false }
+        guard cloudPlaceholderExists(url) else { return false }
         try? FileManager.default.startDownloadingUbiquitousItem(at: url)
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {

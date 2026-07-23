@@ -260,59 +260,135 @@ extension AppModel {
         urls: [URL],
         onProgress: (@MainActor (Int, Int) -> Void)? = nil
     ) async -> [AttachmentMatch] {
+        guard #available(macOS 26.0, iOS 26.0, *), isIntelligenceAvailable else {
+            let note = intelligenceUnavailableReason ?? "Apple Intelligence is unavailable."
+            return urls.map { var match = AttachmentMatch(url: $0); match.note = note; return match }
+        }
+        let candidates = categoryCandidates()
+
+        // Stage 1 — parse in parallel (a few at a time): OCR plus ONE
+        // extraction per file, with the invoice pass carrying its per-line
+        // categorisation. The sequential version re-parsed every document for
+        // the suggestion, which at 3–4 model calls per file made a 51-file
+        // batch take the better part of an hour.
+        var parsed = [ParsedAttachment?](repeating: nil, count: urls.count)
+        var completed = 0
+        onProgress?(0, urls.count)
+        await withTaskGroup(of: (Int, ParsedAttachment).self) { group in
+            var next = 0
+            func addNext() {
+                guard next < urls.count else { return }
+                let index = next
+                let url = urls[index]
+                next += 1
+                group.addTask { (index, await Self.parseAttachment(url: url, candidates: candidates)) }
+            }
+            for _ in 0..<min(3, urls.count) { addNext() }
+            for await (index, result) in group {
+                parsed[index] = result
+                completed += 1
+                onProgress?(completed, urls.count)
+                addNext()
+            }
+        }
+
+        // Stage 2 — match and build suggestions: book work only, no model calls.
         var results: [AttachmentMatch] = []
         for (index, url) in urls.enumerated() {
-            onProgress?(index, urls.count)
             var match = AttachmentMatch(url: url)
             defer { results.append(match) }
-
-            guard #available(macOS 26.0, iOS 26.0, *), isIntelligenceAvailable else {
-                match.note = intelligenceUnavailableReason ?? "Apple Intelligence is unavailable."
-                continue
-            }
-            guard await ensureLocalFile(url) else {
-                match.note = Self.cloudPlaceholderExists(url)
-                    ? "Still downloading from the cloud — try again shortly."
-                    : "Couldn’t read the file."
-                continue
-            }
-            let text: String
-            do {
-                text = try await Task.detached { try await DocumentText.extractText(from: url) }.value
-            } catch {
-                match.note = "Couldn’t read the file."
-                continue
-            }
-
-            // The file's amount and date, for finding its transaction.
-            var amount: Decimal?
-            var date: Date?
-            let lower = text.lowercased()
-            if lower.contains("dividend"), lower.contains("frank") || lower.contains("imputation"),
-               let details = try? await DividendExtractor.extract(text: String(text.prefix(4000))),
-               details.netPayment > 0 {
-                amount = details.netPayment
-                date = details.paymentDate
-            } else if let invoice = try? await InvoiceAnalyzer.analyze(
-                text: String(text.prefix(6000)), candidates: []),
-                invoice.total > 0 {
-                amount = invoice.total
-                date = invoice.date
-            }
-            guard let amount else {
+            guard let doc = parsed[index] else { continue }
+            if let note = doc.note { match.note = note; continue }
+            guard let amount = doc.amount else {
                 match.note = "Couldn’t read an amount from the document."
                 continue
             }
-            guard let txn = findTransaction(amount: amount, near: date) else {
+            guard let txn = findTransaction(amount: amount, near: doc.date) else {
                 match.note = "No unlinked transaction matches \(amount) around that date."
                 continue
             }
             match.transactionID = txn.guid
             match.transactionSummary = transactionSummary(txn)
-            match.suggestion = try? await attachmentSuggestion(for: txn.guid, text: text)
+            match.suggestion = suggestion(for: txn, from: doc)
         }
-        onProgress?(urls.count, urls.count)
         return results
+    }
+
+    /// One file, fully parsed: the OCR text, and whichever extraction fit —
+    /// a dividend statement or an invoice (with per-line categories).
+    struct ParsedAttachment: Sendable {
+        var note: String?
+        var dividend: DividendStatementDetails?
+        var invoice: InvoiceAnalysis?
+
+        var amount: Decimal? {
+            if let dividend, dividend.netPayment > 0 { return dividend.netPayment }
+            if let invoice, invoice.total > 0 { return invoice.total }
+            return nil
+        }
+        var date: Date? { dividend?.paymentDate ?? invoice?.date }
+    }
+
+    @available(macOS 26.0, iOS 26.0, *)
+    nonisolated private static func parseAttachment(
+        url: URL, candidates: [CategoryCandidate]
+    ) async -> ParsedAttachment {
+        var doc = ParsedAttachment()
+        guard await waitForLocalFile(url) else {
+            doc.note = cloudPlaceholderExists(url)
+                ? "Still downloading from the cloud — try again shortly."
+                : "Couldn’t read the file."
+            return doc
+        }
+        let text: String
+        do {
+            text = try await DocumentText.extractText(from: url)
+        } catch {
+            doc.note = "Couldn’t read the file."
+            return doc
+        }
+        let lower = text.lowercased()
+        if lower.contains("dividend"), lower.contains("frank") || lower.contains("imputation") {
+            doc.dividend = try? await DividendExtractor.extract(text: String(text.prefix(4000)))
+        }
+        if doc.dividend == nil || (doc.dividend?.netPayment ?? 0) <= 0 {
+            doc.invoice = try? await InvoiceAnalyzer.analyze(
+                text: String(text.prefix(6000)), candidates: candidates)
+        }
+        return doc
+    }
+
+    /// The suggestion for a matched file, built from its one parse — dividend
+    /// franking split, per-item invoice split, or the invoice's dominant
+    /// category — with the vendor / ticker as the friendly rename.
+    @available(macOS 26.0, iOS 26.0, *)
+    private func suggestion(for txn: Transaction,
+                            from doc: ParsedAttachment) -> AttachmentCategorySuggestion? {
+        if let details = doc.dividend, let lines = dividendSplitLines(for: txn, details: details) {
+            let ticker = details.ticker.trimmingCharacters(in: .whitespaces).uppercased()
+            let friendly = ticker.isEmpty ? nil : "\(ticker) dividend"
+            return AttachmentCategorySuggestion(
+                accountID: lines[0].accountID,
+                accountName: lines[0].accountName,
+                friendlyDescription: friendly == txn.transactionDescription ? nil : friendly,
+                currencyCode: txn.currency.mnemonic,
+                lines: lines)
+        }
+        guard let book, let invoice = doc.invoice else { return nil }
+        // The dominant per-line category anchors both the single suggestion and
+        // any lines the model couldn't place.
+        let counted = Dictionary(grouping: invoice.lineItems.compactMap(\.suggestedCategoryID),
+                                 by: { $0 }).mapValues(\.count)
+        guard let dominant = counted.max(by: { $0.value < $1.value })?.key,
+              let account = book.account(with: dominant) else { return nil }
+        let vendor = invoice.vendor.trimmingCharacters(in: .whitespaces)
+        let friendly = (vendor.isEmpty || vendor == txn.transactionDescription) ? nil : vendor
+        return AttachmentCategorySuggestion(
+            accountID: dominant,
+            accountName: account.fullName,
+            friendlyDescription: friendly,
+            currencyCode: txn.currency.mnemonic,
+            lines: invoiceLines(from: invoice, for: txn, fallbackAccountID: dominant))
     }
 
     /// The best unlinked transaction for an amount: a money leg of exactly that
@@ -519,10 +595,20 @@ extension AppModel {
         fallbackAccountID: GncGUID,
         candidates: [CategoryCandidate]
     ) async -> [AttachmentCategorySuggestion.SplitLine]? {
-        guard let book, let target = attachmentTargetSplit(in: txn) else { return nil }
         guard let analysis = try? await InvoiceAnalyzer.analyze(
-            text: String(text.prefix(4000)), candidates: candidates),
-            analysis.lineItems.count >= 2 else { return nil }
+            text: String(text.prefix(4000)), candidates: candidates) else { return nil }
+        return invoiceLines(from: analysis, for: txn, fallbackAccountID: fallbackAccountID)
+    }
+
+    /// Builds the per-item legs from an already-run invoice analysis — pure
+    /// book work, shared by the sidebar and bulk paths.
+    private func invoiceLines(
+        from analysis: InvoiceAnalysis,
+        for txn: Transaction,
+        fallbackAccountID: GncGUID
+    ) -> [AttachmentCategorySuggestion.SplitLine]? {
+        guard let book, let target = attachmentTargetSplit(in: txn),
+              analysis.lineItems.count >= 2 else { return nil }
 
         let magnitudes = analysis.lineItems.map { max($0.amount, 0) }
         let total = magnitudes.reduce(Decimal(0), +)
