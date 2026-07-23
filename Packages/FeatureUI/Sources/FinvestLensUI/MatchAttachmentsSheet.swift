@@ -170,24 +170,32 @@ struct MatchAttachmentsSheet: View {
     }
 
     private func apply() {
-        var linked = 0
-        var categorised = 0
-        for match in matches where accepted.contains(match.id) {
-            guard let transactionID = match.transactionID else { continue }
-            let accessing = match.url.startAccessingSecurityScopedResource()
-            defer { if accessing { match.url.stopAccessingSecurityScopedResource() } }
-            if let data = try? Data(contentsOf: match.url),
-               (try? model.attachDocument(named: match.fileName, data: data,
-                                          to: transactionID)) != nil {
-                linked += 1
+        processing = true
+        Task {
+            defer { processing = false }
+            var linked = 0
+            var categorised = 0
+            for match in matches where accepted.contains(match.id) {
+                guard let transactionID = match.transactionID else { continue }
+                let accessing = match.url.startAccessingSecurityScopedResource()
+                defer { if accessing { match.url.stopAccessingSecurityScopedResource() } }
+                // Read off the main actor: a cloud-backed file materialises on
+                // read, which can take a while.
+                let url = match.url
+                let data = try? await Task.detached { try Data(contentsOf: url) }.value
+                if let data,
+                   (try? model.attachDocument(named: match.fileName, data: data,
+                                              to: transactionID)) != nil {
+                    linked += 1
+                }
+                if let suggestion = match.suggestion,
+                   model.applyAttachmentSuggestion(suggestion, to: transactionID) {
+                    categorised += 1
+                }
             }
-            if let suggestion = match.suggestion,
-               model.applyAttachmentSuggestion(suggestion, to: transactionID) {
-                categorised += 1
-            }
+            appliedSummary = "Linked \(linked) attachment\(linked == 1 ? "" : "s"), categorised \(categorised)."
+            matches.removeAll { accepted.contains($0.id) && $0.transactionID != nil }
+            accepted.removeAll()
         }
-        appliedSummary = "Linked \(linked) attachment\(linked == 1 ? "" : "s"), categorised \(categorised)."
-        matches.removeAll { accepted.contains($0.id) && $0.transactionID != nil }
-        accepted.removeAll()
     }
 }

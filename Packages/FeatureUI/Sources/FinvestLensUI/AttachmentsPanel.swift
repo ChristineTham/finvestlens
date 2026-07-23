@@ -68,6 +68,8 @@ struct AttachmentsPanel: View {
     @Bindable var model: AppModel
     @State private var webLinkText = ""
     @State private var webFieldShown = false
+    /// Bumped when a cloud download completes, so the panel re-checks the file.
+    @State private var cloudRefresh = 0
     /// Full-window Quick Look (the expand button) — non-nil presents it.
     @State private var previewURL: URL?
     @State private var categorising = false
@@ -211,10 +213,13 @@ struct AttachmentsPanel: View {
 
     @ViewBuilder
     private func linkContent(transactionID: GncGUID, link: String) -> some View {
+        let _ = cloudRefresh   // re-evaluate after a cloud download lands
         let isWeb = link.hasPrefix("http://") || link.hasPrefix("https://")
         let url = isWeb ? nil : model.linkedDocumentURL(for: transactionID)
         let exists = isWeb ? true
             : (url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false)
+        let inCloud = !isWeb && !exists
+            && (url.map { AppModel.cloudPlaceholderExists($0) } ?? false)
 
         // The preview fills the panel; details and actions sit under it.
         if !isWeb, exists, let url {
@@ -261,7 +266,17 @@ struct AttachmentsPanel: View {
                 .lineLimit(2)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
-            if !exists {
+            if inCloud, let url {
+                Label("Stored in the cloud — downloading…",
+                      systemImage: "icloud.and.arrow.down")
+                    .scaledFont(.caption)
+                    .foregroundStyle(.secondary)
+                    .task(id: url) {
+                        // Ask the cloud for it, wait, then re-render.
+                        _ = await model.ensureLocalFile(url)
+                        cloudRefresh += 1
+                    }
+            } else if !isWeb, !exists {
                 Label("File not found under the document folder.",
                       systemImage: "exclamationmark.triangle")
                     .scaledFont(.caption)

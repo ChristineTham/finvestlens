@@ -270,6 +270,12 @@ extension AppModel {
                 match.note = intelligenceUnavailableReason ?? "Apple Intelligence is unavailable."
                 continue
             }
+            guard await ensureLocalFile(url) else {
+                match.note = Self.cloudPlaceholderExists(url)
+                    ? "Still downloading from the cloud — try again shortly."
+                    : "Couldn’t read the file."
+                continue
+            }
             let text: String
             do {
                 text = try await Task.detached { try await DocumentText.extractText(from: url) }.value
@@ -352,9 +358,14 @@ extension AppModel {
             throw IntelligenceError.unavailable("Apple Intelligence requires macOS 26 or iOS 26.")
         }
         guard let book, let txn = book.transaction(with: transactionID) else { return nil }
-        guard let url = linkedDocumentURL(for: transactionID),
-              FileManager.default.fileExists(atPath: url.path) else {
+        guard let url = linkedDocumentURL(for: transactionID) else {
             throw IntelligenceError.unavailable("The transaction has no readable attachment.")
+        }
+        guard await ensureLocalFile(url) else {
+            throw IntelligenceError.unavailable(
+                Self.cloudPlaceholderExists(url)
+                    ? "The attachment is still downloading from the cloud — try again shortly."
+                    : "The attachment file was not found.")
         }
         let text = try await Task.detached { try await DocumentText.extractText(from: url) }.value
         return try await attachmentSuggestion(for: transactionID, text: text)

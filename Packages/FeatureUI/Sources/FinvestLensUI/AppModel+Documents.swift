@@ -84,6 +84,38 @@ extension AppModel {
         }
     }
 
+    // MARK: Cloud files
+
+    /// Whether an iCloud placeholder (`.name.icloud`) sits where `url` should
+    /// be — the file is in the cloud, not yet downloaded. (Modern File
+    /// Provider files are *dataless* instead: they exist at their real path
+    /// and materialise on read, so `fileExists` already reports them.)
+    nonisolated static func cloudPlaceholderExists(_ url: URL) -> Bool {
+        let placeholder = url.deletingLastPathComponent()
+            .appendingPathComponent(".\(url.lastPathComponent).icloud")
+        return FileManager.default.fileExists(atPath: placeholder.path)
+    }
+
+    /// Cloud-aware existence: at its path (possibly dataless), or as an iCloud
+    /// placeholder awaiting download.
+    nonisolated static func fileIsPresentOrInCloud(_ url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path) || cloudPlaceholderExists(url)
+    }
+
+    /// Makes sure `url`'s content is local, asking the cloud to download when
+    /// it isn't and polling briefly. Returns whether the file is readable.
+    public func ensureLocalFile(_ url: URL, timeout: TimeInterval = 30) async -> Bool {
+        if FileManager.default.fileExists(atPath: url.path) { return true }
+        guard Self.cloudPlaceholderExists(url) else { return false }
+        try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(500))
+            if FileManager.default.fileExists(atPath: url.path) { return true }
+        }
+        return false
+    }
+
     // MARK: Attach / resolve
 
     /// Copies a document into the document folder (reusing an identical
@@ -146,7 +178,8 @@ extension AppModel {
         candidates.append(link)
 
         if link.hasPrefix("/") {
-            for candidate in candidates where FileManager.default.fileExists(atPath: candidate) {
+            for candidate in candidates
+            where Self.fileIsPresentOrInCloud(URL(fileURLWithPath: candidate)) {
                 return URL(fileURLWithPath: candidate)
             }
             return URL(fileURLWithPath: candidates[0])
@@ -154,7 +187,7 @@ extension AppModel {
         for folder in [effectiveDocumentFolder, secondaryDocumentFolder].compactMap({ $0 }) {
             for candidate in candidates {
                 let url = folder.appendingPathComponent(candidate)
-                if FileManager.default.fileExists(atPath: url.path) { return url }
+                if Self.fileIsPresentOrInCloud(url) { return url }
             }
         }
         return effectiveDocumentFolder?.appendingPathComponent(candidates[0])
@@ -223,7 +256,7 @@ extension AppModel {
                 link: link,
                 displayName: isWeb ? link : (url?.lastPathComponent ?? link),
                 isWeb: isWeb,
-                exists: isWeb ? true : (url.map { FileManager.default.fileExists(atPath: $0.path) } ?? false))
+                exists: isWeb ? true : (url.map { Self.fileIsPresentOrInCloud($0) } ?? false))
         }
         .sorted { $0.date > $1.date }
     }
