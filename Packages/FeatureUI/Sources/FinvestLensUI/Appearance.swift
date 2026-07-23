@@ -194,6 +194,9 @@ public struct AppearanceModifier: ViewModifier {
             // The date-format preference: every displayed date reads this, so a
             // change in Settings re-renders them all (see DateDisplay.swift).
             .environment(\.appDateFormat, dateFormat)
+            // Static text is selectable app-wide: figures, names and paths in a
+            // finance app are exactly the strings people need to copy out.
+            .textSelection(.enabled)
         #if canImport(AppKit)
             // Drive NSApp.appearance directly: unlike preferredColorScheme(nil),
             // this reliably reverts to the system appearance when switching back

@@ -13,6 +13,21 @@ import FinvestLensEngine
 import AppKit
 import UniformTypeIdentifiers
 #endif
+#if canImport(UIKit)
+import UIKit
+#endif
+
+/// Puts a plain string on the system pasteboard.
+enum GeneralPasteboard {
+    static func copy(_ string: String) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(string, forType: .string)
+        #elseif canImport(UIKit)
+        UIPasteboard.general.string = string
+        #endif
+    }
+}
 
 /// A trailing sidebar for the register showing the selected transaction's
 /// document link (`assoc_uri`, FR-AI-08) — open, reveal, replace or remove it,
@@ -94,6 +109,19 @@ struct AttachmentsPanel: View {
             }
             .buttonStyle(.plain)
             .help(isWeb ? "Open in the browser" : "Quick Look")
+            // The name is a button (click = Quick Look), so text selection
+            // can't reach it — right-click copies instead.
+            .contextMenu {
+                Button("Copy Name") {
+                    GeneralPasteboard.copy(isWeb ? link : (url?.lastPathComponent ?? link))
+                }
+                Button(isWeb ? "Copy Link" : "Copy Full Path") {
+                    GeneralPasteboard.copy(isWeb ? link : (url?.path ?? link))
+                }
+                if !isWeb {
+                    Button("Copy Stored Link") { GeneralPasteboard.copy(link) }
+                }
+            }
             // The raw stored link — the relative path is the durable fact.
             Text(link)
                 .scaledFont(.caption)
