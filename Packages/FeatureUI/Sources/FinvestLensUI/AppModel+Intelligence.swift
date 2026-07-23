@@ -362,6 +362,11 @@ extension AppModel {
                         return hit
                     }
                 }
+                // Date-free sole-amount matching is a LAST resort — only when the
+                // document (and its filename) yielded no date at all. With a
+                // reliable date in hand, a match must be near it; a globally
+                // unique amount 46 days away is a different purchase.
+                guard candidateDates.isEmpty else { return nil }
                 return findSoleTransaction(amount: amount, spending: spending, excluding: claimed)
             }
             // When a fit exists but already has an attachment, say which — far
