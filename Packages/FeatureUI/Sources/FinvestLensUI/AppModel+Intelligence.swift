@@ -304,18 +304,37 @@ extension AppModel {
             guard let doc = parsed[index] else { match.note = "Cancelled."; continue }
             if let note = doc.note { match.note = note; continue }
 
-            // When the only fit already has an attachment, say so — far more
-            // useful than a generic "no match".
+            // Extracted dates are the weak link (OCR garbling, day/month
+            // ambiguity), so matching layers: the date as read, the date with
+            // day and month swapped, then date-free — but date-free only when
+            // the amount identifies exactly one transaction in the whole book.
+            func attemptMatch(amount: Decimal, near date: Date?) -> Transaction? {
+                if let hit = findTransaction(amount: amount, near: date, excluding: claimed) {
+                    return hit
+                }
+                if let date, let swapped = Self.swappedDayMonth(date),
+                   let hit = findTransaction(amount: amount, near: swapped, excluding: claimed) {
+                    return hit
+                }
+                return findSoleTransaction(amount: amount, excluding: claimed)
+            }
+            // When a fit exists but already has an attachment, say which — far
+            // more useful than a generic "no match". Date-free too: the point
+            // is diagnosis, and the amount narrows it enough.
             func linkedNote(amount: Decimal, near date: Date?) -> String? {
-                guard let linked = findTransaction(amount: amount, near: date,
-                                                   excluding: claimed, includeLinked: true)
-                else { return nil }
-                return "Matches \(transactionSummary(linked)) — but that transaction already has an attachment."
+                for candidate in [date, date.flatMap(Self.swappedDayMonth), nil] {
+                    if let linked = findTransaction(amount: amount, near: candidate,
+                                                    excluding: claimed, includeLinked: true),
+                       linked.documentLink != nil {
+                        return "Matches \(transactionSummary(linked)) — but that transaction already has an attachment."
+                    }
+                }
+                return nil
             }
 
             var matched: Transaction?
             if let amount = doc.amount {
-                matched = findTransaction(amount: amount, near: doc.date, excluding: claimed)
+                matched = attemptMatch(amount: amount, near: doc.date)
                 if matched == nil {
                     match.note = linkedNote(amount: amount, near: doc.date)
                         ?? "No unlinked transaction matches \(amount) around that date."
@@ -324,8 +343,7 @@ extension AppModel {
                 // The model couldn't name a total — try every money-looking
                 // amount the OCR found (largest first) against the book.
                 for amount in doc.fallbackAmounts {
-                    if let hit = findTransaction(amount: amount, near: doc.fallbackDate,
-                                                 excluding: claimed) {
+                    if let hit = attemptMatch(amount: amount, near: doc.fallbackDate) {
                         matched = hit
                         break
                     }
@@ -430,9 +448,60 @@ extension AppModel {
         return Array(amounts.sorted(by: >).prefix(8))
     }
 
+    /// Receipts here are day-first (`05/03/26`), which the system detector can
+    /// read month-first — so explicit day-first patterns get the first go.
     nonisolated static func firstDate(in text: String) -> Date? {
+        let patterns = [#"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b"#]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                guard let dayRange = Range(match.range(at: 1), in: text),
+                      let monthRange = Range(match.range(at: 2), in: text),
+                      let yearRange = Range(match.range(at: 3), in: text),
+                      let day = Int(text[dayRange]), let month = Int(text[monthRange]),
+                      var year = Int(text[yearRange]),
+                      (1...31).contains(day), (1...12).contains(month) else { continue }
+                if year < 100 { year += 2000 }
+                guard (2000...2100).contains(year) else { continue }
+                var components = DateComponents()
+                components.day = day
+                components.month = month
+                components.year = year
+                if let date = Calendar.current.date(from: components) { return date }
+            }
+        }
         let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
         return detector?.firstMatch(in: text, range: NSRange(text.startIndex..., in: text))?.date
+    }
+
+    /// The same date with day and month swapped, when that makes a valid date —
+    /// the classic 02/03 vs 03/02 extraction ambiguity.
+    nonisolated static func swappedDayMonth(_ date: Date) -> Date? {
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.day, .month, .year], from: date)
+        guard let day = components.day, let month = components.month,
+              day != month, day <= 12 else { return nil }
+        components.day = month
+        components.month = day
+        return calendar.date(from: components)
+    }
+
+    /// The transaction an amount identifies on its own: exactly one candidate
+    /// in the whole book (linked ones count as candidates — if a linked twin
+    /// exists the amount is ambiguous and no date-free match is safe).
+    private func findSoleTransaction(amount: Decimal,
+                                     excluding claimed: Set<GncGUID>) -> Transaction? {
+        guard let book else { return nil }
+        var sole: Transaction?
+        for txn in book.transactions {
+            guard !claimed.contains(txn.guid) else { continue }
+            guard txn.splits.contains(where: { Self.isMoneyLeg($0) && abs($0.value) == amount })
+            else { continue }
+            guard txn.documentLink == nil else { return nil }   // linked twin → ambiguous
+            if sole != nil { return nil }                       // second candidate → ambiguous
+            sole = txn
+        }
+        return sole
     }
 
     /// The suggestion for a matched file, built from its one parse — dividend

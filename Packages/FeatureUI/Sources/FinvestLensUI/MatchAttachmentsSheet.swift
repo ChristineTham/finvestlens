@@ -128,11 +128,13 @@ struct MatchAttachmentsSheet: View {
                         .foregroundStyle(matched ? Color.accentColor : .secondary)
                     Text(match.fileName).fontWeight(.medium)
                         .lineLimit(1).truncationMode(.middle)
+                        .textSelection(.enabled)
                 }
                 if matched {
                     Text(match.transactionSummary)
                         .scaledFont(.caption)
                         .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                     if let suggestion = match.suggestion {
                         if let friendly = suggestion.friendlyDescription {
                             Text("Rename to “\(friendly)” — bank text kept in the memo")
