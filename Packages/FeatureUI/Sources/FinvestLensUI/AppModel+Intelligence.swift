@@ -257,6 +257,25 @@ extension AppModel {
         let imbalance = txn.splits.first { $0.account?.isImbalanceOrOrphan ?? false }
         let amount = -(imbalance?.value ?? txn.splits.first?.value ?? 0)
         let candidates = categoryCandidates()
+
+        // A dividend statement gets the book's own franking structure, modelled
+        // on how existing dividends are recorded — checked first, because a
+        // dividend also reads like a small invoice.
+        let lower = text.lowercased()
+        if lower.contains("dividend"),
+           lower.contains("frank") || lower.contains("imputation"),
+           let details = try? await DividendExtractor.extract(text: String(text.prefix(4000))),
+           let dividend = dividendSplitLines(for: txn, details: details) {
+            let ticker = details.ticker.trimmingCharacters(in: .whitespaces).uppercased()
+            let friendly = ticker.isEmpty ? nil : "\(ticker) dividend"
+            return AttachmentCategorySuggestion(
+                accountID: dividend[0].accountID,
+                accountName: dividend[0].accountName,
+                friendlyDescription: friendly == txn.transactionDescription ? nil : friendly,
+                currencyCode: txn.currency.mnemonic,
+                lines: dividend)
+        }
+
         guard let insight = try await AttachmentInsight.analyze(
             documentText: String(text.prefix(1600)),
             currentDescription: txn.transactionDescription,
@@ -274,6 +293,91 @@ extension AppModel {
             lines: await invoiceSplitLines(for: txn, text: text,
                                            fallbackAccountID: insight.accountID,
                                            candidates: candidates))
+    }
+
+    /// The franking split for a dividend statement, built the way the book's
+    /// existing dividends are recorded (the CDIA guide): per-security income
+    /// legs (Dividends ▸ TICKER ▸ Franked / Unfranked / Imputation Credit), the
+    /// gross-up offset to the imputation expense account (income + expense net
+    /// to zero, so cash is untouched), and the zero-value stock link leg.
+    /// `nil` — falling back to the generic paths — when the statement's cash
+    /// doesn't match the transaction, or the book has no per-security accounts
+    /// for this ticker (accounts are never invented here).
+    @available(macOS 26.0, iOS 26.0, *)
+    private func dividendSplitLines(
+        for txn: Transaction,
+        details: DividendStatementDetails
+    ) -> [AttachmentCategorySuggestion.SplitLine]? {
+        guard let book, let target = attachmentTargetSplit(in: txn) else { return nil }
+        let ticker = details.ticker.trimmingCharacters(in: .whitespaces).uppercased()
+        guard !ticker.isEmpty, details.netPayment > 0 else { return nil }
+
+        // The statement's cash must be this transaction's cash.
+        let expected = -target.value
+        guard expected > 0, abs(expected - details.netPayment) <= Decimal(string: "0.05")! else { return nil }
+
+        // The per-security income group, as existing dividends use it.
+        func lowername(_ account: Account) -> String { account.name.lowercased() }
+        var frankedAccount: Account?
+        var unfrankedAccount: Account?
+        var creditsAccount: Account?
+        for account in book.accounts where account.type == .income {
+            guard lowername(account).contains("franked"), !lowername(account).contains("unfranked"),
+                  let parent = account.parent,
+                  parent.name.caseInsensitiveCompare(ticker) == .orderedSame else { continue }
+            frankedAccount = account
+            unfrankedAccount = parent.children.first {
+                $0.type == .income && lowername($0).contains("unfranked")
+            }
+            creditsAccount = parent.children.first {
+                $0.type == .income
+                    && (lowername($0).contains("imputation") || lowername($0).contains("franking"))
+            }
+            break
+        }
+        guard let frankedAccount else { return nil }
+
+        let currency = txn.currency
+        let unfranked = currency.round(details.unfrankedAmount)
+        let credits = currency.round(details.frankingCredits)
+        // Cash must balance exactly — extraction rounding lands on the franked leg.
+        let franked = expected - unfranked
+        guard franked > 0, unfranked >= 0, credits >= 0 else { return nil }
+        if unfranked > 0, unfrankedAccount == nil { return nil }
+
+        var lines: [AttachmentCategorySuggestion.SplitLine] = [
+            .init(accountID: frankedAccount.guid, accountName: frankedAccount.fullName,
+                  memo: "", value: -franked),
+        ]
+        if unfranked > 0, let unfrankedAccount {
+            lines.append(.init(accountID: unfrankedAccount.guid,
+                               accountName: unfrankedAccount.fullName,
+                               memo: "", value: -unfranked))
+        }
+        // The gross-up: imputation-credit income offset by the imputation
+        // expense — nets to zero, mirroring the book's existing dividends.
+        if credits > 0, let creditsAccount,
+           let offset = book.accounts.first(where: { account in
+               account.type == .expense
+                   && (lowername(account).contains("imputation") || lowername(account).contains("franking"))
+           }) {
+            lines.append(.init(accountID: creditsAccount.guid,
+                               accountName: creditsAccount.fullName,
+                               memo: "", value: -credits))
+            lines.append(.init(accountID: offset.guid, accountName: offset.fullName,
+                               memo: "", value: credits))
+        }
+        // The zero-value stock link leg existing dividends carry.
+        if let stock = book.accounts.first(where: { account in
+            (account.type == .stock || account.type == .mutualFund)
+                && (account.name.caseInsensitiveCompare(ticker) == .orderedSame
+                    || account.commodity.mnemonic.uppercased() == ticker
+                    || account.commodity.mnemonic.uppercased().hasPrefix(ticker + "."))
+        }) {
+            lines.append(.init(accountID: stock.guid, accountName: stock.fullName,
+                               memo: "", value: 0))
+        }
+        return lines.count >= 2 ? lines : nil
     }
 
     /// When the document is an invoice with several line items, the per-item
@@ -392,7 +496,10 @@ extension AppModel {
         let lines = suggestion.lines
         if let lines {
             guard lines.reduce(Decimal(0), { $0 + $1.value }) == target.value,
-                  lines.allSatisfy({ book.account(with: $0.accountID)?.commodity == txn.currency })
+                  lines.allSatisfy({ line in
+                      line.value == 0   // the zero-value stock link leg
+                          || book.account(with: line.accountID)?.commodity == txn.currency
+                  })
             else { return false }
         }
 
