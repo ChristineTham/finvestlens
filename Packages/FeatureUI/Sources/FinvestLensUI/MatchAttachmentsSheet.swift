@@ -23,6 +23,7 @@ struct MatchAttachmentsSheet: View {
 
     @State private var importerShown = false
     @State private var processing = false
+    @State private var applying = false
     @State private var processTask: Task<Void, Never>?
     @State private var progress: (done: Int, total: Int)?
     @State private var matches: [AppModel.AttachmentMatch] = []
@@ -38,7 +39,13 @@ struct MatchAttachmentsSheet: View {
     var body: some View {
         NavigationStack {
             Group {
-                if processing {
+                if applying {
+                    VStack(spacing: 12) {
+                        ProgressView().controlSize(.large)
+                        Text("Linking and categorising…").foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if processing {
                     VStack(spacing: 12) {
                         ProgressView(value: progress.map { Double($0.done) } ?? 0,
                                      total: progress.map { Double($0.total) } ?? 1)
@@ -91,13 +98,13 @@ struct MatchAttachmentsSheet: View {
                 ToolbarItem {
                     if !matches.isEmpty {
                         Button("Choose More…") { importerShown = true }
-                            .disabled(processing)
+                            .disabled(processing || applying)
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Link & Categorise \(applyCount)") { apply() }
                         .keyboardShortcut(.defaultAction)
-                        .disabled(applyCount == 0 || processing)
+                        .disabled(applyCount == 0 || processing || applying)
                 }
             }
             .sheet(item: $recordTarget) { match in
@@ -249,9 +256,9 @@ struct MatchAttachmentsSheet: View {
     }
 
     private func apply() {
-        processing = true
+        applying = true
         Task {
-            defer { processing = false }
+            defer { applying = false }
             var linked = 0
             var categorised = 0
             for match in matches where accepted.contains(match.id) {
