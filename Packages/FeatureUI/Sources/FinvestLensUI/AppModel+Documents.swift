@@ -135,18 +135,29 @@ extension AppModel {
         if link.hasPrefix("file://") {
             return URL(string: link)
         }
+        // GnuCash writes `assoc_uri` percent-encoded ("Cba%20atm.png"), so the
+        // decoded form is the primary interpretation; the raw string stays as a
+        // fallback for plain paths we stored ourselves (or names that really
+        // contain a literal "%").
+        var candidates: [String] = []
+        if let decoded = link.removingPercentEncoding, decoded != link {
+            candidates.append(decoded)
+        }
+        candidates.append(link)
+
         if link.hasPrefix("/") {
-            return URL(fileURLWithPath: link)
+            for candidate in candidates where FileManager.default.fileExists(atPath: candidate) {
+                return URL(fileURLWithPath: candidate)
+            }
+            return URL(fileURLWithPath: candidates[0])
         }
-        let primary = effectiveDocumentFolder?.appendingPathComponent(link)
-        if let primary, FileManager.default.fileExists(atPath: primary.path) {
-            return primary
+        for folder in [effectiveDocumentFolder, secondaryDocumentFolder].compactMap({ $0 }) {
+            for candidate in candidates {
+                let url = folder.appendingPathComponent(candidate)
+                if FileManager.default.fileExists(atPath: url.path) { return url }
+            }
         }
-        if let secondary = secondaryDocumentFolder?.appendingPathComponent(link),
-           FileManager.default.fileExists(atPath: secondary.path) {
-            return secondary
-        }
-        return primary
+        return effectiveDocumentFolder?.appendingPathComponent(candidates[0])
     }
 
     public func hasLinkedDocument(_ transactionID: GncGUID) -> Bool {
