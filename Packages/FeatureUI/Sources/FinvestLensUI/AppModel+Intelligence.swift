@@ -235,6 +235,15 @@ extension AppModel {
         split.account.map { attachmentMoneyTypes.contains($0.type) && !$0.isImbalanceOrOrphan } ?? false
     }
 
+    /// A money leg of the right magnitude and direction: `spending` wants an
+    /// outgoing leg (value < 0 — a purchase), otherwise an incoming one (a
+    /// dividend/refund deposit). Matching a receipt to an incoming transfer is
+    /// exactly the mismatch this prevents.
+    private static func matchesLeg(_ split: Split, amount: Decimal, spending: Bool) -> Bool {
+        guard isMoneyLeg(split), abs(split.value) == amount, split.value != 0 else { return false }
+        return spending ? split.value < 0 : split.value > 0
+    }
+
     // MARK: Bulk attachment matching
 
     /// One picked file's journey: the transaction it matched (by amount and
@@ -333,6 +342,8 @@ extension AppModel {
 
             match.documentDate = candidateDates.first
             match.candidateAmounts = (doc.amount.map { [$0] } ?? []) + doc.fallbackAmounts
+            // A dividend statement pays IN; every other document is a purchase.
+            let spending = doc.dividend == nil
             match.vendor = doc.invoice?.vendor
             if let already = attachedByName[url.lastPathComponent.lowercased()] {
                 match.note = "This file is already attached to \(transactionSummary(already))."
@@ -346,17 +357,19 @@ extension AppModel {
             /// exactly one recent transaction.
             func attemptMatch(amount: Decimal) -> Transaction? {
                 for date in candidateDates {
-                    if let hit = findTransaction(amount: amount, near: date, excluding: claimed) {
+                    if let hit = findTransaction(amount: amount, near: date, spending: spending,
+                                                 excluding: claimed) {
                         return hit
                     }
                 }
-                return findSoleTransaction(amount: amount, excluding: claimed)
+                return findSoleTransaction(amount: amount, spending: spending, excluding: claimed)
             }
             // When a fit exists but already has an attachment, say which — far
             // more useful than a generic "no match". Date-tolerant: the point
             // is diagnosis, and the amount narrows it enough.
             func linkedNote(amount: Decimal, near date: Date?) -> String? {
-                guard let linked = linkedCandidate(amount: amount, near: date) else { return nil }
+                guard let linked = linkedCandidate(amount: amount, spending: spending, near: date)
+                else { return nil }
                 return "Matches \(transactionSummary(linked)) — but that transaction already has an attachment."
             }
 
@@ -545,7 +558,7 @@ extension AppModel {
     /// to the unreliable document date is how a 1.73 line item once matched a
     /// 1994 posting), and no linked twin inside the window. Tiny amounts (< 2)
     /// are refused outright: they are line items, not totals.
-    private func findSoleTransaction(amount: Decimal,
+    private func findSoleTransaction(amount: Decimal, spending: Bool,
                                      excluding claimed: Set<GncGUID>) -> Transaction? {
         guard let book, amount >= 2 else { return nil }
         let reference = Date()
@@ -554,7 +567,7 @@ extension AppModel {
         for txn in book.transactions {
             guard !claimed.contains(txn.guid) else { continue }
             guard abs(txn.datePosted.timeIntervalSince(reference)) <= window else { continue }
-            guard txn.splits.contains(where: { Self.isMoneyLeg($0) && abs($0.value) == amount })
+            guard txn.splits.contains(where: { Self.matchesLeg($0, amount: amount, spending: spending) })
             else { continue }
             guard txn.documentLink == nil else { return nil }   // linked twin → ambiguous
             if sole != nil { return nil }                       // second candidate → ambiguous
@@ -565,13 +578,13 @@ extension AppModel {
 
     /// The already-linked transaction an amount most plausibly refers to: the
     /// one closest to the document date (else closest to now), within a year.
-    private func linkedCandidate(amount: Decimal, near date: Date?) -> Transaction? {
+    private func linkedCandidate(amount: Decimal, spending: Bool, near date: Date?) -> Transaction? {
         guard let book else { return nil }
         let reference = date ?? Date()
         var best: (txn: Transaction, distance: TimeInterval)?
         for txn in book.transactions {
             guard txn.documentLink != nil else { continue }
-            guard txn.splits.contains(where: { Self.isMoneyLeg($0) && abs($0.value) == amount })
+            guard txn.splits.contains(where: { Self.matchesLeg($0, amount: amount, spending: spending) })
             else { continue }
             let distance = abs(txn.datePosted.timeIntervalSince(reference))
             if best == nil || distance < best!.distance { best = (txn, distance) }
@@ -616,7 +629,7 @@ extension AppModel {
     /// The best unlinked transaction for an amount: a money leg of exactly that
     /// magnitude, posted within ±14 days of the document date (closest wins;
     /// no document date accepts any).
-    private func findTransaction(amount: Decimal, near date: Date?,
+    private func findTransaction(amount: Decimal, near date: Date?, spending: Bool,
                                  excluding claimed: Set<GncGUID> = [],
                                  includeLinked: Bool = false) -> Transaction? {
         guard let book else { return nil }
@@ -625,7 +638,7 @@ extension AppModel {
         for txn in book.transactions {
             guard !claimed.contains(txn.guid) else { continue }
             guard includeLinked || txn.documentLink == nil else { continue }
-            guard txn.splits.contains(where: { Self.isMoneyLeg($0) && abs($0.value) == amount })
+            guard txn.splits.contains(where: { Self.matchesLeg($0, amount: amount, spending: spending) })
             else { continue }
             let days: Int
             if let date {
