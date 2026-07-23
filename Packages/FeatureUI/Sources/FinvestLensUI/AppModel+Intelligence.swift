@@ -314,7 +314,24 @@ extension AppModel {
             var match = AttachmentMatch(url: url)
             defer { results.append(match) }
             guard let doc = parsed[index] else { match.note = "Cancelled."; continue }
-            match.documentDate = doc.date ?? doc.fallbackDate
+            let fileDate = Self.leadingDate(inFileName: url.lastPathComponent)
+            // Candidate dates, most reliable first: the file's own name, the
+            // extractor's date (plus its day/month swap — models mix them up),
+            // then dates scanned from the text.
+            var candidateDates: [Date] = []
+            var seenDays = Set<Date>()
+            func addDate(_ date: Date?) {
+                guard let date,
+                      seenDays.insert(Calendar.current.startOfDay(for: date)).inserted
+                else { return }
+                candidateDates.append(date)
+            }
+            addDate(fileDate)
+            addDate(doc.date)
+            addDate(doc.date.flatMap(Self.swappedDayMonth))
+            for date in doc.textDates { addDate(date) }
+
+            match.documentDate = candidateDates.first
             match.candidateAmounts = (doc.amount.map { [$0] } ?? []) + doc.fallbackAmounts
             match.vendor = doc.invoice?.vendor
             if let already = attachedByName[url.lastPathComponent.lowercased()] {
@@ -324,18 +341,16 @@ extension AppModel {
             if let note = doc.note { match.note = note; continue }
 
             // Extracted dates are the weak link (OCR garbling, day/month
-            // ambiguity), so matching layers: the date as read, the date with
-            // day and month swapped, then date-free — but date-free only when
-            // the amount identifies exactly one transaction in the whole book.
-            func attemptMatch(amount: Decimal, near date: Date?) -> Transaction? {
-                if let hit = findTransaction(amount: amount, near: date, excluding: claimed) {
-                    return hit
+            // ambiguity), so matching tries every candidate date per amount,
+            // then date-free — the latter only when the amount identifies
+            /// exactly one recent transaction.
+            func attemptMatch(amount: Decimal) -> Transaction? {
+                for date in candidateDates {
+                    if let hit = findTransaction(amount: amount, near: date, excluding: claimed) {
+                        return hit
+                    }
                 }
-                if let date, let swapped = Self.swappedDayMonth(date),
-                   let hit = findTransaction(amount: amount, near: swapped, excluding: claimed) {
-                    return hit
-                }
-                return findSoleTransaction(amount: amount, near: date, excluding: claimed)
+                return findSoleTransaction(amount: amount, excluding: claimed)
             }
             // When a fit exists but already has an attachment, say which — far
             // more useful than a generic "no match". Date-tolerant: the point
@@ -346,30 +361,23 @@ extension AppModel {
             }
 
             var matched: Transaction?
-            if let amount = doc.amount {
-                matched = attemptMatch(amount: amount, near: doc.date)
-                if matched == nil {
-                    match.note = linkedNote(amount: amount, near: doc.date)
-                        ?? "No unlinked transaction matches \(amount) around that date."
+            // The model's total first, then every amount the OCR found.
+            for amount in match.candidateAmounts {
+                if let hit = attemptMatch(amount: amount) {
+                    matched = hit
+                    break
                 }
-            } else if !doc.fallbackAmounts.isEmpty {
-                // The model couldn't name a total — try every money-looking
-                // amount the OCR found (largest first) against the book.
-                for amount in doc.fallbackAmounts {
-                    if let hit = attemptMatch(amount: amount, near: doc.fallbackDate) {
-                        matched = hit
-                        break
-                    }
-                }
-                if matched == nil {
-                    let tried = doc.fallbackAmounts.map { "\($0)" }.joined(separator: ", ")
-                    match.note = doc.fallbackAmounts.compactMap {
-                        linkedNote(amount: $0, near: doc.fallbackDate)
+            }
+            if matched == nil {
+                if match.candidateAmounts.isEmpty {
+                    match.note = "Couldn’t read an amount from the document — the scan may be too faint to OCR."
+                } else {
+                    let tried = match.candidateAmounts.map { "\($0)" }.joined(separator: ", ")
+                    match.note = match.candidateAmounts.compactMap {
+                        linkedNote(amount: $0, near: match.documentDate)
                     }.first
-                        ?? "Couldn’t read a total; none of the amounts found (\(tried)) match an unlinked transaction."
+                        ?? "No unlinked transaction matches any amount read (\(tried)) near \(match.documentDate.map { AppDateFormat.current.short($0) } ?? "the document date")."
                 }
-            } else {
-                match.note = "Couldn’t read an amount from the document — the scan may be too faint to OCR."
             }
             guard let txn = matched else { continue }
             claimed.insert(txn.guid)
@@ -401,7 +409,8 @@ extension AppModel {
         /// Money-looking amounts scanned from the OCR text (largest first) —
         /// the match fallback when the model can't name a total.
         var fallbackAmounts: [Decimal] = []
-        var fallbackDate: Date?
+        /// Plausible dates scanned from the OCR text (day-first, sane-bounded).
+        var textDates: [Date] = []
 
         var amount: Decimal? {
             if let dividend, dividend.netPayment > 0 { return dividend.netPayment }
@@ -437,10 +446,8 @@ extension AppModel {
             doc.invoice = try? await InvoiceAnalyzer.analyze(
                 text: String(text.prefix(6000)), candidates: candidates)
         }
-        if doc.amount == nil {
-            doc.fallbackAmounts = Self.amountCandidates(in: text)
-            doc.fallbackDate = Self.firstDate(in: text)
-        }
+        doc.fallbackAmounts = Self.amountCandidates(in: text)
+        doc.textDates = Self.datesInText(text)
         return doc
     }
 
@@ -461,12 +468,26 @@ extension AppModel {
         return Array(amounts.sorted(by: >).prefix(8))
     }
 
-    /// Receipts here are day-first (`05/03/26`), which the system detector can
-    /// read month-first — so explicit day-first patterns get the first go.
-    nonisolated static func firstDate(in text: String) -> Date? {
-        let patterns = [#"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b"#]
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+    /// Plausible document dates in the text: day-first numeric patterns
+    /// (receipts here are `05/03/26`), then the system detector — every hit
+    /// bounded to the recent past (receipts aren't years old, and register
+    /// IDs/ABNs love to look like dates). Up to four, in text order.
+    nonisolated static func datesInText(_ text: String) -> [Date] {
+        let calendar = Calendar.current
+        let now = Date()
+        func sane(_ date: Date) -> Bool {
+            date <= now.addingTimeInterval(31 * 86_400)
+                && date >= now.addingTimeInterval(-3 * 365 * 86_400)
+        }
+        var dates: [Date] = []
+        var seenDays = Set<Date>()
+        func add(_ date: Date) {
+            guard sane(date), seenDays.insert(calendar.startOfDay(for: date)).inserted,
+                  dates.count < 4 else { return }
+            dates.append(date)
+        }
+        if let regex = try? NSRegularExpression(
+            pattern: #"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b"#) {
             for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
                 guard let dayRange = Range(match.range(at: 1), in: text),
                       let monthRange = Range(match.range(at: 2), in: text),
@@ -475,16 +496,36 @@ extension AppModel {
                       var year = Int(text[yearRange]),
                       (1...31).contains(day), (1...12).contains(month) else { continue }
                 if year < 100 { year += 2000 }
-                guard (2000...2100).contains(year) else { continue }
                 var components = DateComponents()
                 components.day = day
                 components.month = month
                 components.year = year
-                if let date = Calendar.current.date(from: components) { return date }
+                if let date = calendar.date(from: components) { add(date) }
             }
         }
-        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
-        return detector?.firstMatch(in: text, range: NSRange(text.startIndex..., in: text))?.date
+        if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue) {
+            for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                if let date = match.date { add(date) }
+            }
+        }
+        return dates
+    }
+
+    /// The date a scanned file's own name starts with (`2026-03-01 Subway.png`)
+    /// — when present, the most reliable date there is.
+    nonisolated static func leadingDate(inFileName name: String) -> Date? {
+        guard let regex = try? NSRegularExpression(pattern: #"^(\d{4})-(\d{2})-(\d{2})"#),
+              let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
+              let yearRange = Range(match.range(at: 1), in: name),
+              let monthRange = Range(match.range(at: 2), in: name),
+              let dayRange = Range(match.range(at: 3), in: name),
+              let year = Int(name[yearRange]), let month = Int(name[monthRange]),
+              let day = Int(name[dayRange]) else { return nil }
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        return Calendar.current.date(from: components)
     }
 
     /// The same date with day and month swapped, when that makes a valid date —
@@ -500,15 +541,15 @@ extension AppModel {
     }
 
     /// The transaction an amount identifies on its own: exactly one candidate
-    /// within a sane recency window (±180 days of the document date, else ±365
-    /// days of today — a receipt never belongs to a decades-old posting), and
-    /// no linked twin inside it (that would make the amount ambiguous). Tiny
-    /// amounts (< 2) are refused outright: they are line items, not totals.
-    private func findSoleTransaction(amount: Decimal, near date: Date?,
+    /// within the last ~6 months (a receipt being filed is recent — anchoring
+    /// to the unreliable document date is how a 1.73 line item once matched a
+    /// 1994 posting), and no linked twin inside the window. Tiny amounts (< 2)
+    /// are refused outright: they are line items, not totals.
+    private func findSoleTransaction(amount: Decimal,
                                      excluding claimed: Set<GncGUID>) -> Transaction? {
         guard let book, amount >= 2 else { return nil }
-        let reference = date ?? Date()
-        let window: TimeInterval = (date != nil ? 180 : 365) * 86_400
+        let reference = Date()
+        let window: TimeInterval = 200 * 86_400
         var sole: Transaction?
         for txn in book.transactions {
             guard !claimed.contains(txn.guid) else { continue }
