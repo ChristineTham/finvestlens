@@ -23,6 +23,7 @@ import AppKit
 extension AppModel {
 
     static let documentFolderDefaultsKey = "finvestlens.documentFolderPath"
+    static let secondaryDocumentFolderDefaultsKey = "finvestlens.documentFolderPathSecondary"
 
     // MARK: New-book placement
 
@@ -69,6 +70,20 @@ extension AppModel {
         configuredDocumentFolder ?? documentURL?.deletingLastPathComponent()
     }
 
+    /// An optional fallback: a relative link not found under the primary folder
+    /// is also looked for here (e.g. an archive folder, or the old location
+    /// after a move).
+    public var secondaryDocumentFolder: URL? {
+        get {
+            guard let path = UserDefaults.standard.string(forKey: Self.secondaryDocumentFolderDefaultsKey),
+                  !path.isEmpty else { return nil }
+            return URL(fileURLWithPath: path, isDirectory: true)
+        }
+        set {
+            UserDefaults.standard.set(newValue?.path ?? "", forKey: Self.secondaryDocumentFolderDefaultsKey)
+        }
+    }
+
     // MARK: Attach / resolve
 
     /// Copies a document into the document folder (reusing an identical
@@ -111,7 +126,10 @@ extension AppModel {
 
     /// Resolves a transaction's document link to a file URL: absolute
     /// `file://` URIs as-is, plain paths relative to the document folder
-    /// (absolute paths are honoured too).
+    /// (absolute paths are honoured too). A relative link that is not found
+    /// under the primary folder is also tried under the secondary folder; when
+    /// it exists nowhere, the primary location is reported (that is where the
+    /// "not found" message should point).
     public func linkedDocumentURL(for transactionID: GncGUID) -> URL? {
         guard let link = book?.transaction(with: transactionID)?.documentLink else { return nil }
         if link.hasPrefix("file://") {
@@ -120,7 +138,15 @@ extension AppModel {
         if link.hasPrefix("/") {
             return URL(fileURLWithPath: link)
         }
-        return effectiveDocumentFolder?.appendingPathComponent(link)
+        let primary = effectiveDocumentFolder?.appendingPathComponent(link)
+        if let primary, FileManager.default.fileExists(atPath: primary.path) {
+            return primary
+        }
+        if let secondary = secondaryDocumentFolder?.appendingPathComponent(link),
+           FileManager.default.fileExists(atPath: secondary.path) {
+            return secondary
+        }
+        return primary
     }
 
     public func hasLinkedDocument(_ transactionID: GncGUID) -> Bool {

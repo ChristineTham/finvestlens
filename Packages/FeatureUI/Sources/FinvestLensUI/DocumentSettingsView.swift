@@ -14,6 +14,7 @@ import FinvestLensQuotes
 /// this the association "path head" (`FR-AI-08`).
 public struct DocumentSettingsView: View {
     @AppStorage(AppModel.documentFolderDefaultsKey) private var folderPath = ""
+    @AppStorage(AppModel.secondaryDocumentFolderDefaultsKey) private var secondaryPath = ""
 
     public init() {}
 
@@ -42,9 +43,32 @@ public struct DocumentSettingsView: View {
                     .scaledFont(.caption)
                     .foregroundStyle(.secondary)
             }
+            Section("Fallback folder") {
+                LabeledContent("Folder") {
+                    Text(secondaryPath.isEmpty ? "None" : secondaryPath)
+                        .foregroundStyle(secondaryPath.isEmpty ? .secondary : .primary)
+                        .truncationMode(.middle)
+                        .lineLimit(1)
+                }
+                HStack {
+                    Button("Choose…") {
+                        #if os(macOS)
+                        if let url = MacFilePanel.chooseDirectory(
+                            title: "Choose the fallback folder for linked documents") {
+                            secondaryPath = url.path
+                        }
+                        #endif
+                    }
+                    Button("Clear") { secondaryPath = "" }
+                        .disabled(secondaryPath.isEmpty)
+                }
+                Text("A relative link that isn’t found under the document folder is also looked for here — useful for an archive folder, or the old location after moving documents.")
+                    .scaledFont(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 420, minHeight: 220)
+        .frame(minWidth: 420, minHeight: 300)
         .navigationTitle("Documents")
     }
 }
