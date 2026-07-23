@@ -283,35 +283,64 @@ extension AppModel {
                 next += 1
                 group.addTask { (index, await Self.parseAttachment(url: url, candidates: candidates)) }
             }
-            for _ in 0..<min(3, urls.count) { addNext() }
+            for _ in 0..<min(Self.physicalCPUCount, urls.count) { addNext() }
             for await (index, result) in group {
                 parsed[index] = result
                 completed += 1
                 onProgress?(completed, urls.count)
-                addNext()
+                if Task.isCancelled { group.cancelAll() } else { addNext() }
             }
         }
 
         // Stage 2 — match and build suggestions: book work only, no model calls.
         var results: [AttachmentMatch] = []
         for (index, url) in urls.enumerated() {
+            if Task.isCancelled { break }
             var match = AttachmentMatch(url: url)
             defer { results.append(match) }
-            guard let doc = parsed[index] else { continue }
+            guard let doc = parsed[index] else { match.note = "Cancelled."; continue }
             if let note = doc.note { match.note = note; continue }
-            guard let amount = doc.amount else {
+
+            var matched: Transaction?
+            if let amount = doc.amount {
+                matched = findTransaction(amount: amount, near: doc.date)
+                if matched == nil {
+                    match.note = "No unlinked transaction matches \(amount) around that date."
+                }
+            } else if !doc.fallbackAmounts.isEmpty {
+                // The model couldn't name a total — try every money-looking
+                // amount the OCR found (largest first) against the book.
+                for amount in doc.fallbackAmounts {
+                    if let hit = findTransaction(amount: amount, near: doc.fallbackDate) {
+                        matched = hit
+                        break
+                    }
+                }
+                if matched == nil {
+                    let tried = doc.fallbackAmounts.map { "\($0)" }.joined(separator: ", ")
+                    match.note = "Couldn’t read a total; none of the amounts found (\(tried)) match an unlinked transaction."
+                }
+            } else {
                 match.note = "Couldn’t read an amount from the document."
-                continue
             }
-            guard let txn = findTransaction(amount: amount, near: doc.date) else {
-                match.note = "No unlinked transaction matches \(amount) around that date."
-                continue
-            }
+            guard let txn = matched else { continue }
             match.transactionID = txn.guid
             match.transactionSummary = transactionSummary(txn)
+            match.note = nil
             match.suggestion = suggestion(for: txn, from: doc)
         }
         return results
+    }
+
+    /// Physical performance cores — the parse pipeline's width. OCR and the
+    /// on-device model are compute-bound, so logical cores oversubscribe.
+    nonisolated private static var physicalCPUCount: Int {
+        var count: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        if sysctlbyname("hw.physicalcpu", &count, &size, nil, 0) == 0, count > 0 {
+            return Int(count)
+        }
+        return max(2, ProcessInfo.processInfo.activeProcessorCount / 2)
     }
 
     /// One file, fully parsed: the OCR text, and whichever extraction fit —
@@ -320,6 +349,10 @@ extension AppModel {
         var note: String?
         var dividend: DividendStatementDetails?
         var invoice: InvoiceAnalysis?
+        /// Money-looking amounts scanned from the OCR text (largest first) —
+        /// the match fallback when the model can't name a total.
+        var fallbackAmounts: [Decimal] = []
+        var fallbackDate: Date?
 
         var amount: Decimal? {
             if let dividend, dividend.netPayment > 0 { return dividend.netPayment }
@@ -355,7 +388,33 @@ extension AppModel {
             doc.invoice = try? await InvoiceAnalyzer.analyze(
                 text: String(text.prefix(6000)), candidates: candidates)
         }
+        if doc.amount == nil {
+            doc.fallbackAmounts = Self.amountCandidates(in: text)
+            doc.fallbackDate = Self.firstDate(in: text)
+        }
         return doc
+    }
+
+    /// Every distinct money-looking amount in the text (`1,234.56`), largest
+    /// first, capped at eight — totals outrank line items.
+    nonisolated static func amountCandidates(in text: String) -> [Decimal] {
+        let pattern = #"(?<![\d.])\d{1,3}(?:,\d{3})*\.\d{2}(?!\d)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        var seen = Set<Decimal>()
+        var amounts: [Decimal] = []
+        for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let range = Range(match.range, in: text) else { continue }
+            let cleaned = text[range].replacingOccurrences(of: ",", with: "")
+            if let amount = Decimal(string: cleaned), amount > 0, seen.insert(amount).inserted {
+                amounts.append(amount)
+            }
+        }
+        return Array(amounts.sorted(by: >).prefix(8))
+    }
+
+    nonisolated static func firstDate(in text: String) -> Date? {
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
+        return detector?.firstMatch(in: text, range: NSRange(text.startIndex..., in: text))?.date
     }
 
     /// The suggestion for a matched file, built from its one parse — dividend

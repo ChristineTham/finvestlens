@@ -23,6 +23,7 @@ struct MatchAttachmentsSheet: View {
 
     @State private var importerShown = false
     @State private var processing = false
+    @State private var processTask: Task<Void, Never>?
     @State private var progress: (done: Int, total: Int)?
     @State private var matches: [AppModel.AttachmentMatch] = []
     @State private var accepted: Set<UUID> = []
@@ -42,6 +43,7 @@ struct MatchAttachmentsSheet: View {
                             .frame(maxWidth: 320)
                         Text("Reading \( (progress?.done ?? 0) + 1 ) of \(progress?.total ?? 0)…")
                             .foregroundStyle(.secondary)
+                        Button("Cancel", role: .cancel) { processTask?.cancel() }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if matches.isEmpty {
@@ -97,11 +99,18 @@ struct MatchAttachmentsSheet: View {
     @ViewBuilder
     private func row(_ match: AppModel.AttachmentMatch) -> some View {
         let matched = match.transactionID != nil
-        Toggle(isOn: Binding(
-            get: { accepted.contains(match.id) },
-            set: { isOn in
-                if isOn { accepted.insert(match.id) } else { accepted.remove(match.id) }
-            })) {
+        // The info stack sits BESIDE the checkbox, not inside its label —
+        // text inside a control label can't be selected/copied, and the notes
+        // are exactly what one wants to copy when a file doesn't match.
+        HStack(alignment: .top, spacing: 8) {
+            Toggle("", isOn: Binding(
+                get: { accepted.contains(match.id) },
+                set: { isOn in
+                    if isOn { accepted.insert(match.id) } else { accepted.remove(match.id) }
+                }))
+                .labelsHidden()
+                .checkboxToggleStyle()
+                .disabled(!matched)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Image(systemName: matched ? "doc.badge.plus" : "questionmark.circle")
@@ -146,17 +155,16 @@ struct MatchAttachmentsSheet: View {
                     Text(match.note ?? "No match.")
                         .scaledFont(.caption)
                         .foregroundStyle(.orange)
+                        .textSelection(.enabled)
                 }
             }
         }
-        .checkboxToggleStyle()
-        .disabled(!matched)
     }
 
     private func process(_ urls: [URL]) {
         processing = true
         appliedSummary = nil
-        Task {
+        processTask = Task {
             defer { processing = false; progress = nil }
             // Security-scoped access for files picked via fileImporter.
             let scoped = urls.map { ($0, $0.startAccessingSecurityScopedResource()) }
