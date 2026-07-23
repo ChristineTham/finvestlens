@@ -294,6 +294,9 @@ extension AppModel {
 
         // Stage 2 — match and build suggestions: book work only, no model calls.
         var results: [AttachmentMatch] = []
+        // Transactions matched earlier in this batch: two files must not claim
+        // the same one (links only land on Apply, so the book can't tell).
+        var claimed = Set<GncGUID>()
         for (index, url) in urls.enumerated() {
             if Task.isCancelled { break }
             var match = AttachmentMatch(url: url)
@@ -301,29 +304,44 @@ extension AppModel {
             guard let doc = parsed[index] else { match.note = "Cancelled."; continue }
             if let note = doc.note { match.note = note; continue }
 
+            // When the only fit already has an attachment, say so — far more
+            // useful than a generic "no match".
+            func linkedNote(amount: Decimal, near date: Date?) -> String? {
+                guard let linked = findTransaction(amount: amount, near: date,
+                                                   excluding: claimed, includeLinked: true)
+                else { return nil }
+                return "Matches \(transactionSummary(linked)) — but that transaction already has an attachment."
+            }
+
             var matched: Transaction?
             if let amount = doc.amount {
-                matched = findTransaction(amount: amount, near: doc.date)
+                matched = findTransaction(amount: amount, near: doc.date, excluding: claimed)
                 if matched == nil {
-                    match.note = "No unlinked transaction matches \(amount) around that date."
+                    match.note = linkedNote(amount: amount, near: doc.date)
+                        ?? "No unlinked transaction matches \(amount) around that date."
                 }
             } else if !doc.fallbackAmounts.isEmpty {
                 // The model couldn't name a total — try every money-looking
                 // amount the OCR found (largest first) against the book.
                 for amount in doc.fallbackAmounts {
-                    if let hit = findTransaction(amount: amount, near: doc.fallbackDate) {
+                    if let hit = findTransaction(amount: amount, near: doc.fallbackDate,
+                                                 excluding: claimed) {
                         matched = hit
                         break
                     }
                 }
                 if matched == nil {
                     let tried = doc.fallbackAmounts.map { "\($0)" }.joined(separator: ", ")
-                    match.note = "Couldn’t read a total; none of the amounts found (\(tried)) match an unlinked transaction."
+                    match.note = doc.fallbackAmounts.compactMap {
+                        linkedNote(amount: $0, near: doc.fallbackDate)
+                    }.first
+                        ?? "Couldn’t read a total; none of the amounts found (\(tried)) match an unlinked transaction."
                 }
             } else {
-                match.note = "Couldn’t read an amount from the document."
+                match.note = "Couldn’t read an amount from the document — the scan may be too faint to OCR."
             }
             guard let txn = matched else { continue }
+            claimed.insert(txn.guid)
             match.transactionID = txn.guid
             match.transactionSummary = transactionSummary(txn)
             match.note = nil
@@ -453,12 +471,15 @@ extension AppModel {
     /// The best unlinked transaction for an amount: a money leg of exactly that
     /// magnitude, posted within ±14 days of the document date (closest wins;
     /// no document date accepts any).
-    private func findTransaction(amount: Decimal, near date: Date?) -> Transaction? {
+    private func findTransaction(amount: Decimal, near date: Date?,
+                                 excluding claimed: Set<GncGUID> = [],
+                                 includeLinked: Bool = false) -> Transaction? {
         guard let book else { return nil }
         let calendar = Calendar.current
         var best: (txn: Transaction, days: Int)?
         for txn in book.transactions {
-            guard txn.documentLink == nil else { continue }
+            guard !claimed.contains(txn.guid) else { continue }
+            guard includeLinked || txn.documentLink == nil else { continue }
             guard txn.splits.contains(where: { Self.isMoneyLeg($0) && abs($0.value) == amount })
             else { continue }
             let days: Int

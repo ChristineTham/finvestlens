@@ -56,16 +56,27 @@ struct MatchAttachmentsSheet: View {
                             .buttonStyle(.borderedProminent)
                     }
                 } else {
-                    List {
-                        if let appliedSummary {
-                            Section { Label(appliedSummary, systemImage: "checkmark.circle")
-                                .foregroundStyle(.green) }
-                        }
-                        Section("\(matches.count) file\(matches.count == 1 ? "" : "s")") {
+                    // A ScrollView, not a List: List's row machinery swallows
+                    // the drags text selection needs, and these rows' notes are
+                    // exactly what one wants to copy out.
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            if let appliedSummary {
+                                Label(appliedSummary, systemImage: "checkmark.circle")
+                                    .foregroundStyle(.green)
+                                    .padding(.horizontal, 16).padding(.vertical, 8)
+                                Divider()
+                            }
+                            Text("\(matches.count) file\(matches.count == 1 ? "" : "s")")
+                                .scaledFont(.headline)
+                                .padding(.horizontal, 16).padding(.vertical, 8)
                             ForEach(matches) { match in
                                 row(match)
+                                    .padding(.horizontal, 16).padding(.vertical, 6)
+                                Divider()
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }
@@ -158,7 +169,30 @@ struct MatchAttachmentsSheet: View {
                         .textSelection(.enabled)
                 }
             }
+            .contextMenu {
+                Button("Copy Details") { GeneralPasteboard.copy(details(of: match)) }
+            }
         }
+    }
+
+    /// Everything the row says, as plain text — for pasting into a report.
+    private func details(of match: AppModel.AttachmentMatch) -> String {
+        var lines = [match.fileName]
+        if match.transactionID != nil { lines.append(match.transactionSummary) }
+        if let note = match.note { lines.append(note) }
+        if let suggestion = match.suggestion {
+            if let friendly = suggestion.friendlyDescription {
+                lines.append("Rename to “\(friendly)”")
+            }
+            if let split = suggestion.lines {
+                for line in split {
+                    lines.append("→ \(line.accountName)  \(AmountFormat.string(line.value, code: suggestion.currencyCode))")
+                }
+            } else {
+                lines.append("→ \(suggestion.accountName)")
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 
     private func process(_ urls: [URL]) {

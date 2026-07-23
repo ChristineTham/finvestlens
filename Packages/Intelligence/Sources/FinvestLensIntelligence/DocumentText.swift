@@ -51,9 +51,18 @@ public enum DocumentText {
         }
         #endif
         #if canImport(Vision)
-        if let image = cgImage(from: data),
-           let text = try await recognize(image: image), !text.isEmpty {
-            return [Page(number: 1, text: text)]
+        if let image = cgImage(from: data) {
+            var text = try await recognize(image: image) ?? ""
+            // A near-empty read of a photo usually means faint thermal print or
+            // small type — recognition often succeeds on a 2× upscale.
+            if text.count < 200, let scaled = upscaled(image, by: 2),
+               let better = try? await recognize(image: scaled) ?? nil,
+               better.count > text.count {
+                text = better
+            }
+            if !text.isEmpty {
+                return [Page(number: 1, text: text)]
+            }
         }
         #endif
         throw IntelligenceError.emptyDocument
@@ -219,6 +228,23 @@ public enum DocumentText {
     private static func cgImage(from data: Data) -> CGImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    /// Redraws an image at `factor`× on white with high-quality interpolation.
+    private static func upscaled(_ image: CGImage, by factor: Int) -> CGImage? {
+        let width = image.width * factor
+        let height = image.height * factor
+        guard let context = CGContext(
+            data: nil, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { return nil }
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+        return context.makeImage()
     }
 
     /// Reads a rendered page as a structured document, reconstructing detected
