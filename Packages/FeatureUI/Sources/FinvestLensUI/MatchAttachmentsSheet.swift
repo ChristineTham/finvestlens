@@ -31,6 +31,8 @@ struct MatchAttachmentsSheet: View {
     @State private var appliedSummary: String?
     /// The unmatched receipt being recorded as a fresh cash purchase.
     @State private var recordTarget: AppModel.AttachmentMatch?
+    /// The unmatched receipt being linked to a manually-chosen transaction.
+    @State private var linkTarget: AppModel.AttachmentMatch?
 
     private var applyCount: Int {
         matches.filter { accepted.contains($0.id) && $0.transactionID != nil }.count
@@ -107,20 +109,16 @@ struct MatchAttachmentsSheet: View {
                         .disabled(applyCount == 0 || processing || applying)
                 }
             }
+            .sheet(item: $linkTarget) { match in
+                LinkToTransactionSheet(model: model, match: match) { transactionID in
+                    attach(match, to: transactionID,
+                           summary: "Linked \(match.fileName) to the chosen transaction.")
+                }
+            }
             .sheet(item: $recordTarget) { match in
                 RecordCashPurchaseSheet(model: model, match: match) { transactionID in
-                    Task {
-                        let url = match.url
-                        let accessing = url.startAccessingSecurityScopedResource()
-                        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-                        let data = try? await Task.detached { try Data(contentsOf: url) }.value
-                        if let data {
-                            _ = try? model.attachDocument(named: match.fileName, data: data,
-                                                          to: transactionID)
-                        }
-                        matches.removeAll { $0.id == match.id }
-                        appliedSummary = "Recorded \(match.fileName) as a cash purchase and attached it."
-                    }
+                    attach(match, to: transactionID,
+                           summary: "Recorded \(match.fileName) as a cash purchase and attached it.")
                 }
             }
             .fileImporter(isPresented: $importerShown,
@@ -163,12 +161,19 @@ struct MatchAttachmentsSheet: View {
                     .foregroundStyle(.secondary)
                     .controlSize(.small)
                     .help("Copy this row’s details")
-                    if !matched, !match.candidateAmounts.isEmpty {
-                        Button("Record as Cash…", systemImage: "banknote") {
-                            recordTarget = match
+                    if !matched {
+                        Button("Link to Transaction…", systemImage: "link") {
+                            linkTarget = match
                         }
                         .controlSize(.small)
-                        .help("The receipt matches no card/bank transaction — record it as a fresh cash purchase and attach the file")
+                        .help("Attach this document to a transaction you pick — for foreign-currency invoices, deposits, or future charges auto-match can’t find")
+                        if !match.candidateAmounts.isEmpty {
+                            Button("Record as Cash…", systemImage: "banknote") {
+                                recordTarget = match
+                            }
+                            .controlSize(.small)
+                            .help("The receipt matches no card/bank transaction — record it as a fresh cash purchase and attach the file")
+                        }
                     }
                 }
                 if matched {
@@ -252,6 +257,23 @@ struct MatchAttachmentsSheet: View {
             }
             matches.append(contentsOf: results)
             accepted.formUnion(results.filter { $0.transactionID != nil }.map(\.id))
+        }
+    }
+
+    /// Copies the file into the document folder and links it to `transactionID`,
+    /// off the main actor (cloud files materialise on read), then drops the row.
+    private func attach(_ match: AppModel.AttachmentMatch, to transactionID: GncGUID,
+                        summary: String) {
+        Task {
+            let url = match.url
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            let data = try? await Task.detached { try Data(contentsOf: url) }.value
+            if let data {
+                _ = try? model.attachDocument(named: match.fileName, data: data, to: transactionID)
+            }
+            matches.removeAll { $0.id == match.id }
+            appliedSummary = summary
         }
     }
 
@@ -389,5 +411,50 @@ struct RecordCashPurchaseSheet: View {
             name.removeSubrange(range)
         }
         return name.trimmingCharacters(in: .whitespaces)
+    }
+}
+
+
+/// Manual link: pick the transaction an unmatched document belongs to (any
+/// account, any date). The escape hatch for what auto-match can't reach —
+/// foreign-currency invoices, deposits, and future-dated charges — where the
+/// document's amount or date deliberately won't equal the transaction's.
+struct LinkToTransactionSheet: View {
+    @Bindable var model: AppModel
+    let match: AppModel.AttachmentMatch
+    let onLinked: (GncGUID) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.appDateFormat) private var dateFormat
+    @State private var query = ""
+
+    var body: some View {
+        NavigationStack {
+            List(model.transactionsForLinking(query: query)) { pick in
+                Button {
+                    onLinked(pick.id)
+                    dismiss()
+                } label: {
+                    HStack(spacing: 6) {
+                        if pick.hasDocument {
+                            Image(systemName: "paperclip").foregroundStyle(.secondary)
+                                .help("Already has an attachment")
+                        }
+                        Text(pick.summary).scaledFont(.callout)
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .searchable(text: $query, prompt: "Search description or amount")
+            .navigationTitle("Link “\(match.fileName)”")
+            .onEscapeCommand { dismiss() }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
+            }
+        }
+        .frame(minWidth: 520, minHeight: 420)
     }
 }

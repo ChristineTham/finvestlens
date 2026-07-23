@@ -658,6 +658,41 @@ extension AppModel {
         return best?.txn
     }
 
+    /// A transaction offered in the manual link picker.
+    public struct TransactionPick: Identifiable, Sendable {
+        public let id: GncGUID
+        public let date: Date
+        public let summary: String
+        public let hasDocument: Bool
+    }
+
+    /// Transactions for the manual "Link to Transaction…" picker: filtered by a
+    /// query over description (and, when the query parses as a number, the money
+    /// leg's magnitude), newest first. Empty query returns the most recent.
+    public func transactionsForLinking(query: String, limit: Int = 80) -> [TransactionPick] {
+        guard let book else { return [] }
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let qAmount = Decimal(string: q)
+        var matched: [Transaction] = []
+        for txn in book.transactions {
+            guard txn.splits.contains(where: { Self.isMoneyLeg($0) }) else { continue }
+            if !q.isEmpty {
+                let byText = txn.transactionDescription.lowercased().contains(q)
+                let byAmount = qAmount.map { amount in
+                    txn.splits.contains { Self.isMoneyLeg($0) && abs($0.value) == amount }
+                } ?? false
+                guard byText || byAmount else { continue }
+            }
+            matched.append(txn)
+        }
+        return matched
+            .sorted { $0.datePosted > $1.datePosted }
+            .prefix(limit)
+            .map { TransactionPick(id: $0.guid, date: $0.datePosted,
+                                   summary: transactionSummary($0),
+                                   hasDocument: $0.documentLink != nil) }
+    }
+
     private func transactionSummary(_ txn: Transaction) -> String {
         let account = txn.splits.first(where: Self.isMoneyLeg)?.account?.name ?? "—"
         let amount = txn.splits.first(where: Self.isMoneyLeg)?.value ?? 0
