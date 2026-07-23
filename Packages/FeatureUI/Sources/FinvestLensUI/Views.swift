@@ -2912,6 +2912,15 @@ struct TransactionEditorSheet: View {
     @State private var linkPickerShown = false
     @State private var linkingToID: GncGUID?
     @State private var categorising = false
+    // Foreign-amount converter (FR-CUR-01): foreign amount + currency; the rate
+    // auto-fills from the price DB or a live fetch, and editing the local
+    // amount back-solves the implied rate.
+    @State private var fxShown = false
+    @State private var fxAmountText = ""
+    @State private var fxCode = "USD"
+    @State private var fxRateText = ""
+    @State private var fxLocalText = ""
+    @State private var fxFetching = false
     @Environment(\.appFontScale) private var appFontScale
     private var amountWidth: CGFloat { 100 * appFontScale }
 
@@ -2958,19 +2967,31 @@ struct TransactionEditorSheet: View {
         return nil
     }
 
+    private var showsDocumentPane: Bool {
+        #if os(macOS)
+        guard let documentURL else { return false }
+        return FileManager.default.fileExists(atPath: documentURL.path)
+        #else
+        return false
+        #endif
+    }
+
     var body: some View {
         NavigationStack {
             HStack(spacing: 0) {
                 editorForm
+                    .frame(minWidth: inInspector ? nil : 480)
                 #if os(macOS)
-                if let documentURL, FileManager.default.fileExists(atPath: documentURL.path) {
+                if showsDocumentPane, let documentURL {
                     Divider()
                     EmbeddedQuickLook(url: documentURL)
-                        .frame(minWidth: 300, idealWidth: 400)
+                        .frame(minWidth: 320, idealWidth: 420)
                 }
                 #endif
             }
         }
+        .frame(minWidth: inInspector ? nil : (showsDocumentPane ? 940 : 560),
+               minHeight: inInspector ? nil : 540)
     }
 
     private var editorForm: some View {
@@ -3092,6 +3113,14 @@ struct TransactionEditorSheet: View {
                                 Button(tag) { appendTag(tag) }
                             }
                         }
+                    }
+                }
+
+                Section {
+                    DisclosureGroup(isExpanded: $fxShown) {
+                        fxConverter
+                    } label: {
+                        Label("Foreign Amount", systemImage: "dollarsign.arrow.circlepath")
                     }
                 }
 
@@ -3240,6 +3269,111 @@ struct TransactionEditorSheet: View {
         let rate = line.amount / quantity
         let rounded = NSDecimalNumber(decimal: displayCurrency.round(rate)).stringValue
         return "\(NSDecimalNumber(decimal: quantity).stringValue) \(unit) @ \(rounded) \(displayCurrency.mnemonic)"
+    }
+
+    private var fxAmount: Decimal? { EditableSplit.strictDecimal(
+        fxAmountText.trimmingCharacters(in: .whitespaces)) }
+    private var fxRate: Decimal? { EditableSplit.strictDecimal(
+        fxRateText.trimmingCharacters(in: .whitespaces)) }
+    private var fxLocal: Decimal? { EditableSplit.strictDecimal(
+        fxLocalText.trimmingCharacters(in: .whitespaces)) }
+
+    /// Enter the foreign amount; the rate fills from the book (or a live
+    /// fetch); the local amount computes. Typing the local amount you *know*
+    /// (the card charge) back-solves the implied rate — the truest rate for
+    /// this purchase — and Apply teaches it to the price DB.
+    @ViewBuilder
+    private var fxConverter: some View {
+        HStack(spacing: 8) {
+            TextField("Amount", text: $fxAmountText)
+                .multilineTextAlignment(.trailing)
+                .frame(width: amountWidth)
+                .onChange(of: fxAmountText) { recomputeLocal() }
+            Picker("", selection: $fxCode) {
+                ForEach(model.fxCurrencyCodes, id: \.self) { Text($0).tag($0) }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .onChange(of: fxCode) { lookUpRate() }
+            Text("@").foregroundStyle(.secondary)
+            TextField("Rate", text: $fxRateText)
+                .multilineTextAlignment(.trailing)
+                .frame(width: amountWidth)
+                .onChange(of: fxRateText) { recomputeLocal() }
+            Button {
+                fetchRate()
+            } label: {
+                if fxFetching { ProgressView().controlSize(.small) }
+                else { Image(systemName: "arrow.triangle.2.circlepath") }
+            }
+            .help("Fetch the live rate")
+            .disabled(fxFetching)
+        }
+        HStack(spacing: 8) {
+            Text("= \(displayCurrency.mnemonic)").foregroundStyle(.secondary)
+            TextField("Local amount", text: $fxLocalText)
+                .multilineTextAlignment(.trailing)
+                .frame(width: amountWidth)
+                .onChange(of: fxLocalText) { backSolveRate() }
+            Spacer()
+            Button("Apply to Splits") { applyFx() }
+                .disabled(fxLocal == nil || fxLocal == 0)
+                .help("Fill the split amounts with the local value, note the foreign amount in the memo, and record the rate")
+        }
+        .onAppear { if fxRateText.isEmpty { lookUpRate() } }
+    }
+
+    private func lookUpRate() {
+        if let rate = model.storedFxRate(code: fxCode, on: date) {
+            fxRateText = NSDecimalNumber(decimal: displayCurrency.round(rate * 10_000) / 10_000).stringValue
+            recomputeLocal()
+        } else {
+            fxRateText = ""
+        }
+    }
+
+    private func fetchRate() {
+        fxFetching = true
+        Task {
+            defer { fxFetching = false }
+            if let rate = await model.fetchLiveFxRate(code: fxCode) {
+                fxRateText = NSDecimalNumber(decimal: rate).stringValue
+                recomputeLocal()
+            }
+        }
+    }
+
+    private func recomputeLocal() {
+        guard let fxAmount, let fxRate else { return }
+        fxLocalText = NSDecimalNumber(decimal: displayCurrency.round(fxAmount * fxRate)).stringValue
+    }
+
+    /// Local edited by hand: derive the implied rate instead of fighting it.
+    private func backSolveRate() {
+        guard let fxAmount, fxAmount != 0, let fxLocal else { return }
+        let implied = fxLocal / fxAmount
+        let rounded = NSDecimalNumber(decimal: (implied * 1_000_000)).intValue
+        let display = Decimal(rounded) / 1_000_000
+        let current = fxRate ?? 0
+        // Only rewrite when meaningfully different, or typing loops.
+        if abs(current - display) > Decimal(string: "0.000001")! {
+            fxRateText = NSDecimalNumber(decimal: display).stringValue
+        }
+    }
+
+    private func applyFx() {
+        guard let fxLocal, fxLocal != 0, let fxAmount else { return }
+        let localText = NSDecimalNumber(decimal: fxLocal).stringValue
+        let memo = "\(NSDecimalNumber(decimal: fxAmount).stringValue) \(fxCode) @ \(fxRateText) \(displayCurrency.mnemonic)/\(fxCode)"
+        // Fill the classic two-leg shape: money out of the first leg, the
+        // category leg carries the foreign note.
+        if lines.count < 2 { lines = [EditableSplit(), EditableSplit()] }
+        lines[0].amountText = "-" + localText
+        lines[1].amountText = localText
+        if lines[1].memo.isEmpty { lines[1].memo = memo }
+        // The implied/entered rate is real data — teach the price DB.
+        if let fxRate { model.recordFxRate(code: fxCode, rate: fxRate, date: date) }
+        fxShown = false
     }
 
     private func loadIfNeeded() {

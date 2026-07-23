@@ -418,7 +418,8 @@ struct LinkToTransactionSheet: View {
 
     var body: some View {
         NavigationStack {
-            List(model.transactionsForLinking(query: query)) { pick in
+            let picks = model.transactionsForLinking(query: query)
+            List(picks) { pick in
                 Button {
                     onLinked(pick.id)
                     dismiss()
@@ -435,7 +436,15 @@ struct LinkToTransactionSheet: View {
                 }
                 .buttonStyle(.plain)
             }
-            .searchable(text: $query, prompt: "Search description or amount")
+            .searchable(text: $query, prompt: "Search description, amount, or date (13/3)")
+            .safeAreaInset(edge: .bottom) {
+                if picks.count >= 400 {
+                    Text("Showing the latest 400 — search to narrow further.")
+                        .scaledFont(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(6)
+                }
+            }
             .navigationTitle("Link “\(match.fileName)”")
             .onEscapeCommand { dismiss() }
             .toolbar {

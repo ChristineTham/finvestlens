@@ -667,21 +667,27 @@ extension AppModel {
     }
 
     /// Transactions for the manual "Link to Transaction…" picker: filtered by a
-    /// query over description (and, when the query parses as a number, the money
-    /// leg's magnitude), newest first. Empty query returns the most recent.
-    public func transactionsForLinking(query: String, limit: Int = 80) -> [TransactionPick] {
+    /// query over description, amount (a numeric query matches the money leg's
+    /// magnitude — a *prefix* too, so "600" finds 600.55), or date fragment
+    /// ("13/3"), newest first. Empty query returns the most recent `limit`.
+    public func transactionsForLinking(query: String, limit: Int = 400) -> [TransactionPick] {
         guard let book else { return [] }
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         let qAmount = Decimal(string: q)
+        let qIsDate = q.contains("/") || q.contains("-")
         var matched: [Transaction] = []
         for txn in book.transactions {
             guard txn.splits.contains(where: { Self.isMoneyLeg($0) }) else { continue }
             if !q.isEmpty {
                 let byText = txn.transactionDescription.lowercased().contains(q)
-                let byAmount = qAmount.map { amount in
-                    txn.splits.contains { Self.isMoneyLeg($0) && abs($0.value) == amount }
-                } ?? false
-                guard byText || byAmount else { continue }
+                let byAmount = qAmount != nil && txn.splits.contains { split in
+                    guard Self.isMoneyLeg(split) else { return false }
+                    let magnitude = "\(abs(split.value))"
+                    return magnitude == q || magnitude.hasPrefix(q)
+                }
+                let byDate = qIsDate
+                    && AppDateFormat.current.short(txn.datePosted).lowercased().contains(q)
+                guard byText || byAmount || byDate else { continue }
             }
             matched.append(txn)
         }

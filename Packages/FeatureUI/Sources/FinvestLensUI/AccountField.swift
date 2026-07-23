@@ -53,6 +53,9 @@ struct AccountField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
+                Image(systemName: "magnifyingglass")
+                    .imageScale(.small)
+                    .foregroundStyle(.tertiary)
                 TextField(prompt, text: $query)
                     .textFieldStyle(.plain)
                     .focused($focused)
@@ -67,8 +70,23 @@ struct AccountField: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
                     .help("Clear")
+                } else {
+                    Image(systemName: "chevron.up.chevron.down")
+                        .imageScale(.small)
+                        .foregroundStyle(.tertiary)
                 }
             }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            // The border is what tells the eye "this is a field you can type
+            // into" — borderless, the picker was invisible until clicked.
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(focused ? Color.accentColor : Color.secondary.opacity(0.35),
+                                  lineWidth: focused ? 1.5 : 1)
+            )
+            .contentShape(Rectangle())
+            .onTapGesture { focused = true }
             if showList, !settled {
                 VStack(alignment: .leading, spacing: 0) {
                     if matches.isEmpty {
