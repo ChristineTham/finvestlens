@@ -18,85 +18,66 @@ struct PricesView: View {
     @State private var showingAdd = false
     @State private var showingQuotes = false
     @State private var showingAddRate = false
-    @State private var showingSecurities = false
     @State private var importingCSV = false
     @State private var importMessage: String?
 
     var body: some View {
         NavigationStack {
             Group {
-                if model.priceRows.isEmpty && model.rateRows.isEmpty {
-                    ContentUnavailableView("No prices", systemImage: "tag",
-                                           description: Text("Add security prices or exchange rates to value the portfolio."))
-                } else {
-                    List {
-                        if !model.priceRows.isEmpty {
-                            Section("Security Prices") {
-                                ForEach(model.priceRows) { row in
-                                    HStack {
-                                        Text(row.symbol).fontWeight(.medium)
-                                        Text(dateFormat.short(row.date))
-                                            .foregroundStyle(.secondary)
-                                        Spacer()
-                                        Text(AmountFormat.string(row.value, code: row.currencyCode))
-                                            .monospacedDigit()
-                                    }
-                                }
-                                .onDelete { offsets in
-                                    for index in offsets { model.deletePrice(model.priceRows[index].id) }
-                                }
-                            }
-                        }
-                        if !model.rateRows.isEmpty {
-                            Section("Exchange Rates") {
-                                ForEach(model.rateRows) { row in
-                                    HStack {
-                                        Text("\(row.from) → \(row.to)").fontWeight(.medium)
-                                        Text(dateFormat.short(row.date))
-                                            .foregroundStyle(.secondary)
-                                        Spacer()
-                                        Text(row.value.formatted(.number.precision(.fractionLength(0...6))))
-                                            .monospacedDigit()
-                                    }
-                                }
-                                .onDelete { offsets in
-                                    for index in offsets { model.deletePrice(model.rateRows[index].id) }
-                                }
-                            }
-                        }
-                    }
+                switch model.pricesTab {
+                case .prices: pricesList
+                case .securities: SecuritiesView(model: model)
                 }
             }
-            .navigationTitle("Prices & Rates")
+            .navigationTitle("Prices & Securities")
+            .navigationSubtitle(model.lastPriceUpdate.map { "Last updated \(dateFormat.long($0))" }
+                                ?? "No security prices yet")
             .toolbar {
                 if !embedded {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Done") { dismiss() }
                     }
                 }
-                ToolbarItem {
-                    Button("Securities", systemImage: "building.2") { showingSecurities = true }
+                // The two halves of the destination (6.5): the price database
+                // and the securities that feed it (watchlist, targets, rename).
+                ToolbarItem(placement: .principal) {
+                    Picker("Section", selection: $model.pricesTab) {
+                        ForEach(AppModel.PricesTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
                 }
                 ToolbarItem {
-                    Button("Get Quotes", systemImage: "arrow.down.circle") { showingQuotes = true }
-                        .disabled(model.pricableSecurities.isEmpty)
+                    // The journey's most frequent task, one click (6.4, ⌘⇧U).
+                    Button("Update Prices", systemImage: "arrow.triangle.2.circlepath") {
+                        Task { await model.updateAllPrices() }
+                    }
+                    .disabled(model.pricableSecurities.isEmpty || model.quoteProgress != nil)
+                    .help("Fetch every security's missing prices — progress and result show at the bottom")
                 }
-                ToolbarItem {
-                    Button("Add Rate", systemImage: "dollarsign.arrow.circlepath") { showingAddRate = true }
-                        .disabled(model.currencyCommodities.count < 2)
-                }
-                ToolbarItem {
-                    Button("Import CSV", systemImage: "square.and.arrow.down") { importingCSV = true }
-                }
-                ToolbarItem {
-                    Button("Add Price", systemImage: "plus") { showingAdd = true }
-                        .disabled(model.pricableSecurities.isEmpty)
+                if model.pricesTab == .prices {
+                    ToolbarItem {
+                        Button("Get Quotes", systemImage: "arrow.down.circle") { showingQuotes = true }
+                            .disabled(model.pricableSecurities.isEmpty)
+                            .help("Choose a provider, refetch history, or fetch latest quotes")
+                    }
+                    ToolbarItem {
+                        Button("Add Rate", systemImage: "dollarsign.arrow.circlepath") { showingAddRate = true }
+                            .disabled(model.currencyCommodities.count < 2)
+                    }
+                    ToolbarItem {
+                        Button("Import CSV", systemImage: "square.and.arrow.down") { importingCSV = true }
+                    }
+                    ToolbarItem {
+                        Button("Add Price", systemImage: "plus") { showingAdd = true }
+                            .disabled(model.pricableSecurities.isEmpty)
+                    }
                 }
             }
             .sheet(isPresented: $showingAdd) { AddPriceSheet(model: model) }
             .sheet(isPresented: $showingQuotes) { QuotesView(model: model) }
             .sheet(isPresented: $showingAddRate) { AddRateSheet(model: model) }
-            .sheet(isPresented: $showingSecurities) { SecuritiesView(model: model) }
             .fileImporter(isPresented: $importingCSV, allowedContentTypes: [.commaSeparatedText, .plainText]) { result in
                 guard case let .success(url) = result else { return }
                 let scoped = url.startAccessingSecurityScopedResource()
@@ -120,6 +101,51 @@ struct PricesView: View {
             )) { Button("OK", role: .cancel) {} } message: { Text(importMessage ?? "") }
         }
         .frame(minWidth: embedded ? nil : 460, minHeight: embedded ? nil : 380)
+    }
+
+    @ViewBuilder
+    private var pricesList: some View {
+        if model.priceRows.isEmpty && model.rateRows.isEmpty {
+            ContentUnavailableView("No prices", systemImage: "tag",
+                                   description: Text("Add security prices or exchange rates to value the portfolio."))
+        } else {
+            List {
+                if !model.priceRows.isEmpty {
+                    Section("Security Prices") {
+                        ForEach(model.priceRows) { row in
+                            HStack {
+                                Text(row.symbol).fontWeight(.medium)
+                                Text(dateFormat.short(row.date))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(AmountFormat.string(row.value, code: row.currencyCode))
+                                    .monospacedDigit()
+                            }
+                        }
+                        .onDelete { offsets in
+                            for index in offsets { model.deletePrice(model.priceRows[index].id) }
+                        }
+                    }
+                }
+                if !model.rateRows.isEmpty {
+                    Section("Exchange Rates") {
+                        ForEach(model.rateRows) { row in
+                            HStack {
+                                Text("\(row.from) → \(row.to)").fontWeight(.medium)
+                                Text(dateFormat.short(row.date))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(row.value.formatted(.number.precision(.fractionLength(0...6))))
+                                    .monospacedDigit()
+                            }
+                        }
+                        .onDelete { offsets in
+                            for index in offsets { model.deletePrice(model.rateRows[index].id) }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -26,11 +26,16 @@ extension AppModel {
         guard let book else { return [] }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
-        let horizon = calendar.date(byAdding: .month, value: months, to: from) ?? from
-        return FinancialReports.cashFlowForecast(book, accountID: accountID,
-                                                 scheduled: scheduledTransactions,
-                                                 from: from, horizon: horizon, currency: reportCurrency,
-                                                 whatIf: whatIfEvents)
+        // Quantised for the memo key; what-if events are session state, so
+        // they join the key rather than invalidating the whole cache.
+        let start = min(from, Self.endOfToday())
+        let horizon = calendar.date(byAdding: .month, value: months, to: start) ?? start
+        return cachedReport("fcast:\(accountID.hexString):\(months):\(start.timeIntervalSinceReferenceDate):\(whatIfEvents.hashValue)") {
+            FinancialReports.cashFlowForecast(book, accountID: accountID,
+                                              scheduled: scheduledTransactions,
+                                              from: start, horizon: horizon, currency: reportCurrency,
+                                              whatIf: whatIfEvents)
+        } ?? []
     }
 
     /// Upcoming/overdue bills from scheduled transactions over a window around

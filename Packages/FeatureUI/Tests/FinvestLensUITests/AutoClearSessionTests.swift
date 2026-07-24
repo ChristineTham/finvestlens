@@ -49,6 +49,22 @@ struct AutoClearSessionTests {
                                statementBalance: statement)
     }
 
+    /// RD3: after an auto-clear the rows still needing eyes come first —
+    /// "review the remainder" must not mean hunting through matched rows.
+    /// Within each group, date order holds.
+    @Test("Unmatched rows sort to the top after auto-clear")
+    func unmatchedFirst() throws {
+        let f = try makeFixture([100, 20, 3])
+        defer { f.model.close(); try? FileManager.default.removeItem(at: f.url) }
+        begin(f, statement: 103)
+
+        _ = f.model.autoClear()   // matches 100 + 3, leaves 20 unticked
+        let items = try #require(f.model.reconcileSession).items
+        #expect(items.map(\.isCleared) == [false, true, true])
+        #expect(items.first?.description == "t1")
+        #expect(items.filter(\.isCleared).map(\.description) == ["t0", "t2"])
+    }
+
     /// The claim auto-clear makes: after it, the Cleared figure *is* the
     /// statement balance and Finish is available.
     @Test("Auto-clear leaves the session balanced")

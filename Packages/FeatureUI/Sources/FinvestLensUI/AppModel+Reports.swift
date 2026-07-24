@@ -35,14 +35,18 @@ extension AppModel {
     /// An account's postings over a period with a running balance (`FR-RPT-04`).
     public func transactionReport(accountID: GncGUID, from: Date, to: Date) -> TransactionReport? {
         guard let book else { return nil }
-        return FinancialReports.transactionReport(book, accountID: accountID, from: from, to: to)
+        return cachedReport("txr:\(accountID.hexString):\(from.timeIntervalSinceReferenceDate):\(to.timeIntervalSinceReferenceDate)") {
+            FinancialReports.transactionReport(book, accountID: accountID, from: from, to: to)
+        }
     }
 
     /// An account's postings grouped by reconcile state as of a date
     /// (`FR-RPT-05`).
     public func reconcileReport(accountID: GncGUID, asOf: Date) -> ReconcileReport? {
         guard let book else { return nil }
-        return FinancialReports.reconcileReport(book, accountID: accountID, asOf: asOf)
+        return cachedReport("recr:\(accountID.hexString):\(asOf.timeIntervalSinceReferenceDate)") {
+            FinancialReports.reconcileReport(book, accountID: accountID, asOf: asOf)
+        }
     }
 
     /// Every account's balance in debit/credit columns (`FR-RPT-01`).

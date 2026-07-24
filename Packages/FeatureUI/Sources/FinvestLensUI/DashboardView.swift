@@ -104,8 +104,9 @@ struct DashboardView: View {
     @Environment(\.openWindow) private var openWindow
     #endif
 
-    /// The timescale that drives every panel. This financial year by default.
-    @State private var period: ReportPeriod = .currentFinancialYear
+    /// The timescale that drives every panel. Survives relaunch (F18):
+    /// stored as JSON so the custom range round-trips too.
+    @State private var period: ReportPeriod = Self.storedPeriod()
     /// Selected sector value for the allocation donut's hover tooltip.
     @State private var allocationValue: Double?
     /// Per-holding value over the timescale, for the performance area.
@@ -157,6 +158,20 @@ struct DashboardView: View {
         .task(id: RangeKey(from: range.from, to: range.to)) {
             perfSeries = await computePerformance(range)
         }
+        .onChange(of: period) { Self.storePeriod(period) }
+    }
+
+    private static let periodKey = "session.dashboardPeriod"
+
+    private static func storedPeriod() -> ReportPeriod {
+        guard let data = UserDefaults.standard.data(forKey: periodKey),
+              let period = try? JSONDecoder().decode(ReportPeriod.self, from: data)
+        else { return .currentFinancialYear }
+        return period
+    }
+
+    private static func storePeriod(_ period: ReportPeriod) {
+        UserDefaults.standard.set(try? JSONEncoder().encode(period), forKey: periodKey)
     }
 
     private func columnCount(for width: CGFloat) -> Int {
@@ -227,7 +242,9 @@ struct DashboardView: View {
                     if let days = state.priceAgeDays {
                         upNextRow("clock.arrow.circlepath",
                                   "Prices updated \(days) day\(days == 1 ? "" : "s") ago",
-                                  button: "Update Prices") { model.show(.prices) }
+                                  button: "Update Prices") {
+                            Task { await model.updateAllPrices() }
+                        }
                     }
                     if state.uncategorisedCount > 0 {
                         upNextRow("sparkles",
@@ -775,6 +792,18 @@ struct DashboardView: View {
     private var alertsCard: some View {
         let alerts = model.alerts()
         return Card("Alerts", systemImage: "bell.badge") {
+            // Price targets fire here but are *set* in Securities — link the
+            // two so the card is a door, not just a lamp (6.5).
+            HStack {
+                Spacer()
+                Button("Price Targets…") {
+                    model.pricesTab = .securities
+                    model.show(.prices)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tint)
+                .scaledFont(.caption)
+            }
             if alerts.isEmpty {
                 Label("Nothing needs attention", systemImage: "checkmark.circle")
                     .foregroundStyle(.green).scaledFont(.callout)

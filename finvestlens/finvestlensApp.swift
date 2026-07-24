@@ -105,10 +105,10 @@ struct finvestlensApp: App {
             // has no standard Save item, and a CommandGroup anchored to a
             // missing item is silently dropped from the menu bar.
             CommandGroup(after: .newItem) {
-                Button("Save") { try? model.save() }
+                Button("Save") { Task { await model.saveWithStatus(interactive: true) } }
                     .keyboardShortcut("s", modifiers: .command)
                     .disabled(!model.hasUnsavedChanges)
-                Button("Revert to Saved") { try? model.revert() }
+                Button("Revert to Saved") { model.revertWithStatus() }
                     .disabled(!model.isOpen || !model.hasUnsavedChanges)
                 Divider()
                 #if os(macOS)
@@ -132,6 +132,19 @@ struct finvestlensApp: App {
             }
             // Find sits in Edit, under Cut/Copy/Paste, where GnuCash puts it
             // (Edit ▸ Find…, ⌘F) and where macOS users look for it.
+            CommandGroup(after: .sidebar) {
+                Divider()
+                Button("Dashboard") { model.show(.dashboard) }
+                    .keyboardShortcut("1", modifiers: [.command, .option])
+                    .disabled(!model.isOpen)
+                Button("Reports") { model.show(.reports) }
+                    .keyboardShortcut("2", modifiers: [.command, .option])
+                    .disabled(!model.isOpen)
+                Button("All Transactions") { model.show(.generalLedger) }
+                    .keyboardShortcut("3", modifiers: [.command, .option])
+                    .disabled(!model.isOpen)
+                Divider()
+            }
             CommandGroup(after: .pasteboard) {
                 Divider()
                 Button("Find…") { model.presentedPanel = .find }
@@ -192,23 +205,6 @@ struct finvestlensApp: App {
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(!model.isOpen || model.selectedAccountID == nil)
                 Divider()
-                // Inline, in the detail pane, like the dashboard — a detached
-                // window only when asked for (docs/reports.md).
-                Button("Reports…") {
-                    #if os(macOS)
-                    model.isShowingReports = true
-                    #else
-                    model.show(.reports)
-                    #endif
-                }
-                .keyboardShortcut("r", modifiers: .command)
-                .disabled(!model.isOpen)
-                #if os(macOS)
-                // No shortcut: ⇧⌘R is Reconcile's. A window you open once per
-                // arrangement of monitors does not need a chord.
-                Button("Reports in New Window") { openWindow(id: "reports") }
-                    .disabled(!model.isOpen)
-                #endif
                 Button("Budget…") { model.show(.budgets) }
                     .keyboardShortcut("b", modifiers: .command)
                     .disabled(!model.isOpen)
@@ -218,7 +214,10 @@ struct finvestlensApp: App {
                     .disabled(!model.isOpen)
                 Button("Scheduled Transactions…") { model.show(.scheduled) }
                     .disabled(!model.isOpen)
-                Button("Prices & Quotes…") { model.show(.prices) }
+                Button("Prices & Securities…") { model.show(.prices) }
+                    .disabled(!model.isOpen)
+                Button("Update Prices") { Task { await model.updateAllPrices() } }
+                    .keyboardShortcut("u", modifiers: [.command, .shift])
                     .disabled(!model.isOpen)
                 Button("Linked Documents…") { model.presentedPanel = .linkedDocuments }
                     .disabled(!model.isOpen)
@@ -239,12 +238,44 @@ struct finvestlensApp: App {
                 Button("Auto-Categorise Transactions…") { model.presentedPanel = .autoCategorize }
                     .disabled(!model.isOpen)
                 Button("Match Attachments…") { model.presentedPanel = .matchAttachments }
+                    .keyboardShortcut("m", modifiers: [.command, .shift])
                     .disabled(!model.isOpen || !model.isIntelligenceAvailable)
                     .help(model.intelligenceUnavailableReason
                           ?? "Pick receipts and statements — each is matched to its transaction, linked, and categorised")
                 Divider()
                 Button("Dashboard") { model.selectedAccountID = nil }
                     .keyboardShortcut("d", modifiers: .command)
+                    .disabled(!model.isOpen)
+            }
+            CommandMenu("Reports") {
+                // Inline, in the detail pane, like the dashboard — a detached
+                // window only when asked for (docs/reports.md).
+                Button("Reports…") {
+                    #if os(macOS)
+                    model.isShowingReports = true
+                    #else
+                    model.show(.reports)
+                    #endif
+                }
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(!model.isOpen)
+                #if os(macOS)
+                // No shortcut: ⇧⌘R is Reconcile's. A window you open once per
+                // arrangement of monitors does not need a chord.
+                Button("Reports in New Window") { openWindow(id: "reports") }
+                    .disabled(!model.isOpen)
+                #endif
+                Divider()
+                // The journey's reports, one jump each (6.7).
+                Button("Balance Sheet") { model.openReport(.balanceSheet) }
+                    .disabled(!model.isOpen)
+                Button("Income Statement") { model.openReport(.incomeStatement) }
+                    .disabled(!model.isOpen)
+                Button("Portfolio") { model.openReport(.portfolio) }
+                    .disabled(!model.isOpen)
+                Button("Capital Gains") { model.openReport(.capitalGains) }
+                    .disabled(!model.isOpen)
+                Button("Transactions") { model.openReport(.transactions) }
                     .disabled(!model.isOpen)
             }
             CommandMenu("Business") {

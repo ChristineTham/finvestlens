@@ -260,7 +260,7 @@ struct MatchAttachmentsSheet: View {
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             let data = try? await Task.detached { try Data(contentsOf: url) }.value
             if let data {
-                _ = try? model.attachDocument(named: match.fileName, data: data, to: transactionID)
+                model.attachDocumentReporting(named: match.fileName, data: data, to: transactionID)
             }
             matches.removeAll { $0.id == match.id }
             appliedSummary = summary
@@ -282,8 +282,8 @@ struct MatchAttachmentsSheet: View {
                 let url = match.url
                 let data = try? await Task.detached { try Data(contentsOf: url) }.value
                 if let data,
-                   (try? model.attachDocument(named: match.fileName, data: data,
-                                              to: transactionID)) != nil {
+                   model.attachDocumentReporting(named: match.fileName, data: data,
+                                                 to: transactionID) {
                     linked += 1
                 }
                 if let suggestion = match.suggestion,

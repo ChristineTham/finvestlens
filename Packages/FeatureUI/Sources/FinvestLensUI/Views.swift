@@ -285,6 +285,7 @@ public struct FinvestLensRootView: View {
         } detail: {
             detailPane
         }
+        .overlay(alignment: .bottom) { StatusOverlay(model: model) }
         .searchable(text: $model.searchQuery, prompt: "Search transactions")
         .searchSuggestions {
             let trimmed = model.searchQuery.trimmingCharacters(in: .whitespaces)
@@ -909,7 +910,7 @@ struct AccountsSidebar: View {
                 }
                 Section("Records") {
                     Label("Business", systemImage: "building.2").tag(SidebarSelection.business)
-                    Label("Prices & Quotes", systemImage: "tag").tag(SidebarSelection.prices)
+                    Label("Prices & Securities", systemImage: "tag").tag(SidebarSelection.prices)
                     Label("Time & Mileage", systemImage: "clock.badge.checkmark").tag(SidebarSelection.timeMileage)
                     Label("Rules", systemImage: "wand.and.stars").tag(SidebarSelection.rules)
                 }
@@ -3493,7 +3494,7 @@ struct TransactionEditorSheet: View {
                 // Recording a document: copy it into the folder and link it.
                 if let prefill = documentPrefill,
                    let data = try? Data(contentsOf: prefill.url) {
-                    _ = try? model.attachDocument(named: prefill.url.lastPathComponent,
+                    model.attachDocumentReporting(named: prefill.url.lastPathComponent,
                                                   data: data, to: newID)
                 }
             }

@@ -401,6 +401,13 @@ extension AppModel {
     public func closingPreview(asOf date: Date, equityID: GncGUID)
         -> (accounts: Int, byCurrency: [ClosingCurrencyPreview])? {
         guard let book, let equity = book.account(with: equityID) else { return nil }
+        return cachedReport("closepv:\(date.timeIntervalSinceReferenceDate):\(equityID.hexString)") {
+            Self.buildClosingPreview(book: book, asOf: date, equity: equity)
+        }
+    }
+
+    private static func buildClosingPreview(book: Book, asOf date: Date, equity: Account)
+        -> (accounts: Int, byCurrency: [ClosingCurrencyPreview]) {
         let result = BookClosing.build(in: book, asOf: date, into: equity)
         let byCurrency = result.transactions.map { txn in
             let equityQuantity = txn.splits

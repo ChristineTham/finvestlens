@@ -216,6 +216,11 @@ public final class AppModel {
     /// even though the rows themselves are not stored observed properties.
     private var derivedRevision = 0
 
+    /// The book-state revision, for views that key async work off "did the
+    /// book change" (P3's `.task(id:)` pattern). Observable: bumping it is
+    /// what redraws report views after an edit.
+    public var bookRevision: Int { derivedRevision }
+
     /// Price/rate rows for the price and rate editors, sorted newest first.
     ///
     /// Derived on demand rather than in ``refreshAll()``: sorting all 102,706
@@ -319,6 +324,7 @@ public final class AppModel {
                 restoreRegisterViewState(for: new)
                 refreshRegister()
             }
+            persistSessionSelection()
         }
     }
 
@@ -333,6 +339,11 @@ public final class AppModel {
         get { Self.accountID(of: sidebarSelection) }
         set { sidebarSelection = newValue.map(SidebarSelection.account) ?? .dashboard }
     }
+
+    /// Which tab the Prices & Securities destination shows. Model state so
+    /// the dashboard's Alerts card can deep-link to Securities (6.5).
+    public enum PricesTab: String, CaseIterable, Sendable { case prices = "Prices", securities = "Securities" }
+    public var pricesTab: PricesTab = .prices
 
     /// Bumped by New Transaction (⌘N) while a register is showing; the entry
     /// bar focuses its description field in response (RD4: entry without
@@ -564,6 +575,29 @@ public final class AppModel {
     /// Progress/result of the most recent quote fetch, for the UI.
     public internal(set) var quoteStatus: QuoteFetchStatus = .idle
 
+    /// The app-wide toast (redesign 6.8): one overlay, every long operation
+    /// routes its completion here. Transient — replaced by the next message,
+    /// dismissed automatically.
+    public struct StatusToast: Equatable, Sendable {
+        public enum Kind: Sendable { case success, failure, info }
+        public var kind: Kind
+        public var message: String
+    }
+    public private(set) var toast: StatusToast?
+    @ObservationIgnored private var toastDismissTask: Task<Void, Never>?
+
+    /// Shows `message` in the status overlay for a few seconds. Failures live
+    /// a little longer — they carry the words worth reading.
+    public func showToast(_ kind: StatusToast.Kind, _ message: String) {
+        toastDismissTask?.cancel()
+        toast = StatusToast(kind: kind, message: message)
+        toastDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(kind == .failure ? 8 : 4))
+            guard !Task.isCancelled else { return }
+            self?.toast = nil
+        }
+    }
+
     /// Fraction complete (0…1) of a running multi-security fetch, or `nil` when
     /// no determinate-progress fetch is in flight. Drives the Quotes progress bar.
     public internal(set) var quoteProgress: Double?
@@ -586,6 +620,13 @@ public final class AppModel {
     /// A report to open immediately when the Reports panel appears — set by a
     /// menu item that jumps straight to one report (e.g. the aging reports).
     var pendingReportKind: ReportKind?
+
+    /// Menu-bar jump straight to one report: lands on the Reports destination
+    /// with the report already open (6.7).
+    public func openReport(_ kind: ReportKind) {
+        pendingReportKind = kind
+        show(.reports)
+    }
 
     /// Opens the Reports panel straight onto the receivable-aging report.
     public func openReceivableAging() {
@@ -1030,15 +1071,7 @@ public final class AppModel {
                 }
                 try? await Task.sleep(for: .seconds(interval))
                 guard !Task.isCancelled, let self, self.hasUnsavedChanges else { continue }
-                do {
-                    try self.save()
-                } catch {
-                    // Surface once; don't stack alerts every interval.
-                    if self.documentError == nil {
-                        self.documentError = DocumentError(
-                            message: "Autosave failed: \(error.localizedDescription)")
-                    }
-                }
+                await self.saveWithStatus(interactive: false)
             }
         }
     }
@@ -1208,6 +1241,7 @@ public final class AppModel {
         do {
             try await open(at: url, breakStaleLock: breakStaleLock)
             publishWidgetData()
+            restoreSessionSelection()
         } catch {
             // A recent whose file has gone is dead weight: drop it now rather
             // than leave the user to hit the same error on every launch.
@@ -1299,6 +1333,43 @@ public final class AppModel {
         try document?.save()
         refreshAll()
         publishWidgetData()
+    }
+
+    /// True while a save is writing — the status overlay shows "Saving…".
+    public private(set) var isSaving = false
+
+    /// The status-routed save (P10, F20): paints the Saving… chip first, then
+    /// writes, and reports the outcome through the overlay instead of a
+    /// swallowed `try?`. `interactive` saves toast success; background
+    /// (autosave) success stays quiet.
+    public func saveWithStatus(interactive: Bool) async {
+        guard hasUnsavedChanges || interactive else { return }
+        isSaving = true
+        defer { isSaving = false }
+        await Task.yield()   // commit the chip before the write blocks
+        do {
+            try save()
+            if interactive { showToast(.success, "Saved.") }
+        } catch {
+            if interactive {
+                documentError = DocumentError(message: error.localizedDescription)
+            } else if documentError == nil {
+                // Surface once; don't stack alerts every autosave interval.
+                documentError = DocumentError(
+                    message: "Autosave failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Revert with the outcome reported (F20) — a failed revert is exactly
+    /// when the user must know the file on disk was not what they thought.
+    public func revertWithStatus() {
+        do {
+            try revert()
+            showToast(.success, "Reverted to the saved book.")
+        } catch {
+            documentError = DocumentError(message: "Couldn’t revert: \(error.localizedDescription)")
+        }
     }
 
     public func revert() throws {

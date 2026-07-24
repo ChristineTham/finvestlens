@@ -23,7 +23,7 @@ import FinvestLensReports
 
 /// Every report the app can produce, with the metadata the gallery and the
 /// parameter bar need.
-enum ReportKind: String, CaseIterable, Identifiable, Codable {
+public enum ReportKind: String, CaseIterable, Identifiable, Codable {
     case balanceSheet = "Balance Sheet"
     case incomeStatement = "Income Statement"
     case equityStatement = "Equity Statement"
@@ -47,7 +47,7 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
     case employeeSummary = "Employee Summary"
     case jobSummary = "Job Summary"
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
     enum Group: String, CaseIterable {
         case statements = "Statements"
@@ -162,10 +162,36 @@ enum ReportKind: String, CaseIterable, Identifiable, Codable {
 
 // MARK: - Home
 
+/// The last few reports opened — "my" reports without the ceremony of
+/// favouriting (F12). Desk state: UserDefaults, never the book.
+enum ReportRecents {
+    static let key = "reports.recents"
+    static let limit = 5
+
+    static func record(_ kind: ReportKind) {
+        var kinds = load().filter { $0 != kind }
+        kinds.insert(kind, at: 0)
+        UserDefaults.standard.set(kinds.prefix(limit).map(\.rawValue).joined(separator: "|"),
+                                  forKey: key)
+    }
+
+    static func load() -> [ReportKind] {
+        (UserDefaults.standard.string(forKey: key) ?? "")
+            .split(separator: "|")
+            .compactMap { ReportKind(rawValue: String($0)) }
+    }
+}
+
 /// The reports destination: the gallery, or the report that is open.
 struct ReportsHome: View {
     @Bindable var model: AppModel
-    @State private var openConfiguration: ReportConfiguration?
+    @State private var openConfiguration: ReportConfiguration? {
+        didSet {
+            if let raw = openConfiguration?.kind, let kind = ReportKind(rawValue: raw) {
+                ReportRecents.record(kind)
+            }
+        }
+    }
 
     var body: some View {
         Group {
@@ -198,9 +224,33 @@ struct ReportGallery: View {
 
     private let columns = [GridItem(.adaptive(minimum: 210), spacing: 12)]
 
+    /// Reads through @AppStorage so a new recent re-renders the row.
+    @AppStorage(ReportRecents.key) private var recentsRaw = ""
+    private var recents: [ReportKind] {
+        recentsRaw.split(separator: "|").compactMap { ReportKind(rawValue: String($0)) }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                if !recents.isEmpty {
+                    Text("Recent").scaledFont(.title2).fontWeight(.semibold)
+                    HStack(spacing: 8) {
+                        ForEach(recents) { kind in
+                            Button {
+                                open(kind.defaultConfiguration(for: model))
+                            } label: {
+                                Label(kind.rawValue, systemImage: kind.icon)
+                                    .scaledFont(.callout)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(.quaternary.opacity(0.5), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Spacer()
+                    }
+                }
                 if !model.savedReports.isEmpty {
                     Text("Favourites").scaledFont(.title2).fontWeight(.semibold)
                     LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {

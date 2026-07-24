@@ -121,27 +121,43 @@ extension AppModel {
     /// method (`FR-RPT-03`).
     public func capitalGains(from: Date = .distantPast, to: Date = .distantFuture) -> CapitalGainsReport? {
         guard let book, !securityCommodities.isEmpty else { return nil }
-        return FinancialReports.capitalGains(book, currency: reportCurrency,
-                                             from: from, to: to, method: costBasisMethod,
-                                             feeTreatment: feeTreatment)
+        return cachedReport("cg:\(from.timeIntervalSinceReferenceDate):\(to.timeIntervalSinceReferenceDate):\(costBasisMethod.rawValue):\(feeTreatment.rawValue)") {
+            FinancialReports.capitalGains(book, currency: reportCurrency,
+                                          from: from, to: to, method: costBasisMethod,
+                                          feeTreatment: feeTreatment)
+        }
     }
 
     /// The advanced portfolio (cost basis, avg cost, unrealized/realized gain,
     /// allocation) under the selected cost-basis method (`FR-RPT-02a`).
     public func advancedPortfolio(asOf: Date = Date()) -> AdvancedPortfolio? {
         guard let book, !securityCommodities.isEmpty else { return nil }
-        return FinancialReports.advancedPortfolio(book, currency: reportCurrency,
-                                                  asOf: asOf, method: costBasisMethod,
-                                                  feeTreatment: feeTreatment)
+        // "As of now" quantises to end-of-day: a live Date() key would defeat
+        // the memo (one entry per call), and holdings don't move mid-day here.
+        let cap = min(asOf, Self.endOfToday())
+        return cachedReport("apf:\(cap.timeIntervalSinceReferenceDate):\(costBasisMethod.rawValue):\(feeTreatment.rawValue)") {
+            FinancialReports.advancedPortfolio(book, currency: reportCurrency,
+                                               asOf: cap, method: costBasisMethod,
+                                               feeTreatment: feeTreatment)
+        }
     }
 
     /// Every open tax lot valued at the latest price, under the selected
     /// cost-basis method (`FR-RPT-02`, Investment Lots).
     public func investmentLots(asOf: Date = Date()) -> [LotDetail] {
         guard let book, !securityCommodities.isEmpty else { return [] }
-        return FinancialReports.investmentLots(book, currency: reportCurrency,
-                                               asOf: asOf, method: costBasisMethod,
-                                               feeTreatment: feeTreatment)
+        let cap = min(asOf, Self.endOfToday())
+        return cachedReport("lots:\(cap.timeIntervalSinceReferenceDate):\(costBasisMethod.rawValue):\(feeTreatment.rawValue)") {
+            FinancialReports.investmentLots(book, currency: reportCurrency,
+                                            asOf: cap, method: costBasisMethod,
+                                            feeTreatment: feeTreatment)
+        } ?? []
+    }
+
+    /// End of the current day — the stable stand-in for "now" in report memo
+    /// keys (a raw `Date()` would make every call a cache miss).
+    static func endOfToday() -> Date {
+        Calendar.current.startOfDay(for: Date()).addingTimeInterval(24 * 3600)
     }
 
     /// Securities that have at least one recorded price (candidates for the

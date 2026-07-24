@@ -25,35 +25,32 @@ struct SecuritiesView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Securities") {
-                    if model.pricableSecurities.isEmpty {
-                        Text("No securities yet.").foregroundStyle(.secondary)
-                    }
-                    ForEach(model.pricableSecurities, id: \.self) { commodity in
-                        SecurityRow(model: model, commodity: commodity,
-                                    onTarget: { settingTarget = EditTarget(commodity: commodity) },
-                                    onEdit: { editing = EditTarget(commodity: commodity) })
-                    }
+        // Embedded as the Securities tab of Prices & Securities (6.5) — the
+        // enclosing destination provides the navigation chrome.
+        List {
+            Section("Securities") {
+                if model.pricableSecurities.isEmpty {
+                    Text("No securities yet.").foregroundStyle(.secondary)
+                }
+                ForEach(model.pricableSecurities, id: \.self) { commodity in
+                    SecurityRow(model: model, commodity: commodity,
+                                onTarget: { settingTarget = EditTarget(commodity: commodity) },
+                                onEdit: { editing = EditTarget(commodity: commodity) })
                 }
             }
-            .navigationTitle("Securities")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-                ToolbarItem {
-                    Button("Watch Security", systemImage: "eye") { showingAddWatch = true }
-                }
-            }
-            .sheet(item: $editing) { target in
-                EditSecuritySheet(model: model, commodity: target.commodity)
-            }
-            .sheet(item: $settingTarget) { target in
-                PriceTargetSheet(model: model, commodity: target.commodity)
-            }
-            .sheet(isPresented: $showingAddWatch) { AddWatchSheet(model: model) }
         }
-        .frame(minWidth: 460, minHeight: 380)
+        .toolbar {
+            ToolbarItem {
+                Button("Watch Security", systemImage: "eye") { showingAddWatch = true }
+            }
+        }
+        .sheet(item: $editing) { target in
+            EditSecuritySheet(model: model, commodity: target.commodity)
+        }
+        .sheet(item: $settingTarget) { target in
+            PriceTargetSheet(model: model, commodity: target.commodity)
+        }
+        .sheet(isPresented: $showingAddWatch) { AddWatchSheet(model: model) }
     }
 }
 

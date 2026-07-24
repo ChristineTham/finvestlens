@@ -146,6 +146,13 @@ extension AppModel {
         quoteStatus = failures.isEmpty
             ? .success(added)
             : .failure("Added \(added). Failed — " + failures.joined(separator: "; "))
+        if failures.isEmpty {
+            showToast(.success, added > 0
+                ? "Quotes fetched — \(added) price\(added == 1 ? "" : "s") added."
+                : "Quotes are already current.")
+        } else {
+            showToast(.failure, "Quote fetch: \(failures.count) symbol\(failures.count == 1 ? "" : "s") failed — see Prices for details.")
+        }
     }
 
     /// Brings **every** held security's price history up to date (`FR-INV-03e`),
@@ -160,6 +167,29 @@ extension AppModel {
     public func updatePriceHistory(using kind: QuoteProviderKind) async {
         await fetchHistory(for: pricableSecurities, using: kind, replacing: false,
                            label: "Update Price History")
+    }
+
+    /// The one-click path (redesign 6.4, ⌘⇧U): update every security's price
+    /// history with the default provider and toast the outcome. The journey's
+    /// most frequent task, callable from the menu, the Up Next card, and the
+    /// Prices toolbar — no sheet, no provider picker.
+    public func updateAllPrices() async {
+        guard !pricableSecurities.isEmpty else {
+            showToast(.info, "No securities to price.")
+            return
+        }
+        guard quoteProgress == nil else { return }   // one run at a time
+        let provider: QuoteProviderKind = availableProviders.contains(.yahoo)
+            ? .yahoo : (availableProviders.first ?? .yahoo)
+        await updatePriceHistory(using: provider)
+    }
+
+    /// When the newest security price landed, if any — "last updated" for the
+    /// Prices header and the Up Next card.
+    public var lastPriceUpdate: Date? {
+        book?.prices.lazy
+            .filter { $0.commodity.namespace != .currency }
+            .map(\.date).max()
     }
 
     /// Rebuilds price history for `commodities` from scratch (`FR-INV-03e`): for
@@ -245,8 +275,12 @@ extension AppModel {
         }
         if failures.isEmpty {
             quoteStatus = .success(added)
+            showToast(.success, added > 0
+                ? "Prices updated — \(added) new price\(added == 1 ? "" : "s")."
+                : "Prices are already up to date.")
         } else {
             quoteStatus = .failure("Added \(added). Failed — " + failures.joined(separator: "; "))
+            showToast(.failure, "Price update: added \(added), \(failures.count) failed — see Prices for details.")
         }
     }
 

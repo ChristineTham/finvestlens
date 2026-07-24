@@ -124,6 +124,21 @@ extension AppModel {
 
     // MARK: Attach / resolve
 
+    /// `attachDocument`, with the failure routed to the status overlay (F20)
+    /// — "attach did nothing" was a configuration problem the user never saw
+    /// (no document folder, an unwritable folder). Returns success.
+    @discardableResult
+    public func attachDocumentReporting(named name: String, data: Data,
+                                        to transactionID: GncGUID) -> Bool {
+        do {
+            _ = try attachDocument(named: name, data: data, to: transactionID)
+            return true
+        } catch {
+            showToast(.failure, "Couldn’t attach “\(name)” — \(error.localizedDescription)")
+            return false
+        }
+    }
+
     /// Copies a document into the document folder (reusing an identical
     /// existing file, uniquing the name otherwise) and links it to the
     /// transaction as a relative path.

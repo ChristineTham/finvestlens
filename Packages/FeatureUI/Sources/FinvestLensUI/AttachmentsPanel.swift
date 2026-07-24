@@ -66,6 +66,10 @@ struct AttachmentsPanel: View {
                     .foregroundStyle(.secondary)
                 Spacer()
             }
+            Button("All Linked Documents…", systemImage: "doc.on.doc") {
+                model.presentedPanel = .linkedDocuments
+            }
+            .help("Every attachment in the book, with its transaction")
         }
         .padding(12)
         .frame(width: 290, alignment: .topLeading)

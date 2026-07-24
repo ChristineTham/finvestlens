@@ -68,8 +68,9 @@ struct PortfolioView: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        Group {
-        if let portfolio = model.advancedPortfolio() {
+        AsyncReport(key: "\(model.bookRevision):\(model.costBasisMethod.rawValue):\(model.feeTreatment.rawValue)",
+                    title: "Portfolio",
+                    build: { model.advancedPortfolio() }) { portfolio in
             List {
                 Section {
                     Picker("Method", selection: $model.costBasisMethod) {
@@ -106,10 +107,6 @@ struct PortfolioView: View {
                 }
                 PriceHistorySection(model: model)
             }
-        } else {
-            ContentUnavailableView("No securities", systemImage: "chart.pie",
-                                   description: Text("Add a stock or fund account to see your portfolio."))
-        }
         }
         .reportPDFToolbar(title: "Portfolio") { model.portfolioDocument() }
     }
@@ -282,8 +279,11 @@ struct ReconcileReportView: View {
             }
             .frame(maxHeight: 110)
             Divider()
-            if let id = accountID, let report = model.reconcileReport(accountID: id, asOf: asOf) {
-                content(report)
+            if let id = accountID {
+                AsyncReport(key: "\(model.bookRevision):\(id.hexString):\(asOf.timeIntervalSinceReferenceDate)",
+                            title: "Reconciliation",
+                            build: { model.reconcileReport(accountID: id, asOf: asOf) },
+                            content: content)
             } else {
                 ContentUnavailableView("Choose an account", systemImage: "checkmark.circle",
                                        description: Text("See what has been reconciled, what is "
@@ -386,7 +386,10 @@ struct TransactionReportView: View {
             }
             .frame(maxHeight: 140)
             Divider()
-            if let id = accountID, let report = model.transactionReport(accountID: id, from: from, to: to) {
+            if let id = accountID {
+                AsyncReport(key: "\(model.bookRevision):\(id.hexString):\(from.timeIntervalSinceReferenceDate):\(to.timeIntervalSinceReferenceDate)",
+                            title: "Transactions",
+                            build: { model.transactionReport(accountID: id, from: from, to: to) }) { report in
                 if report.rows.isEmpty {
                     ContentUnavailableView("No postings", systemImage: "list.bullet.rectangle",
                                            description: Text("No transactions in this period."))
@@ -414,6 +417,7 @@ struct TransactionReportView: View {
                         }
                     }
                 }
+                }
             } else {
                 ContentUnavailableView("Choose an account", systemImage: "list.bullet.rectangle",
                                        description: Text("Pick an account to list its postings."))
@@ -430,8 +434,9 @@ struct InvestmentLotsView: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        let lots = model.investmentLots()
-        Group {
+        AsyncReport(key: "\(model.bookRevision):\(model.costBasisMethod.rawValue):\(model.feeTreatment.rawValue)",
+                    title: "Investment Lots",
+                    build: { model.investmentLots() }) { lots in
         if lots.isEmpty {
             ContentUnavailableView("No open lots", systemImage: "square.stack.3d.up",
                                    description: Text("Buy a security to see its tax lots."))
@@ -526,8 +531,9 @@ struct CapitalGainsView: View {
     @Bindable var model: AppModel
 
     var body: some View {
-        Group {
-        if let report = model.capitalGains() {
+        AsyncReport(key: "\(model.bookRevision):\(model.costBasisMethod.rawValue):\(model.feeTreatment.rawValue)",
+                    title: "Capital Gains",
+                    build: { model.capitalGains() }) { report in
             List {
                 Section {
                     Picker("Method", selection: $model.costBasisMethod) {
@@ -594,10 +600,6 @@ struct CapitalGainsView: View {
                     }
                 }
             }
-        } else {
-            ContentUnavailableView("No securities", systemImage: "chart.line.uptrend.xyaxis",
-                                   description: Text("Record buys and sells in a stock or fund account to see capital gains."))
-        }
         }
         .reportPDFToolbar(title: "Capital Gains") { model.capitalGainsDocument() }
     }

@@ -183,6 +183,16 @@ extension AppModel {
                 // the statement it just matched.
                 updated.items[index].isCleared = found.contains(updated.items[index].id)
             }
+            // The rows that still need eyes float to the top (RD3): after the
+            // opening auto-clear the job is "review the remainder", and the
+            // remainder should not be buried among rows already matched. The
+            // order then stays put — ticking a row must not move it under the
+            // pointer.
+            updated.items = updated.items.sorted { a, b in
+                if a.isCleared != b.isCleared { return !a.isCleared }
+                if a.date != b.date { return a.date < b.date }
+                return a.id.hexString < b.id.hexString
+            }
             reconcileSession = updated
             return .success(splits.count)
         } catch let failure as AutoClear.Failure {

@@ -37,9 +37,13 @@ struct ReconcileView: View {
 
     @State private var statementDate = Date()
     @State private var endingBalanceText = ""
-    /// Why an auto-clear did not happen. Worth saying out loud: "nothing
-    /// changed" and "two answers, so I won't guess" look identical otherwise.
+    /// Outcome of re-opening a reconciliation (setup form only).
     @State private var autoClearMessage: String?
+    /// What the opening (or a re-run) auto-clear did — an inline status line,
+    /// not an alert: it is the flow's first move, not an interruption (RD3).
+    @State private var autoClearStatus: String?
+    /// The opening auto-clear runs once per window, not once per body pass.
+    @State private var didOpeningAutoClear = false
 
     var body: some View {
         NavigationStack {
@@ -99,6 +103,7 @@ struct ReconcileView: View {
 
     private func reconciling(_ session: ReconcileSessionState) -> some View {
         VStack(spacing: 0) {
+            headline(session)
             summary(session)
             Divider()
             List {
@@ -128,25 +133,23 @@ struct ReconcileView: View {
         }
         .navigationTitle("Reconcile \(session.accountName)")
         .onEscapeCommand { model.cancelReconcile(); dismiss() }
-        .alert("Auto-clear", isPresented: Binding(
-            get: { autoClearMessage != nil },
-            set: { if !$0 { autoClearMessage = nil } })) {
-            Button("OK", role: .cancel) { autoClearMessage = nil }
-        } message: {
-            Text(autoClearMessage ?? "")
+        // The opening move (RD3): auto-clear runs the moment the session
+        // starts, and the flow becomes "review what's left" instead of
+        // "tick 43 boxes". Nothing reaches the book until Finish, so an
+        // answer you disagree with costs unticking, not an undo.
+        .task {
+            guard !didOpeningAutoClear else { return }
+            didOpeningAutoClear = true
+            runAutoClear(total: session.items.count)
         }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { model.cancelReconcile(); dismiss() }.keyboardShortcut(.cancelAction)
             }
             ToolbarItem {
-                // Only ticks the boxes — nothing reaches the book until Finish,
-                // so an answer you disagree with costs a Cancel, not an undo.
+                // Re-run after hand edits; the opening run already happened.
                 Button("Auto-clear", systemImage: "wand.and.stars") {
-                    switch model.autoClear() {
-                    case .success: break
-                    case .failure(let failure): autoClearMessage = model.describe(failure)
-                    }
+                    runAutoClear(total: model.reconcileSession?.items.count ?? 0)
                 }
                 .help("Tick the transactions that add up to the statement balance")
             }
@@ -156,19 +159,71 @@ struct ReconcileView: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!session.isBalanced)
+                .help(session.isBalanced
+                      ? "Mark the ticked transactions reconciled"
+                      : "Finish unlocks when the difference reaches zero")
             }
         }
     }
 
-    private func summary(_ session: ReconcileSessionState) -> some View {
-        HStack(spacing: 24) {
-            stat("Starting", session.startingBalance, session.currencyCode)
-            stat("Cleared", session.clearedBalance, session.currencyCode)
-            stat("Statement", session.statementBalance, session.currencyCode)
-            stat("Difference", session.difference, session.currencyCode,
-                 highlight: session.isBalanced ? .green : .red)
+    /// Runs the solver and turns its outcome into the status line under the
+    /// headline — "matched 41 of 43", or the reason it declined to guess.
+    private func runAutoClear(total: Int) {
+        switch model.autoClear() {
+        case .success(let matched):
+            let session = model.reconcileSession
+            if session?.isBalanced == true {
+                autoClearStatus = matched == total
+                    ? "All \(total) transaction\(total == 1 ? "" : "s") match the statement."
+                    : "Matched \(matched) of \(total) — the statement balances. Review, then Finish."
+            } else {
+                autoClearStatus = "Matched \(matched) of \(total) automatically — review the rest."
+            }
+        case .failure(let failure):
+            autoClearStatus = model.describe(failure)
         }
-        .padding()
+    }
+
+    /// The one number that is the job (RD3): the difference remaining, live,
+    /// with Finish's why-not built in.
+    private func headline(_ session: ReconcileSessionState) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            if session.isBalanced {
+                Label("Balanced — ready to Finish", systemImage: "checkmark.seal.fill")
+                    .scaledFont(.title3, weight: .semibold)
+                    .foregroundStyle(.green)
+            } else {
+                Text("Difference remaining")
+                    .scaledFont(.title3, weight: .semibold)
+                Text(AmountFormat.string(session.difference, code: session.currencyCode))
+                    .scaledFont(.title3, weight: .semibold)
+                    .monospacedDigit()
+                    .foregroundStyle(.red)
+                    .contentTransition(.numericText())
+            }
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.top, 12)
+        .animation(.default, value: session.isBalanced)
+    }
+
+    private func summary(_ session: ReconcileSessionState) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 24) {
+                stat("Starting", session.startingBalance, session.currencyCode)
+                stat("Cleared", session.clearedBalance, session.currencyCode)
+                stat("Statement", session.statementBalance, session.currencyCode)
+            }
+            if let autoClearStatus {
+                Label(autoClearStatus, systemImage: "wand.and.stars")
+                    .scaledFont(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal)
+        .padding(.vertical, 10)
     }
 
     private func stat(_ label: String, _ amount: Decimal, _ code: String,

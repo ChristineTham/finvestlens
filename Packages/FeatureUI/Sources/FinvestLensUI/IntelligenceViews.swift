@@ -137,6 +137,10 @@ struct AutoCategorizeSheet: View {
             .task {
                 let scope = model.selectedTransactionIDs
                 scopeCount = scope.isEmpty ? nil : scope.count
+                // One runloop turn so the spinner commits before the corpus
+                // scan holds the main actor (P6 — the book isn't sendable,
+                // so the scan can't leave it).
+                await Task.yield()
                 items = model.uncategorizedItems(limitedTo: scope.isEmpty ? nil : scope)
                 plans = model.smartCategoryPlans(for: items)
                 acceptedPlans = Set(plans.keys)
@@ -441,7 +445,7 @@ struct DividendImportSheet: View {
                                               recordFrankingCredits: recordCredits)
             // Link the statement PDF to the booked transaction (best-effort).
             if let fileName = payload.fileName {
-                _ = try? model.attachDocument(named: fileName, data: payload.data, to: id)
+                model.attachDocumentReporting(named: fileName, data: payload.data, to: id)
             }
             dismiss()
         } catch {
