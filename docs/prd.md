@@ -267,7 +267,7 @@ FinvestLens is a **document-based app** with its **own native file format** (a s
 | FR-XIO-05 | Provide a **Generic Transaction Import Matcher**: match incoming transactions to existing ones, detect duplicates, and assign destination accounts with a confidence-based UI (shared by CSV/QIF/OFX and later formats). | Must | P4 |
 | FR-XIO-08 | Support **save/load of CSV import settings** (column-mapping profiles) for repeat imports. | Should | P4 |
 | FR-XIO-06 | Export **CSV** for accounts, transactions, and prices. | Should | P4 |
-| FR-XIO-04 | Import **MT940 / MT942** and **CAMT.053** (ISO 20022) bank statement formats. | Could | P8 |
+| FR-XIO-04 | Import **MT940 / MT942** and **CAMT.053** (ISO 20022) bank statement formats — native parsers feeding the Import Matcher, with extension + content-sniffing format detection. *(Delivered 24 Jul 2026.)* | Could | P8 ✅ |
 | FR-XIO-07 | **Online bank sync** via modern aggregation APIs — **SimpleFIN** / **GoCardless (Nordigen)** and, for Australia, the **Consumer Data Right (CDR / Open Banking)** via an **accredited intermediary** — feeding the Import Matcher. Optional, explicitly consented, cloud-mediated; the app stays fully functional offline. *(Skipped from the phase plan 24 Jul 2026 — [deferred.md](deferred.md) §5; revisit only on strong demand.)* | Won't-for-now | — |
 
 ### 5.15 Platform integration

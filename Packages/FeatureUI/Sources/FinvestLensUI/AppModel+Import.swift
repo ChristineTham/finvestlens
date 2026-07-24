@@ -12,9 +12,11 @@ import FinvestLensInterchange
 import FinvestLensRules
 
 /// Supported bank-file import formats. `pdf` statements are read by Apple
-/// Intelligence (`FR-AI-01`) before reaching the shared review flow.
+/// Intelligence (`FR-AI-01`) before reaching the shared review flow;
+/// `mt940` covers SWIFT MT940/MT942, `camt` ISO 20022 CAMT.053/052
+/// (`FR-XIO-04`).
 public enum BankFileFormat: String, Sendable, CaseIterable, Identifiable {
-    case csv, qif, ofx, pdf
+    case csv, qif, ofx, mt940, camt, pdf
     public var id: String { rawValue }
 
     public static func forExtension(_ ext: String) -> BankFileFormat? {
@@ -22,9 +24,26 @@ public enum BankFileFormat: String, Sendable, CaseIterable, Identifiable {
         case "csv": return .csv
         case "qif": return .qif
         case "ofx", "qfx": return .ofx
+        case "sta", "mt940", "940", "mt942", "942", "fin": return .mt940
+        case "camt", "c52", "c53", "c54": return .camt
         case "pdf": return .pdf
         default: return nil
         }
+    }
+
+    /// Detects the format from the extension, falling back to sniffing the
+    /// content — a `.xml` file may be a CAMT statement, a `.txt` an MT940.
+    public static func detect(_ data: Data, extension ext: String) -> BankFileFormat? {
+        if let known = forExtension(ext) { return known }
+        let head = String(decoding: data.prefix(4096), as: UTF8.self)
+        if head.contains("<BkToCstmrStmt") || head.contains("<BkToCstmrAcctRpt")
+            || head.contains("urn:iso:std:iso:20022:tech:xsd:camt.05") {
+            return .camt
+        }
+        if head.contains("OFXHEADER") || head.contains("<OFX") { return .ofx }
+        if head.contains(":20:"), head.contains(":25:") { return .mt940 }
+        if head.contains("!Type:") { return .qif }
+        return nil
     }
 }
 
@@ -38,6 +57,8 @@ extension AppModel {
         case .csv: return CSVTransactionImporter.parse(data, mapping: csvMapping ?? CSVColumnMapping(date: 0))
         case .qif: return QIFImporter.parse(data)
         case .ofx: return OFXImporter.parse(data)
+        case .mt940: return MT940Importer.parse(data)
+        case .camt: return CAMTImporter.parse(data)
         // PDF rows are extracted asynchronously by Apple Intelligence before
         // the review sheet opens (see ImportPayload.prestaged).
         case .pdf: return []

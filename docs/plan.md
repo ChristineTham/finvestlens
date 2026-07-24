@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Document status** | **Phases P0–P7 complete** (v1.0 was P0–P6, 13 July 2026; P7 business features since), **plus the Jul 2026 usability/performance and report-quality redesigns**. P8 (statement-file import) and P9 remain; online bank sync skipped to [deferred.md](deferred.md). |
+| **Document status** | **Phases P0–P8 complete** (v1.0 was P0–P6, 13 July 2026; P7 business features and P8 extended import since), **plus the Jul 2026 usability/performance and report-quality redesigns**. Only P9 remains; online bank sync skipped to [deferred.md](deferred.md). |
 | **Last updated** | 2026-07-24 |
 | **Scope** | The build plan: phases, workstreams, tasks, dependencies, and exit criteria |
 | **Companions** | [PRD](prd.md) · [Architecture](architecture.md) · [Porting Strategy](porting.md) · [Implemented](implemented.md) · [Deferred backlog](deferred.md) · [Money study](enhancements-msmoney.md) · [Firefly study](enhancements-firefly.md) · [Frollo study](enhancements-frollo.md) |
@@ -23,10 +23,10 @@ This is the authoritative **delivery schedule and status record**. It sequences 
 | **P7 — Business features** | ✅ Complete | Engine + persistence + XML round-trip + UI. |
 | **Usability & performance redesign** | ✅ Complete (24 Jul 2026) | A post-P7 pass over the P2/P4/P6 surfaces, driven by four audits ([usability-review.md](usability-review.md), [performance-review.md](performance-review.md)): one expandable register, plain language, the non-scrolling tile-board dashboard, auto-clear-first reconcile, one-click prices (⌘⇧U), a single status overlay, session restoration, memoised async reports, and the EOFY Financial Year Pack. Narrative in [implemented.md](implemented.md). |
 | **Report-quality redesign** | ✅ Complete (24 Jul 2026) | Statements at annual-report standard — face-and-notes presentation from the user's own tree, ASC 274 ordering, accounting typography, comparatives, incl. the Trial Balance — plus the Financial Review and Investment Review slide decks with validator-grounded on-device insights. Plan/research: [report-redesign.md](report-redesign.md); design: [architecture.md §5.6a](architecture.md); narrative in [implemented.md](implemented.md). |
-| **P8 — Extended import** | ⬜ Not started | Online bank sync (FR-XIO-07) **skipped by decision (24 Jul 2026)** — moved to [deferred.md](deferred.md) §5. |
+| **P8 — Extended import** | ✅ Complete (24 Jul 2026) | MT940/MT942 + CAMT.053 importers feed the Import Matcher; format auto-detection incl. content sniffing. Online bank sync (FR-XIO-07) **skipped by decision (24 Jul 2026)** — moved to [deferred.md](deferred.md) §5. |
 | **P9 — Planning & insights** | ⬜ Not started | |
 
-Phases **P0–P7 are delivered**; a set of low-priority tails deferred *within* those phases is tracked, ranked, in [deferred.md](deferred.md). **P8** and **P9** are planned but not started (detailed below). The narrative of what was built, with the audits and measurements behind it, is in [implemented.md](implemented.md).
+Phases **P0–P8 are delivered**; a set of low-priority tails deferred *within* those phases is tracked, ranked, in [deferred.md](deferred.md). **P9** is planned but not started (detailed below). The narrative of what was built, with the audits and measurements behind it, is in [implemented.md](implemented.md).
 
 ---
 
@@ -247,16 +247,16 @@ Dependencies point downward only; `Engine` builds/tests with nothing above it (`
 
 ## 12. Phase P8 — Extended import
 
-**Status.** ⬜ Not started. (Report PDF export, once listed here as a P4 fallback, was delivered in P4. **Online bank sync was skipped by decision on 24 Jul 2026** — cloud-mediated connectors sit poorly with the app's local-first stance, and the AU CDR path carries a regulatory burden out of proportion to a file-import app; moved to [deferred.md](deferred.md) §5, revisit only on strong demand.)
+**Status.** ✅ **Complete (24 Jul 2026).** `MT940Importer` (SWIFT MT940/MT942 — tag-line scanner with continuation folding, `:61:` subfield grammar incl. reversals and funds codes, `:86:` narratives with German `?nn` subfield extraction) and `CAMTImporter` (streaming ISO 20022 CAMT.053/052 — signed amounts, PDNG filtering, reference/counterparty/remittance extraction across schema versions) feed `StagedTransaction` into the existing Import Matcher; `BankFileFormat.detect` adds extension mapping (`.sta`/`.940`/`.c53`/…) plus content sniffing for ambiguous `.xml`/`.txt`. Exit criterion verified in `MT940CAMTTests`: both formats through the matcher with correct dedupe (FITID and amount+window) and history-based account assignment. Preceded, same day, by an import-matcher hardening pass validated on four real bank exports (transfer completion, FITID veto, one-to-one claiming — [implemented.md](implemented.md)). (Report PDF export, once listed here as a P4 fallback, was delivered in P4. **Online bank sync was skipped by decision on 24 Jul 2026** — cloud-mediated connectors sit poorly with the app's local-first stance, and the AU CDR path carries a regulatory burden out of proportion to a file-import app; moved to [deferred.md](deferred.md) §5, revisit only on strong demand.)
 
 **Objective.** Broader statement-file interoperability.
 
 **Workstreams & tasks**
-- **MT940/MT942 + CAMT.053 (ISO 20022)** statement import → matcher. *(FR-XIO-04)*
+- ✅ **MT940/MT942 + CAMT.053 (ISO 20022)** statement import → matcher. *(FR-XIO-04)*
 
 **Dependencies.** P4 (Import Matcher).
 **Deliverables.** Bank-statement importers (SWIFT MT + ISO 20022) feeding the existing Import Matcher.
-**Exit criteria.** Import a CAMT.053 and an MT940 file through the matcher with correct dedupe and account assignment.
+**Exit criteria.** Import a CAMT.053 and an MT940 file through the matcher with correct dedupe and account assignment. ✅
 **Risks.** Format variance across banks — parse against published samples from several institutions, as the QIF/OFX parsers were.
 
 ---

@@ -1,15 +1,14 @@
-# Deferred backlog — open items within P0–P7
+# Deferred backlog — open items within P0–P8
 
-Work that was **in scope for the delivered phases (P0–P7)** but is still open:
+Work that was **in scope for the delivered phases (P0–P8)** but is still open:
 deferred, partial, or not yet built. It is **ranked** — highest priority /
 readiest to pick up first.
 
-Out of scope for this list: the future phases **P8** (extended statement-file
-import) and **P9** (planning & insights), which are planned, not deferred — see
-[plan.md](plan.md). (One exception: **online bank sync**, removed from P8 by
-decision — §5 below.) Anything already built is in [implemented.md](implemented.md);
-intentional non-goals (e.g. bit-for-bit arithmetic parity with GnuCash) are not
-tracked anywhere.
+Out of scope for this list: the future phase **P9** (planning & insights),
+which is planned, not deferred — see [plan.md](plan.md). (One exception:
+**online bank sync**, removed from P8 by decision — §5 below.) Anything
+already built is in [implemented.md](implemented.md); intentional non-goals
+(e.g. bit-for-bit arithmetic parity with GnuCash) are not tracked anywhere.
 
 Each row cites its PRD `FR-*`/`NFR-*` and the phase it belonged to.
 

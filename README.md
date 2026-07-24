@@ -54,7 +54,8 @@ FinvestLens is not a fork of GnuCash. It is a clean, idiomatic Swift reimplement
 - **CSV** import with configurable column mapping (saved mapping profiles are planned — see [deferred.md](docs/deferred.md)).
 - **QIF** (Quicken Interchange Format) import.
 - **OFX / QFX** import (OFX v1 SGML and v2 XML; bank, card, and investment statements).
-- A shared **import matcher** for duplicate detection and destination-account assignment.
+- **MT940 / MT942** (SWIFT) and **CAMT.053** (ISO 20022) statement import, with format auto-detection (extension + content sniffing).
+- A shared **import matcher** for duplicate detection (FITID `online_id` + amount/date with one-to-one claiming), destination-account assignment from payee history, and **cross-account transfer completion** (the second statement of a transfer re-points the first statement's wash leg instead of duplicating it).
 
 **Planning & guidance** (Microsoft Money–inspired — layered on the accounting core; later releases)
 - Bill reminders + financial calendar; cash-flow forecasting with what-if scenarios.
@@ -66,7 +67,7 @@ FinvestLens is not a fork of GnuCash. It is a clean, idiomatic Swift reimplement
 **Automation & organization** (Firefly III–inspired)
 - A **rules engine** (trigger/action groups) to auto-categorize, tag, and organize transactions — on import or applied to history.
 - **Tags** (cross-cutting labels), **savings goals** (piggy banks), and an **operator search language** with saved searches.
-- Bill matching, auto-budgets, and a later path to **modern bank sync** (SimpleFIN / GoCardless) + CAMT.053 import.
+- Bill matching and auto-budgets. *(CAMT.053 import shipped with P8; online bank sync skipped by decision — see deferred.md.)*
 - See [docs/enhancements-firefly.md](docs/enhancements-firefly.md).
 
 **Connectivity & wellness** (Frollo-inspired — optional, consented, local-first)
@@ -78,7 +79,7 @@ FinvestLens is not a fork of GnuCash. It is a clean, idiomatic Swift reimplement
 
 - The GnuCash on-disk backends (its XML store, and SQLite/MySQL/PostgreSQL) — FinvestLens has its own `.finvestlens` SQLite document; GnuCash XML is an import/export interchange format only.
 - Business features such as full invoicing, accounts payable/receivable workflows, payroll, and tax tables (candidates for later releases).
-- **Online bank sync** (later releases) — planned around modern aggregation APIs (**SimpleFIN / GoCardless**) rather than legacy OFX DirectConnect/AqBanking — plus MT940/MT942 and CAMT.053 statement import. *(Note: CSV/QIF/OFX **file** import is in scope — see above; only live online connections are deferred.)*
+- **Online bank sync** — skipped by decision (24 Jul 2026): cloud-mediated connectors sit poorly with the local-first stance; see [deferred.md](docs/deferred.md) §5. *(Note: statement **file** import — CSV/QIF/OFX/MT940/CAMT.053 — is fully in scope and delivered; only live online connections are out.)*
 - **REST API / webhooks** (Firefly-style server features) — out of scope for a native document app; automation is served by Shortcuts / App Intents instead.
 - The GnuCash Scheme/Guile reporting and scripting system — reports are reimplemented natively.
 - Stock/investment lot tracking and advanced capital-gains reporting (later release).
@@ -99,7 +100,7 @@ FinvestLens is not a fork of GnuCash. It is a clean, idiomatic Swift reimplement
 | Numbers | Native `Decimal` money (rounded per commodity) |
 | Derived state | Everything shown is derived from the in-memory `Book`; expensive derivations (price lookups, per-account balances, journal rows) are indexed or cached and invalidated on the same signal that drives the redraw |
 | Undo | Each edit captures only what it is about to change, before changing it — no whole-book snapshots |
-| Import/Export | GnuCash XML reader & writer (interchange); native CSV/QIF/OFX-QFX importers + import matcher |
+| Import/Export | GnuCash XML reader & writer (interchange); native CSV/QIF/OFX-QFX/MT940/CAMT.053 importers + import matcher |
 | Sync (planned) | File-level (iCloud Documents / Files) with conflict resolution |
 
 The core engine is kept free of UI and persistence dependencies so it can be unit-tested in isolation and reused across platforms. See [docs/prd.md](docs/prd.md), [docs/architecture.md](docs/architecture.md), [docs/porting.md](docs/porting.md), and the [implementation plan](docs/plan.md).
@@ -118,7 +119,7 @@ Phased delivery (full detail in [docs/plan.md](docs/plan.md)):
 - ✅ **P7 Business** — customers/vendors/employees, invoices/bills, payments, aging, tax tables, business XML round-trip.
 - ✅ **Usability & performance redesign (Jul 2026)** — four audit passes (usability, functionality, performance, session/resilience) executed as four phases: one expandable register, plain language, a viewport-fitting dashboard, reconcile reimagined around auto-clear, one-click price updates, a single status/progress overlay, session restoration, memoised async reports, and an EOFY Financial Year Pack.
 - ✅ **Report-quality redesign (Jul 2026)** — statements at annual-report presentation standard (hierarchical face-and-notes built from the user's own chart of accounts, ASC 274 liquidity/maturity ordering, materiality folding, accounting typography with comparatives — including the Trial Balance), plus two presentation decks: a CFO-style **Financial Review** and a factsheet-style **Investment Review**, each with charts, callouts, and on-device insights that a deterministic validator keeps grounded in the slide's own figures. Plan and research: [report-redesign.md](docs/report-redesign.md).
-- ⬜ **P8 Extended import & bank sync** — QIF/OFX investment rows, CSV export/profiles, MT940/CAMT.053, online bank sync (SimpleFIN/GoCardless/AU CDR).
+- ✅ **P8 Extended import (Jul 2026)** — SWIFT **MT940/MT942** and ISO 20022 **CAMT.053** statement import through the Import Matcher, with format auto-detection (extension + content sniffing); plus an import-matcher hardening pass validated on real bank exports — cross-account **transfer completion**, FITID-mismatch veto, one-to-one duplicate claiming, credit-card funding inference, and an Imbalance fallback feeding the Uncategorised sweep. *(Online bank sync skipped by decision — local-first; see deferred.md.)*
 - ⬜ **P9 Planning & insights** — debt & lifetime planners, tax estimator/TXF, savings goals, wellbeing score.
 
 ## Platform requirements

@@ -412,7 +412,7 @@ public struct FinvestLensRootView: View {
             // panel inside it is silently dropped when triggered from a menu.
             Task { @MainActor in
                 if let url = MacFilePanel.open(types: [.commaSeparatedText, .text, .pdf, .data],
-                                               title: "Choose a bank file (CSV, QIF, OFX or PDF)") {
+                                               title: "Choose a bank file (CSV, QIF, OFX, MT940, CAMT or PDF)") {
                     loadBankFile(url)
                 }
             }
@@ -526,8 +526,9 @@ public struct FinvestLensRootView: View {
     }
 
     private func loadBankFile(_ url: URL) {
-        guard let format = BankFileFormat.forExtension(url.pathExtension),
-              let data = readScoped(url) else { return }
+        guard let data = readScoped(url),
+              let format = BankFileFormat.detect(data, extension: url.pathExtension)
+        else { return }
         if format == .pdf {
             extractStatement(data)
         } else {

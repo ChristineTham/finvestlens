@@ -178,8 +178,31 @@ struct AppImportTests {
         #expect(BankFileFormat.forExtension("CSV") == .csv)
         #expect(BankFileFormat.forExtension("qif") == .qif)
         #expect(BankFileFormat.forExtension("qfx") == .ofx)
+        #expect(BankFileFormat.forExtension("sta") == .mt940)
+        #expect(BankFileFormat.forExtension("940") == .mt940)
+        #expect(BankFileFormat.forExtension("c53") == .camt)
         #expect(BankFileFormat.forExtension("pdf") == .pdf)  // via Apple Intelligence (FR-AI-01)
         #expect(BankFileFormat.forExtension("docx") == nil)
+    }
+
+    @Test("Unknown extensions fall back to content sniffing (FR-XIO-04)")
+    func contentSniffing() {
+        let camt = Data("""
+        <?xml version="1.0"?>
+        <Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">
+        <BkToCstmrStmt/></Document>
+        """.utf8)
+        #expect(BankFileFormat.detect(camt, extension: "xml") == .camt)
+
+        let mt940 = Data(":20:REF1\n:25:AU/1\n:61:2606010601D52,30NMSC//X\n".utf8)
+        #expect(BankFileFormat.detect(mt940, extension: "txt") == .mt940)
+
+        let ofx = Data("OFXHEADER:100\nDATA:OFXSGML\n<OFX>...".utf8)
+        #expect(BankFileFormat.detect(ofx, extension: "txt") == .ofx)
+
+        // The extension still wins when it is decisive.
+        #expect(BankFileFormat.detect(camt, extension: "c53") == .camt)
+        #expect(BankFileFormat.detect(Data("hello".utf8), extension: "bin") == nil)
     }
 
     @Test("Importing the other side of a transfer heals the wash leg (FR-XIO-05)")

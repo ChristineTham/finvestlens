@@ -1,13 +1,13 @@
 # Implemented — history, audits & fixes (P0–P7)
 
-The record of what has been **built and verified**. Phases P0–P7 are complete:
+The record of what has been **built and verified**. Phases P0–P8 are complete:
 the engine, native document + NAS locking, GnuCash import/export, core UX,
 everyday finance, investments + multi-currency + quotes, sync/dashboard/alerts,
-Apple Intelligence, and small-business features — plus two **July 2026
-redesigns**: usability & performance, and report quality (first sections
-below). Only **P8** (extended import / bank sync) and **P9** (planning &
-insights) remain — tracked in [deferred.md](deferred.md), which also lists the
-smaller open tails within P0–P7.
+Apple Intelligence, small-business features, and extended statement import
+(SWIFT MT + ISO 20022) — plus two **July 2026 redesigns**: usability &
+performance, and report quality. Only **P9** (planning & insights) remains —
+see [plan.md](plan.md); [deferred.md](deferred.md) lists the smaller open
+tails within P0–P8.
 
 This file is the narrative: what each audit found, what was fixed, and how it
 was verified (mostly against a real GnuCash book — 46,553 transactions, 559
@@ -19,6 +19,43 @@ Companions: [PRD](prd.md) · [Architecture](architecture.md) · [Plan](plan.md) 
 [Deferred](deferred.md).
 
 ---
+
+## P8 — Extended statement import: MT940/MT942 + CAMT.053 (24 Jul 2026)
+
+The last planned import formats (`FR-XIO-04`), closing phase P8 (online bank
+sync having been skipped by decision the same day — [deferred.md](deferred.md)
+§5). Both are native parsers in `Interchange`, feeding `StagedTransaction`
+rows into the same Import Matcher as CSV/QIF/OFX:
+
+- **`MT940Importer`** — SWIFT MT940 customer statements *and* MT942 interim
+  reports through one tag-line scanner: `{…}` block markers and headers
+  ignored, continuation lines folded into their field, transactions read from
+  `:61:` statement lines (value date, optional entry date, `D`/`C`/`RD`/`RC`
+  marks with reversal sign-flips, optional funds code, comma-decimal amount,
+  transaction type, customer reference vs `//bank reference` — the bank ref
+  preferred, `NONREF` dropped). The `:86:` narrative joins its lines into the
+  memo; German-convention `?nn` subfields are recognised (`?32`/`?33` →
+  payee, `?20`–`?29` → remittance memo). Fixtures follow the SWIFT spec and
+  published bank samples (ABN AMRO / ING / Danske style).
+- **`CAMTImporter`** — ISO 20022 CAMT.053 (and structurally-identical
+  CAMT.052) via a streaming `XMLParser`: one row per `<Ntry>` — amount signed
+  by `CdtDbtInd` and flipped by a true `RvslInd`, `PDNG` entries skipped
+  (they re-arrive booked), booking date preferred over value date, reference
+  chosen entry-`AcctSvcrRef` → detail `AcctSvcrRef` → `TxId` → meaningful
+  `EndToEndId`, the counterparty (creditor on debits, debtor on credits, both
+  `<Nm>` and the newer `<Pty><Nm>` nesting) as payee, unstructured remittance
+  lines joined as the memo. Namespace prefixes are tolerated; batched entries
+  stay one row at the entry amount, as booked.
+- **Detection** — `BankFileFormat` gains `mt940`/`camt` with extensions
+  (`.sta`/`.mt940`/`.940`/`.942`/`.fin`, `.camt`/`.c52`/`.c53`/`.c54`) and
+  `detect(_:extension:)` content sniffing for ambiguous `.xml`/`.txt`
+  (CAMT root/namespace, OFX header, `:20:`+`:25:` tags, QIF `!Type:`), used
+  by the bank-file open flow; the review sheet and matcher are unchanged.
+
+Exit criterion verified in `MT940CAMTTests`: an MT940 and a CAMT.053 imported
+through `ImportMatcher.match` against a book with history — same-FITID rows
+dedupe via `online_id`, new rows pass the mismatch veto, and payee history
+assigns the destination account. 78 Interchange tests green.
 
 ## Import matcher — transfer completion & real-statement validation (24 Jul 2026)
 
