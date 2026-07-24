@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Document status** | Design baseline v1.0 |
+| **Document status** | Design baseline v1.1 (Jul 2026 — derived-state and UI-shell decisions from the usability/performance redesign) |
 | **Companions** | [PRD](prd.md) · [Porting Strategy](porting.md) |
 | **Scope** | Target architecture, technology choices, native file format, and how the hard problems are solved |
 
@@ -300,9 +300,25 @@ The engine `Book` is the source of truth and is held **entirely in memory**, as 
 
 > **Derive on demand, cache what is expensive, and invalidate on the same signal that drives the redraw.** A cache that outlives its data is a correctness bug, not a performance win — so every derived cache hangs off the refresh path that already runs after every mutation, never a second invalidation path that can drift.
 
-The concrete techniques this implies — an indexed price database rather than a per-call scan; single-pass balance derivation; uniform, `Table`-backed register rows; and **pre-capture undo** that snapshots only the objects an edit touches (transaction- or account-scoped) rather than the whole book — are design constraints on the engine and view-model. `Book` is deliberately **not `Sendable`** (a cyclic class graph); concurrency safety is achieved by isolating the load and transferring ownership (§8), not by locking the hot path.
+The concrete techniques this implies — an indexed price database rather than a per-call scan; single-pass balance derivation; uniform, `Table`-backed register rows; and **pre-capture undo** that snapshots only the objects an edit touches — are design constraints on the engine and view-model. `Book` is deliberately **not `Sendable`** (a cyclic class graph); concurrency safety is achieved by isolating the load and transferring ownership (§8), not by locking the hot path.
+
+**Undo scopes** (narrowest that covers the edit): *transaction*-scoped (`editing`) for register edits; *account*-scoped (`editingAccounts`) for account metadata; *price-database*-scoped (`editingPrices`, an array snapshot) for quote fetches and rate edits; *kvp*-scoped (`editingBookKvp`, restoring the frame **and** reloading the mirrored collections) for settings and saved collections; the whole-book GnuCash-XML snapshot (`editingWholeBook`) only for structural and business operations. The scoped tiers exist because the whole-book export costs seconds on the reference book, and price fetches and settings commits used to pay it per edit.
+
+**Derived-state caches, one invalidation signal.** Every cache keys on the same `derivedRevision` that drives the redraw: the register's status-strip totals are folded into the row-building pass (never recomputed per body pass); QuickFill reads a per-revision recency list of distinct descriptions; the flattened `postableAccounts` picker list follows the account tree; and every report memoises through one `cachedReport(key:)` layer keyed by *(parameters, revision)* — with "now" quantised to end-of-day, because a live `Date()` in a key defeats the memo.
+
+**Reports build off the body, on the main actor.** Heavy reports render behind a placeholder and compute in a `.task` after first paint (`AsyncReport`), but the computation itself stays on the main actor: `Book` is a non-`Sendable` object graph, and a genuinely background read would race main-actor edits. Moving further requires a read-gate (writers wait on in-flight readers) — deliberately deferred until the memoised first-build is shown to be too slow in practice. A `Perf` signpost + DEBUG over-budget harness wraps the hot paths (tree/register rebuilds, search replay, report builds, whole-book snapshots) so regressions surface in the console, not in reviews.
 
 The measurements that justified each of these choices — on the reference book, in a stated build configuration — are recorded in [implemented.md](implemented.md).
+
+### 10.1 UI-shell decisions (Jul 2026 redesign)
+
+The four-audit usability/performance review ([usability-review.md](usability-review.md), [performance-review.md](performance-review.md)) reshaped the UI shell; the durable decisions:
+
+- **One register.** The account register is a single expandable-splits table — selection opens a transaction's legs inline; **Show All Splits** expands everything (the journal reading) in the same table. The three GnuCash view styles and their switcher are gone; the whole-book journal survives as the *All Transactions* destination. Register controls live in the window toolbar (View ▾ / Sort ▾ / Filter / Reconcile / Edit), not an in-content strip.
+- **The dashboard is a board, not a page.** It never scrolls: columns come from the window width, unit rows from its height (row height stretches so the board lands flush on the bottom edge), and panels place in priority order into the emptiest column that fits — what doesn't fit is dropped. Panels are *content-aware*: a card whose whole message would be "nothing in this period" yields its tile. Leftover rows stretch the column's last tile; adaptive cards (Recent Activity) size their row count from the tile they were dealt.
+- **One feedback surface.** A single bottom-of-window status overlay carries determinate progress (quote fetches), a Saving… chip, and transient completion/failure toasts (`AppModel.showToast`). Long operations and previously-silent `try?` failure paths route through it.
+- **Desk state is not book data.** Where the user *was* — sidebar destination, selected account (per book, keyed by file path), dashboard period, register sort/filter — lives in `UserDefaults` and is restored on open. It never dirties the document and never appears in an export.
+- **Plain language is a UI-string concern only.** GnuCash vocabulary survives in the engine, the file format, and the code; the sweep (Repair Book, Close Financial Year, Group, Show Details, All Transactions) is confined to user-facing strings.
 
 **One open decision.** Whether to skip the working-copy hop for genuinely local volumes (direct mode, §6.2) versus always using a working copy is a performance-vs-safety trade-off to settle against a large-book validation on real local and SMB/NFS storage. Until measured, the safe default (always working-copy) stands. Tracked in [deferred.md](deferred.md).
 

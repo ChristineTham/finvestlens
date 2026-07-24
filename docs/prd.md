@@ -4,7 +4,7 @@
 |---|---|
 | **Product** | FinvestLens — native Apple double-entry accounting |
 | **Platforms** | macOS, iPadOS, iOS |
-| **Document status** | Requirements baseline v1.0 |
+| **Document status** | Requirements baseline v1.1 (Jul 2026 — usability-redesign decisions folded in) |
 | **Author** | Christine Tham |
 | **License** | GNU GPL v3.0 |
 
@@ -172,13 +172,13 @@ FinvestLens is a **document-based app** with its **own native file format** (a s
 |---|---|---|---|
 | FR-REG-01 | Provide a **register/ledger** view per account for entering and editing transactions, with running balance. | Must | P2 |
 | FR-REG-02 | Support **simple** (two-split) and **split** (multi-split) transaction entry, enforcing balance. | Must | P2 |
-| FR-REG-03 | Offer register view styles (basic ledger, auto-split, transaction journal) analogous to GnuCash. | Should | P2 |
-| FR-REG-04 | Provide **autofill** of payee/description and last-used splits, and keyboard-driven entry. | Should | P2 |
+| FR-REG-03 | **One register** *(supersedes the earlier "three GnuCash view styles" requirement — Jul 2026 redesign)*: a single expandable-splits table — selecting a transaction opens its legs inline; a **Show All Splits** view option gives the journal reading in the same table. The whole-book journal is the **All Transactions** sidebar destination (FR-REG-09). | Should | P2 |
+| FR-REG-04 | Provide **autofill** of payee/description and last-used splits, and keyboard-driven entry. *(Jul 2026 redesign: ⌘N focuses the register's entry bar — ⇧⌘N opens the full split editor — and QuickFill completes inline as ghost text, accepted with Tab, filling the transfer account and amount.)* | Should | P2 |
 | FR-REG-05 | Support **transfer** between accounts (Transfer Funds dialog), duplicate, delete, void, and mark reconcile state inline. | Must | P2 |
 | FR-REG-06 | **Find/Search** transactions by date, amount, payee, memo, account, reconcile state (multi-criteria search dialog). *(Upgraded to an operator query language in `FR-FIND-01`.)* | Should | P2 |
 | FR-REG-07 | Handle **multi-currency/commodity transactions** with per-split exchange rates. | Must | P5 |
 | FR-REG-08 | Transaction operations: **add reversing transaction**, **jump** to the other account's register, copy/paste, and remove splits. | Should | P2 |
-| FR-REG-09 | Provide a **General Ledger / General Journal** view (combined register across multiple accounts). | Could | P2 |
+| FR-REG-09 | Provide a whole-book journal view (combined register across all accounts) — shipped as the **All Transactions** sidebar destination (GnuCash's General Ledger, renamed per the plain-language principle, §8). | Could | P2 |
 | FR-REG-10 | **Attach/associate an external file or URL** to a transaction (document link / "paperclip"). | Could | P6 |
 | FR-REG-11 | **Print checks** from transactions with configurable check formats. | Could | P4 |
 
@@ -186,7 +186,7 @@ FinvestLens is a **document-based app** with its **own native file format** (a s
 
 | ID | Requirement | Pri | Phase |
 |---|---|---|---|
-| FR-REC-01 | Provide a **reconciliation** workflow: statement date and ending balance, mark cleared items, show running difference, finish when reconciled to zero. | Must | P4 |
+| FR-REC-01 | Provide a **reconciliation** workflow: statement date and ending balance, mark cleared items, show running difference, finish when reconciled to zero. *(Jul 2026 redesign: auto-clear runs as the opening move — the flow starts at "matched N of M, review the rest" — the difference remaining is the headline, unmatched rows sort first, and Finish explains itself while disabled.)* | Must | P4 |
 | FR-REC-02 | Persist reconcile state (n/c/y) and reconcile dates on splits. | Must | P4 |
 | FR-REC-03 | Support opening-balance reconciliation and re-opening a previous reconciliation. | Should | P4 |
 
@@ -205,7 +205,7 @@ FinvestLens is a **document-based app** with its **own native file format** (a s
 |---|---|---|---|
 | FR-INV-01 | Support **stock and mutual-fund accounts** denominated in a security commodity. | Must | P5 |
 | FR-INV-02 | Provide a **Price Editor / database**: manual entry and listing of commodity prices over time. | Must | P5 |
-| FR-INV-03 | Retrieve **online price quotes** for securities and currencies via **pluggable providers**, with user-triggered and scheduled refresh, a user-chosen default and fallback order. Results populate the Price DB. | Should | P5 |
+| FR-INV-03 | Retrieve **online price quotes** for securities and currencies via **pluggable providers**, with user-triggered and scheduled refresh, a user-chosen default and fallback order. Results populate the Price DB. *(Jul 2026 redesign: a one-click **Update Prices** (⌘⇧U) fills every security's missing history with the default provider — from the menu, the dashboard's Up Next card, or the Prices toolbar — with determinate progress and a completion toast; "last updated" shows in the Prices header.)* | Should | P5 |
 | FR-INV-03a | Provide a **keyless "yfinance-like" Yahoo provider** (no API key) for current and **historical** quotes, dividends, and splits — the default out-of-box source. | Should | P5 |
 | FR-INV-03b | Support **keyed providers** where the user enters an **API key** (stored in the **Keychain**), including **EODHD**, Alpha Vantage, Finnhub, and Twelve Data. Keys are entered by the user in Settings and sent only to that provider. | Should | P5 |
 | FR-INV-03c | Support **EODHD** specifically for **historical prices of delisted securities** (and deep multi-decade history). | Should | P5 |
@@ -234,6 +234,7 @@ FinvestLens is a **document-based app** with its **own native file format** (a s
 | FR-RPT-03 | Provide charts (bar/line/pie) for income/expense, net worth, and portfolio, following the app's data-visualization design system. | Should | P4 |
 | FR-RPT-04 | Allow date-range, account selection, and currency options; save report configurations. | Should | P4 |
 | FR-RPT-05 | **Export/print** reports to PDF and share via the platform share sheet. | Should | P4 |
+| FR-RPT-06 | **Financial Year Pack** *(Jul 2026)*: a one-export EOFY bundle — Income Statement, Balance Sheet, Capital Gains, and a **Dividends & Franking** summary (per security: franked / unfranked / imputation credits, grossed-up total) — for a chosen financial year, as a single PDF. The Reports gallery also keeps **Recents** (last five opened). | Should | P6 |
 
 ### 5.12 Budgets
 
@@ -294,7 +295,7 @@ Features that add consumer-grade **planning and guidance** on top of the account
 | FR-PLAN-05 | **Alerts (Advisor-FYI style)**: a rules engine raising proactive alerts — bill due, projected low/negative balance, over budget, price target hit, unusual spend — delivered via in-app, **notifications**, and **widgets**. | Should | P6 |
 | FR-PLAN-06 | **Payee management + auto-categorization rules**: user-editable payee rename and category/account assignment rules, applied on import (complements the Import Matcher). *(Realized by the general rules engine — see `FR-RULE-01`.)* | Should | P4 |
 | FR-PLAN-07 | **Portfolio enhancements**: **watch lists** (securities not held), **asset-allocation** breakdown, and **rate-of-return / performance** (extends `FR-INV-*`). | Should | P5 |
-| FR-PLAN-08 | **Home dashboard**: customizable overview surfacing balances, upcoming bills, budget status, **net-worth trend**, and alerts; drives Home-screen widgets. | Should | P6 |
+| FR-PLAN-08 | **Home dashboard**: an overview surfacing balances, upcoming bills, budget status, **net-worth trend**, and alerts; drives Home-screen widgets. *(Jul 2026 redesign: the dashboard is a **non-scrolling tile board** — it packs prioritised, content-aware cards into the actual window (columns from width, unit rows from height, stretched flush), drops what doesn't fit, and never scrolls; cards with nothing to say yield their tile; panels are user-hideable.)* | Should | P6 |
 | FR-PLAN-09 | **Onboarding / setup assistant**: friendly first-run flow to create accounts and a starter chart of accounts (broadens `FR-COA-03`). | Should | P4 |
 | FR-PLAN-10 | **Debt Reduction Planner**: order liabilities, apply extra payments, and compute payoff date/interest saved (snowball & avalanche strategies). | Could | P9 |
 | FR-PLAN-11 | **Lifetime Planner**: long-range financial/retirement projection from income, expenses, assets, retirement accounts, taxes, inflation, and life events → projected net worth and goal feasibility over a lifetime. | Could | P9 |
@@ -386,6 +387,9 @@ Book
 - **iPadOS** — Sidebar + detail split view; pointer/keyboard support; drag-and-drop; multitasking.
 - **iOS** — Compact, navigation-stack UI optimized for quick transaction entry and review; widgets and Shortcuts for glanceable balances. Open an existing book or create/edit a new one; **import and export (GnuCash, bank files, CSV, PDF) are not offered on iPhone** — those flows live on macOS/iPadOS (`FR-PLT-06`).
 - **Shared** — One design language; Dark Mode; SF Symbols; native controls; charts consistent with the project's data-visualization standards.
+- **Plain language (Jul 2026 redesign)** — UI strings avoid GnuCash jargon: *Repair Book* (Check & Repair), *Close Financial Year* (Period-End Close), *Group* (placeholder account), *Show Details* (Double Line), *All Transactions* (General Ledger), *Out of balance* (Imbalance, in the editor). Engine names and the GnuCash file format keep GnuCash's vocabulary — the sweep is strings-only.
+- **One feedback surface (Jul 2026 redesign)** — long operations (quote fetches, price updates, saves) report progress and completion through a single bottom-of-window status overlay; failures that used to vanish in `try?` route there too.
+- **Session restoration (Jul 2026 redesign)** — where you were (sidebar destination, selected account, dashboard period) survives relaunch, stored per book **outside** the document: desk state must never dirty the book.
 
 ---
 

@@ -3,8 +3,9 @@
 The record of what has been **built and verified**. Phases P0–P7 are complete:
 the engine, native document + NAS locking, GnuCash import/export, core UX,
 everyday finance, investments + multi-currency + quotes, sync/dashboard/alerts,
-Apple Intelligence, and small-business features. Only **P8** (extended import /
-bank sync) and **P9** (planning & insights) remain — tracked in
+Apple Intelligence, and small-business features — plus the **July 2026
+usability & performance redesign** (first section below). Only **P8** (extended
+import / bank sync) and **P9** (planning & insights) remain — tracked in
 [deferred.md](deferred.md), which also lists the smaller open tails within
 P0–P7.
 
@@ -18,6 +19,124 @@ Companions: [PRD](prd.md) · [Architecture](architecture.md) · [Plan](plan.md) 
 [Deferred](deferred.md).
 
 ---
+
+## Usability & performance redesign (24 Jul 2026)
+
+Four audit passes — usability (persona "Chris" + a periodic/monthly/EOFY
+journey walked through twelve use cases), functionality (every public
+`AppModel` function swept for UI callers; hidden features, dead code and
+duplicates registered), performance (per-render full-book scans traced;
+progress-feedback inventory), and session/resilience/accessibility/platform —
+produced findings F1–F22, redesign decisions RD1–RD4 (taken with the GnuCash-
+familiarity constraint deliberately dropped), and perf items P1–P10. The
+working documents are [usability-review.md](usability-review.md) and
+[performance-review.md](performance-review.md) (their §7 status notes record
+the accepted deviations). Executed as four phases, each committed green:
+
+**Phase 0 — consolidation.** One account-chooser family (`AccountSearch` is the
+single matching algorithm; every raw `Picker` site converted to
+`AccountField`/`AccountPickerButton`); dead code deleted with tests migrated to
+successor APIs; misplaced shared views extracted (`SharedComponents`,
+`LinkToTransactionSheet`); a single exchange-rate API; a
+`Bundle.main.bundleIdentifier` guard in `publishWidgetData` that stopped
+WidgetKit/UNUserNotificationCenter NSExceptions from killing test processes.
+
+**Phase 0.5 — performance quick wins.** The register status strip became a
+snapshot folded into `refreshRegister`'s existing row pass (was three
+full-book `balance` scans per SwiftUI body pass — P1), pinned by fold tests
+(voided, frozen, filter-independence) alongside the engine-parity test.
+QuickFill reads a per-revision recency list (was a 46k-transaction sort per
+keystroke — P2). `postableAccounts` is cached with the account tree (was a
+per-body-pass flatten × every picker cell — P4). **Scoped undo** grew two
+tiers (P9): `editingPrices` (array snapshot) and `editingBookKvp` (frame
+snapshot + collection reload, so undo can't be re-persisted away) — price
+fetches, rate edits, price import, and every settings/collection commit no
+longer pay the whole-book XML export (~6.6s on the reference book) per edit;
+structural/business ops stay whole-book. An `os_signpost` + DEBUG over-budget
+`Perf` harness wraps tree/register rebuilds, search replay, report builds and
+whole-book snapshots.
+
+**Phase 1 — structural UI.** **RD1, one register:** the account register is a
+single expandable-splits table (selection opens legs inline; **Show All
+Splits** expands everything — new `expandAll` row path + test); the
+Basic/Auto-Split/Journal switcher is deleted; the whole-book journal is the
+sidebar's **All Transactions**. Register controls moved to the window toolbar
+(View ▾ · Sort ▾ · Filter · Reconcile · Edit); the window toolbar pins
+[+ New ▾][⬇ Import ▾] leading so nothing hides behind » (F1); Saved Searches
+folded into the search field's suggestions. **RD2, plain language** (strings
+only): Repair Book · Close Financial Year · Group · Show Details ·
+All Transactions · Out of balance. **RD4, entry without ceremony:** ⌘N focuses
+the entry bar (⇧⌘N full editor, ⌥⌘N New Book), whose prompt says so;
+QuickFill completes inline as ghost text — Tab accepts and fills transfer +
+amount. Dashboard gained the **Up Next** card (F9): live rows for stale
+prices, uncategorised count, stalest reconcile, and this month's statement
+import, each with its action button, computed once per (revision, day).
+
+**Phase 2 — journey accelerators.** **RD3, reconcile reimagined:** auto-clear
+runs the moment a session starts ("matched N of M — review the rest" as an
+inline status, not an alert); the difference remaining is the headline; rows
+still needing eyes sort first and stay put while ticking (ordering test);
+Finish explains itself while disabled. **One-click prices** (6.4):
+`updateAllPrices()` from Book ▸ Update Prices (⌘⇧U), the Up Next card, or the
+Prices toolbar, with determinate progress and a completion toast; Prices &
+Quotes became the two-tab **Prices & Securities** destination (the buried
+securities manager — watchlist, price targets, rename, refetch — is a
+first-class tab; the Alerts card deep-links to it; the navigation subtitle
+shows last-updated). **Status overlay** (6.8): one bottom-of-window surface
+for progress chips, Saving…, and completion/failure toasts; quote fetches,
+price updates, saves (P10: `saveWithStatus`, also used by autosave), attach
+failures (F20 — previously silent `try?`s) and Revert route through it.
+**Session restoration** (F18): sidebar destination incl. selected account
+(per book) and dashboard period survive relaunch. **Async reports** (P3): the
+heavy reports (portfolio, capital gains, lots, transactions, reconciliation)
+memoise per (parameters, revision) and build behind a "Building…" placeholder
+via `AsyncReport`; forecast and close-preview memoised likewise; the
+categoriser sheet yields before its corpus scan so its spinner paints (P6).
+Reports gained a **Recents** row (F12); a dedicated **Reports menu** with
+direct jumps; ⌘⇧M Match Attachments; ⌥⌘1/2/3 destination jumps; the
+attachments panel cross-links All Linked Documents (6.7).
+
+**Phase 3 — depth.** **Financial Year Pack** (6.6b): pick a financial year
+(current + three back, bounded by the book), preview the bundle, export one
+PDF — Income Statement, Balance Sheet, Capital Gains, and a new **Dividends &
+Franking** summary classifying income per security into franked / unfranked /
+imputation credits from the Dividends account tree with a grossed-up total
+(classification pinned by tests against the app's own dividend booking
+shape). Dashboard **Customise** menu shows/hides panels (F10); the Goals card
+surfaces the earmarking maths (total set aside; what's left unallocated —
+or over-allocation, in orange — when one account funds the goals). Sweeps:
+Escape closes every sheet (F19); icon-only buttons carry accessibility labels
+(F21); iPad parity (F22 — web links via `openURL`, Link File… via
+`fileImporter`, honest messaging where a macOS-only affordance is absent);
+the register's empty state offers "Add a Transaction (⌘N)".
+
+**The dashboard became a board, not a page (F8, user-clarified).** The first
+fix (a soft scroll-edge fade) misread the finding: the requirement is that
+the dashboard **never scrolls** — the priority list exists to decide what
+earns the screen. The masonry `ScrollView` is gone; the dashboard deals a
+fixed tile board — columns from the window width, unit rows from its height
+(row height stretched so the board lands flush on the bottom edge), panels
+placed in priority order into the emptiest fitting column, and anything that
+doesn't fit dropped. Panels are **content-aware** (a card whose whole message
+is "nothing in this period" yields its tile — Alerts keeps one unit for
+"nothing needs attention"); leftover rows stretch the column's last tile;
+charts stretch into their tiles; list cards cap rows with "+N more"; Recent
+Activity sizes its row count from the tile it was dealt. Verified by
+screenshot at full-screen (six information-dense tiles, flush) and 1150×760
+(top four cards, flush): no scrolling, no clipping, live re-deal on resize.
+
+**Accepted deviations** (recorded in the review docs' §7 status notes, and in
+§10 of [architecture.md](architecture.md)): reports build after first paint
+but **on the main actor** — the non-`Sendable` `Book` makes a background read
+a race; going further needs a read-gate (writers wait on readers), deferred
+until the memoised first-build is shown too slow in practice. Incremental
+tree/journal rebuilds (P5.4/P7) stay unbuilt until the signpost harness
+produces numbers demanding them.
+
+Verified at each phase: the FeatureUI suite (386 tests / 81 suites at
+completion) plus both platform builds (macOS + iOS simulator); the app was
+relaunched on the reference book after every phase, with the toolbar, board
+and reconcile changes confirmed by screenshot.
 
 ## Deferred-backlog closeout (18 Jul 2026)
 
