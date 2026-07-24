@@ -7,6 +7,15 @@
 | **Scope** | Elevate the statement reports to annual-report presentation quality, and add a CFO-style "Financial Review" slide deck with charts and on-device insights |
 | **Companions** | [PRD](prd.md) (FR-RPT-*) · [Architecture](architecture.md) §10/§11 · [Implemented](implemented.md) |
 
+> **Status (24 Jul 2026): implemented** — S1–S4 shipped (commits
+> "Annual-report statements…" and "Financial Review deck…"); 397 tests green
+> incl. statement identities and the story validator; verified on the
+> reference book by screenshot (statement face + notes; deck slides). One
+> hardening beyond the plan: the narrator's output passes a **deterministic
+> number validator** — any story quoting a figure not in the slide's facts
+> pack is rejected (the live model invented YoY percentages on first run;
+> the validator now makes that impossible to ship).
+
 ## 1. The brief
 
 The report *arithmetic* is verified to the cent against GnuCash; the report

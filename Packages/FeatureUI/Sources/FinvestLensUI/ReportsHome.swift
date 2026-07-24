@@ -224,6 +224,7 @@ struct ReportGallery: View {
     let open: (ReportConfiguration) -> Void
     @State private var settingsShown = false
     @State private var packShown = false
+    @State private var reviewShown = false
 
     private let columns = [GridItem(.adaptive(minimum: 210), spacing: 12)]
 
@@ -262,6 +263,22 @@ struct ReportGallery: View {
                         }
                     }
                 }
+                Text("Present").scaledFont(.title2).fontWeight(.semibold)
+                Button {
+                    reviewShown = true
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Financial Review", systemImage: "play.rectangle.fill")
+                            .scaledFont(.headline)
+                        Text("The period as a results deck — one message per slide, charts, callouts, on-device insights")
+                            .scaledFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: 440, alignment: .leading)
+                    .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
                 Text("Tax Time").scaledFont(.title2).fontWeight(.semibold)
                 Button {
                     packShown = true
@@ -291,16 +308,27 @@ struct ReportGallery: View {
         }
         .navigationTitle("Reports")
         .sheet(isPresented: $packShown) { FinancialYearPackSheet(model: model) }
+        .sheet(isPresented: $reviewShown) { FinancialReviewSheet(model: model) }
         .onAppear {
             if model.financialYearPackRequested {
                 model.financialYearPackRequested = false
                 packShown = true
+            }
+            if model.financialReviewRequested {
+                model.financialReviewRequested = false
+                reviewShown = true
             }
         }
         .onChange(of: model.financialYearPackRequested) {
             if model.financialYearPackRequested {
                 model.financialYearPackRequested = false
                 packShown = true
+            }
+        }
+        .onChange(of: model.financialReviewRequested) {
+            if model.financialReviewRequested {
+                model.financialReviewRequested = false
+                reviewShown = true
             }
         }
         .toolbar {

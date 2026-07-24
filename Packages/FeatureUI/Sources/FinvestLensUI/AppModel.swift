@@ -14,6 +14,7 @@ import FinvestLensInterchange
 import FinvestLensRules
 import FinvestLensQuotes
 import FinvestLensReports
+import FinvestLensIntelligence
 
 /// A row in the chart-of-accounts tree.
 public struct AccountNode: Identifiable, Hashable, Sendable {
@@ -290,6 +291,10 @@ public final class AppModel {
     /// case-folded form. QuickFill used to sort all 46k transactions on every
     /// keystroke; now the sort happens once per book revision and a keystroke
     /// is a prefix scan over ~thousands of short strings.
+    /// Financial Review slide stories, keyed by (slide, revision, period) —
+    /// the on-device model writes each once per book state.
+    @ObservationIgnored var reviewStoryCache: [String: ReviewSlideStory] = [:]
+
     @ObservationIgnored private var descriptionRecencyCache: [(text: String, folded: String)] = []
     @ObservationIgnored private var descriptionRecencyRevision = -1
 
@@ -624,6 +629,9 @@ public final class AppModel {
     /// Set by Reports ▸ Financial Year Pack…; the gallery opens the pack
     /// sheet and clears it.
     public var financialYearPackRequested = false
+
+    /// Set by Reports ▸ Financial Review…; the gallery opens the deck.
+    public var financialReviewRequested = false
 
     /// Menu-bar jump straight to one report: lands on the Reports destination
     /// with the report already open (6.7).

@@ -128,6 +128,25 @@ enum ReportExport {
     /// The statement rendered to PDF data on the main actor (for `ShareLink`).
     static func pdfData(_ statement: PrintableStatement) -> Data? { pdf(statement) }
 
+    /// One fixed-size page (deck slides): the view is rendered at exactly
+    /// `size`, landscape or portrait as given.
+    static func pdfPage(_ view: some View, size: CGSize, scale: CGFloat = 2) -> Data? {
+        let renderer = ImageRenderer(content:
+            view.frame(width: size.width, height: size.height).background(Color.white))
+        renderer.scale = scale
+        let pdf = NSMutableData()
+        guard let consumer = CGDataConsumer(data: pdf as CFMutableData) else { return nil }
+        var mediaBox = CGRect(origin: .zero, size: size)
+        guard let context = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else { return nil }
+        renderer.render { _, draw in
+            context.beginPDFPage(nil)
+            draw(context)
+            context.endPDFPage()
+        }
+        context.closePDF()
+        return pdf as Data
+    }
+
     static func pdf(_ view: some View, scale: CGFloat = 2) -> Data? {
         let renderer = ImageRenderer(content:
             view.padding(24).background(Color.white).frame(width: 560, alignment: .leading))

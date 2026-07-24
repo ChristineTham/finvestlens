@@ -278,6 +278,11 @@ struct finvestlensApp: App {
                 Button("Transactions") { model.openReport(.transactions) }
                     .disabled(!model.isOpen)
                 Divider()
+                Button("Financial Review…") {
+                    model.show(.reports)
+                    model.financialReviewRequested = true
+                }
+                    .disabled(!model.isOpen)
                 Button("Financial Year Pack…") {
                     model.show(.reports)
                     model.financialYearPackRequested = true
