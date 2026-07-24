@@ -189,7 +189,12 @@ public struct Recurrence: Codable, Hashable, Sendable {
         let cal = calendar ?? Self.utcCalendar
         guard startDate <= through else { return [] }
         var result: [Date] = []
-        var date = startDate                    // occurrence 0 is the start
+        // Occurrence 0 is the start — weekend-adjusted like every other
+        // occurrence, so this list agrees with `next(after:)`, which answers
+        // the adjusted start for any reference before it.
+        var seed = YMD(startDate, calendar: cal)
+        seed.adjustForWeekend(period: period, wadj: weekendAdjust)
+        var date = seed.date(timeFrom: startDate, calendar: cal)
         var iterations = 0
         while date <= through, iterations < limit {
             if since == nil || date > since! { result.append(date) }

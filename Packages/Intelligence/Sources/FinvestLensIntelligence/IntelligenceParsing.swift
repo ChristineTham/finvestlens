@@ -25,7 +25,10 @@ public enum IntelligenceParsing {
             negative = true
             text = String(text.dropFirst().dropLast())
         }
-        if text.uppercased().hasSuffix("DR") || text.uppercased().hasPrefix("DR") {
+        // A debit marker is its own token ("500 DR", "DR 500") — a bare
+        // suffix test would read the currency code in "500 IDR" as one.
+        let upper = text.uppercased()
+        if upper == "DR" || upper.hasSuffix(" DR") || upper.hasPrefix("DR ") {
             negative = true
         }
         text = text.filter { $0.isNumber || $0 == "." || $0 == "-" }

@@ -70,9 +70,11 @@ public struct LoanCalculator: Sendable, Equatable {
         schedule().reduce(Decimal(0)) { $0 + $1.payment }
     }
 
-    /// Interest paid over the life of the loan (total paid − principal).
+    /// Interest paid over the life of the loan (total paid − principal);
+    /// zero for a degenerate zero-length term rather than −principal.
     public var totalInterest: Decimal {
-        totalPaid - principal
+        let paid = totalPaid
+        return paid == 0 ? 0 : paid - principal
     }
 
     /// One line of the amortisation schedule.

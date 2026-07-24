@@ -401,11 +401,7 @@ private struct CreateFromInvoiceSheet: View {
     private var code: String { model.reportCurrency.mnemonic }
     private var fundingAccounts: [AccountNode] {
         model.postableAccounts.filter {
-            $0.typeName == AccountType.bank.rawValue
-                || $0.typeName == AccountType.cash.rawValue
-                || $0.typeName == AccountType.asset.rawValue
-                || $0.typeName == AccountType.credit.rawValue
-                || $0.typeName == AccountType.liability.rawValue
+            $0.isType(.bank, .cash, .asset, .credit, .liability)
         }
     }
 

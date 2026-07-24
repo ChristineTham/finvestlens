@@ -18,11 +18,7 @@ extension AppModel {
 
     /// Asset-like accounts a goal can earmark (bank, cash, asset), non-placeholder.
     public var goalEligibleAccounts: [AccountNode] {
-        postableAccounts.filter {
-            $0.typeName == AccountType.bank.rawValue
-                || $0.typeName == AccountType.cash.rawValue
-                || $0.typeName == AccountType.asset.rawValue
-        }
+        postableAccounts.filter { $0.isType(.bank, .cash, .asset) }
     }
 
     /// Adds a savings goal and persists it.

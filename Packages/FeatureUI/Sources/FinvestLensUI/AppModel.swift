@@ -31,6 +31,16 @@ public struct AccountNode: Identifiable, Hashable, Sendable {
     public var children: [AccountNode]?
 }
 
+public extension AccountNode {
+    /// Whether this node is one of the given engine types. `typeName` is the
+    /// display-capitalized raw value ("Bank"), so comparing it to
+    /// `AccountType.rawValue` ("bank") directly always fails — the trap that
+    /// silently emptied the goal and funding pickers. Compare here, once.
+    func isType(_ types: AccountType...) -> Bool {
+        types.contains { typeName.caseInsensitiveCompare($0.rawValue) == .orderedSame }
+    }
+}
+
 /// A row in an account register (one split, with a running balance).
 public struct RegisterRow: Identifiable, Hashable, Sendable {
     public let id: GncGUID

@@ -99,3 +99,100 @@ struct BookFXTests {
         #expect(rate == dec("0.60") / dec("0.90"))
     }
 }
+
+@Suite("Book FX gaps")
+struct BookFXGapTests {
+
+    private let gbp = Commodity.currency("GBP", name: "Pound Sterling")
+
+    private func stock(_ mnemonic: String) -> Commodity {
+        Commodity(namespace: .security("LSE"), mnemonic: mnemonic,
+                  fullName: mnemonic, smallestFraction: 10000)
+    }
+
+    @Test("convert returns nil when no rate path exists")
+    func convertNil() {
+        let book = Book(baseCurrency: .aud)
+        #expect(book.convert(dec("100"), from: .eur, to: .aud) == nil)
+        #expect(book.exchangeRate(from: .eur, to: .aud) == nil)
+    }
+
+    @Test("Security valuation skips quote currencies with no FX path")
+    func quoteCurrencySkipping() {
+        let book = Book(baseCurrency: .aud)
+        let tst = stock("TST")
+        // Priced in EUR (no EUR→AUD rate) and in GBP (with a GBP→AUD rate).
+        book.addPrice(Price(commodity: tst, currency: .eur, date: day(0), value: dec("90")))
+        book.addPrice(Price(commodity: tst, currency: gbp, date: day(0), value: dec("100")))
+        book.setExchangeRate(from: gbp, to: .aud, rate: dec("2"), date: day(0))
+        // EUR sorts first and dead-ends; GBP carries the valuation.
+        #expect(book.securityUnitValue(tst, in: .aud) == dec("200"))
+    }
+
+    @Test("Security valuation is nil when no quote currency reaches the target")
+    func unreachableSecurity() {
+        let book = Book(baseCurrency: .aud)
+        let tst = stock("TST")
+        book.addPrice(Price(commodity: tst, currency: .eur, date: day(0), value: dec("90")))
+        #expect(book.securityUnitValue(tst, in: .aud) == nil)
+        // And with no prices at all.
+        #expect(book.securityUnitValue(stock("NIL"), in: .aud) == nil)
+    }
+
+    @Test("Latest price in any currency picks by date, not by currency")
+    func latestAnyCurrency() {
+        let book = Book(baseCurrency: .aud)
+        let tst = stock("TST")
+        book.addPrice(Price(commodity: tst, currency: .eur, date: day(0), value: dec("90")))
+        book.addPrice(Price(commodity: tst, currency: gbp, date: day(5), value: dec("100")))
+        #expect(book.latestPriceInAnyCurrency(of: tst)?.currency == gbp)
+        #expect(book.latestPriceInAnyCurrency(of: tst, on: day(2))?.currency == .eur)
+        #expect(book.latestPriceInAnyCurrency(of: .usd) == nil)
+    }
+
+    @Test("Subtree conversion values each account in its own commodity")
+    func subtreeConversion() {
+        let book = Book(baseCurrency: .aud)
+        let parent = book.addAccount(Account(name: "Investments", type: .asset, commodity: .aud))
+        let audCash = book.addAccount(Account(name: "AUD Cash", type: .bank, commodity: .aud),
+                                      under: parent)
+        let usdCash = book.addAccount(Account(name: "USD Cash", type: .bank, commodity: .usd),
+                                      under: parent)
+        let eurCash = book.addAccount(Account(name: "EUR Cash", type: .bank, commodity: .eur),
+                                      under: parent)
+        let apple = Commodity(namespace: .security("NASDAQ"), mnemonic: "AAPL",
+                              fullName: "Apple", smallestFraction: 10000)
+        let holding = book.addAccount(Account(name: "AAPL", type: .stock, commodity: apple),
+                                      under: parent)
+
+        book.setExchangeRate(from: .usd, to: .aud, rate: dec("1.50"), date: day(0))
+        book.addPrice(Price(commodity: apple, currency: .usd, date: day(0), value: dec("200")))
+
+        func deposit(_ amount: String, into account: Account, currency: Commodity,
+                     quantity: String? = nil) {
+            let txn = Transaction(currency: currency, datePosted: day(1), description: "Deposit")
+            txn.addSplit(account: account, value: dec(amount), quantity: quantity.map { dec($0) })
+            txn.addSplit(account: book.rootAccount, value: -dec(amount))
+            book.addTransaction(txn)
+        }
+        deposit("100", into: audCash, currency: .aud)
+        deposit("200", into: usdCash, currency: .usd)
+        deposit("2000", into: holding, currency: .usd, quantity: "10")
+        // EUR account left at zero: no rate exists, and none is needed.
+
+        // 100 + 200×1.5 + 10×(200×1.5) = 3,400.
+        #expect(book.convertedBalance(of: parent, in: .aud, on: day(2),
+                                      includingDescendants: true) == dec("3400"))
+
+        // Same-commodity accounts answer natively; a rateless one answers nil
+        // even at zero balance — only the subtree walk skips zero balances.
+        #expect(book.convertedBalance(of: audCash, in: .aud, on: day(2)) == dec("100"))
+        #expect(book.convertedBalance(of: eurCash, in: .aud, on: day(2)) == nil)
+
+        // A non-zero balance in an unpriceable commodity poisons the subtree.
+        deposit("50", into: eurCash, currency: .eur)
+        #expect(book.convertedBalance(of: parent, in: .aud, on: day(2),
+                                      includingDescendants: true) == nil)
+        #expect(book.convertedBalance(of: eurCash, in: .aud, on: day(2)) == nil)
+    }
+}

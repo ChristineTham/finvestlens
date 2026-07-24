@@ -92,6 +92,29 @@ struct APIKeyStoreTests {
         #expect(QuoteProviderKind.twelveData.supportsHistory)
         #expect(QuoteProviderKind.allCases.count == 6)
     }
+
+    @Test("Every kind has a display name, an id, and a signup URL iff keyed")
+    func displayMetadata() {
+        for kind in QuoteProviderKind.allCases {
+            #expect(!kind.displayName.isEmpty)
+            #expect(kind.id == kind.rawValue)
+            #expect((kind.signupURL != nil) == kind.requiresAPIKey)
+        }
+    }
+
+    @Test("The factory builds every kind, gating keyed ones on a key")
+    func factoryAllKinds() {
+        for kind in QuoteProviderKind.allCases {
+            let keyless = QuoteProviderFactory.make(kind)
+            let keyed = QuoteProviderFactory.make(kind, apiKey: "k")
+            #expect(keyed?.kind == kind)
+            if kind.requiresAPIKey {
+                #expect(keyless == nil)
+            } else {
+                #expect(keyless?.kind == kind)
+            }
+        }
+    }
 }
 
 @Suite("Provider symbol mapping")
@@ -113,5 +136,18 @@ struct ProviderSymbolTests {
     func yahoo() {
         #expect(QuoteProviderKind.yahoo.providerSymbol(for: "CBA.AX") == "CBA.AX")
         #expect(QuoteProviderKind.yahoo.providerSymbol(for: "AAPL") == "AAPL")
+    }
+
+    @Test("Whitespace is trimmed and empty symbols pass through")
+    func trimming() {
+        #expect(QuoteProviderKind.yahoo.providerSymbol(for: "  AAPL ") == "AAPL")
+        #expect(QuoteProviderKind.eodhd.providerSymbol(for: "   ") == "")
+        #expect(QuoteProviderKind.stooq.providerSymbol(for: "") == "")
+    }
+
+    @Test("Unknown exchange suffixes pass through (case-adjusted)")
+    func unknownSuffix() {
+        #expect(QuoteProviderKind.eodhd.providerSymbol(for: "ABC.XY") == "ABC.XY")
+        #expect(QuoteProviderKind.stooq.providerSymbol(for: "ABC.XY") == "abc.xy")
     }
 }

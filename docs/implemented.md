@@ -19,6 +19,61 @@ Companions: [PRD](prd.md) · [Architecture](architecture.md) · [Plan](plan.md) 
 
 ---
 
+## Test comprehensiveness pass (24 Jul 2026)
+
+The closing quality gate: measured line coverage across every package
+(merged best-of per suite), then filled the gaps that mattered — and fixed
+the five real bugs the new tests flushed out. **1,065 tests green** (was
+835), all suites, both platforms, plus the three env-gated live acceptance
+harnesses re-run against the reference book.
+
+**Coverage (lines, before → after, own-suite):**
+
+| Package | Before | After | Gate |
+|---|---|---|---|
+| Engine | 80.6% | **91.8%** | ≥90% ✓ (was the one breach) |
+| Interchange | ~92% merged | higher (Gzip 87%, dates 97%, SX import 93%) | ✓ |
+| Persistence 93% · Reports 93% · Rules 99% | — | unchanged | ✓ |
+| Quotes providers | patchy | AlphaVantage/Finnhub/Stooq 100%, EODHD/TwelveData 97% | ✓ |
+| Intelligence `DocumentText` | 50% | **94%** (deterministic PDF-reflow fixtures) | ✓ |
+| FeatureUI logic files | 0–59% | InlineEdit/CSV **100%**, SmartCategorize 96%, Budget 97%, ReportDocuments 95%, ReportBuilders 96% | ✓ |
+
+**Notable new suites:** hand-amortised loan schedules; all recurrence
+weekend-adjust branches with hand-verified calendar dates; the smart
+categoriser's plan/ambiguity/threshold behaviours pinned (its tuned
+constants finally have committed guardrails); a **synthetic report-catalogue
+sweep** — the CI-runnable counterpart of the env-gated live catalogue, so the
+report builders are no longer CI-dark; check-repair scenarios; CSV export
+wire format; PDF text-reflow with scrambled content-stream fixtures; widget
+snapshot wire format.
+
+**Bugs found by the pass, fixed and pinned:**
+1. **`goalEligibleAccounts` always empty** — `AccountNode.typeName` is
+   capitalized ("Bank") but three call sites compared it to the lowercase
+   `AccountType.rawValue`, so the **Add Goal button was permanently
+   disabled**, the invoice funding-account picker was empty, and Time &
+   Mileage's income pickers were empty. One case-insensitive
+   `AccountNode.isType(…)` helper now serves all three.
+2. **`Recurrence.occurrences` skipped weekend adjustment for the first
+   occurrence** — the list disagreed with `next(after:)` for a
+   weekend-anchored start; the seed is now adjusted like every other
+   occurrence.
+3. **Alpha Vantage's unknown-symbol answer** (`{"Global Quote": {}}`) threw
+   a raw `DecodingError` instead of `QuoteError.noData`.
+4. **`"500 IDR"` parsed as −500** — the amount parser's debit marker matched
+   any `DR` suffix, including currency codes; it now requires a standalone
+   token.
+5. **`LoanCalculator.totalInterest` returned −principal** on a zero-length
+   term; now 0.
+
+One expectation corrected on my side of the audit: weekend adjustment on
+*weekly* recurrences is deliberately discarded (month-anchored semantics,
+GnuCash-faithful) — pinned with a comment rather than "fixed".
+
+Deliberately not chased: SwiftUI view bodies (not unit-testable), live-HTTP
+transport, FoundationModels session paths (the `LiveModelTests` suite covers
+them on-device), and Keychain-backed key storage.
+
 ## Deferred-backlog pass (24 Jul 2026)
 
 A sweep of [deferred.md](deferred.md) implementing everything buildable

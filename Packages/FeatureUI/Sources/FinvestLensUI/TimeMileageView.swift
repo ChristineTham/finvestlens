@@ -138,7 +138,7 @@ private struct BillableEntrySheet: View {
     @State private var incomeID: GncGUID?
 
     private var incomeAccounts: [AccountNode] {
-        model.postableAccounts.filter { $0.typeName == AccountType.income.rawValue }
+        model.postableAccounts.filter { $0.isType(.income) }
     }
     private func dec(_ s: String) -> Decimal { Decimal(string: s.trimmingCharacters(in: .whitespaces)) ?? 0 }
     private var isValid: Bool { customerID != nil && dec(quantity) > 0 }
@@ -217,7 +217,7 @@ private struct BillCustomerSheet: View {
     private var entries: [BillableEntry] { model.unbilledEntries(forCustomer: customer.guid) }
     private var needsFallback: Bool { entries.contains { $0.incomeAccountID == nil } }
     private var incomeAccounts: [AccountNode] {
-        model.postableAccounts.filter { $0.typeName == AccountType.income.rawValue }
+        model.postableAccounts.filter { $0.isType(.income) }
     }
     private var isValid: Bool {
         !invoiceNumber.trimmingCharacters(in: .whitespaces).isEmpty

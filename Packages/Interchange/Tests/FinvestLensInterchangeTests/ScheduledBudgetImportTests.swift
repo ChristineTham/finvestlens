@@ -73,6 +73,9 @@ struct ScheduledBudgetImportTests {
     </gnc-v2>
     """
 
+    /// The fixture, exposed for the variant suite below.
+    var fixtureXML: String { xml }
+
     private func decodeScheduled(_ book: Book) -> [ScheduledTransaction] {
         guard case let .string(json)? = book.kvp["finvestlens/scheduledTransactions"],
               let data = json.data(using: .utf8) else { return [] }
@@ -125,5 +128,82 @@ struct ScheduledBudgetImportTests {
         let line = try #require(budget.lines.first)
         #expect(line.amount(inPeriod: 0) == dec("2500"))
         #expect(line.amount(inPeriod: 1) == dec("3000"))
+    }
+}
+
+@Suite("Scheduled import — recurrence & formula variants")
+struct ScheduledVariantTests {
+
+    /// The proven fixture from `ScheduledBudgetImportTests`, with the schedule
+    /// line and the split slots swapped per variant.
+    private func imported(schedule: String, enabled: String = "y",
+                          debitSlots: String? = nil) -> [ScheduledTransaction] {
+        var xml = ScheduledBudgetImportTests().fixtureXML
+        xml = xml.replacingOccurrences(
+            of: "<sx:schedule><gnc:recurrence version=\"1.0.0\"><recurrence:mult>1</recurrence:mult><recurrence:period_type>month</recurrence:period_type><recurrence:start><gdate>2022-01-31</gdate></recurrence:start></gnc:recurrence></sx:schedule>",
+            with: schedule)
+        xml = xml.replacingOccurrences(of: "<sx:enabled>y</sx:enabled>",
+                                       with: "<sx:enabled>\(enabled)</sx:enabled>")
+        if let debitSlots {
+            xml = xml.replacingOccurrences(
+                of: "<slot><slot:key>debit-numeric</slot:key><slot:value type=\"numeric\">20000/100</slot:value></slot>",
+                with: debitSlots)
+        }
+        let book = Book(baseCurrency: .aud)
+        // The SX importer resolves template-split accounts against the BOOK,
+        // so the fixture's account GUIDs must exist on it.
+        book.addAccount(Account(guid: GncGUID(hex: String(repeating: "a", count: 32))!,
+                                name: "Bank", type: .bank, commodity: .aud))
+        book.addAccount(Account(guid: GncGUID(hex: String(repeating: "b", count: 32))!,
+                                name: "Food", type: .expense, commodity: .aud))
+        _ = GnuCashScheduledBudgetImport.apply(xml: Data(xml.utf8), to: book)
+        guard case let .string(json)? = book.kvp["finvestlens/scheduledTransactions"],
+              let data = json.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([ScheduledTransaction].self, from: data)) ?? []
+    }
+
+    @Test("Weekly multiplier and weekend adjustment map onto the recurrence")
+    func weeklyVariant() throws {
+        let schedule = "<sx:schedule><gnc:recurrence version=\"1.0.0\">"
+            + "<recurrence:mult>2</recurrence:mult>"
+            + "<recurrence:period_type>week</recurrence:period_type>"
+            + "<recurrence:start><gdate>2022-01-31</gdate></recurrence:start>"
+            + "<recurrence:weekend_adj>forward</recurrence:weekend_adj>"
+            + "</gnc:recurrence></sx:schedule>"
+        let sx = try #require(imported(schedule: schedule).first)
+        #expect(sx.recurrence.period == .weekly)
+        #expect(sx.recurrence.interval == 2)
+        // Weekend adjustment is month-anchored semantics: a weekly recurrence
+        // deliberately discards it (Recurrence.init, GnuCash-faithful).
+        #expect(sx.recurrence.weekendAdjust == WeekendAdjust.none)
+        #expect(sx.isEnabled)
+        #expect(sx.splits.contains { $0.value == Decimal(200) })
+    }
+
+    @Test("A disabled end-of-month SX imports disabled with the right period")
+    func disabledEndOfMonth() throws {
+        let schedule = "<sx:schedule><gnc:recurrence version=\"1.0.0\">"
+            + "<recurrence:mult>1</recurrence:mult>"
+            + "<recurrence:period_type>end of month</recurrence:period_type>"
+            + "<recurrence:start><gdate>2022-01-31</gdate></recurrence:start>"
+            + "<recurrence:weekend_adj>back</recurrence:weekend_adj>"
+            + "</gnc:recurrence></sx:schedule>"
+        let sx = try #require(imported(schedule: schedule, enabled: "n").first)
+        #expect(sx.recurrence.period == .endOfMonth)
+        #expect(sx.recurrence.weekendAdjust == .back)
+        #expect(!sx.isEnabled)
+    }
+
+    @Test("Formula slots stand in when the numeric slots are zero")
+    func formulaFallback() throws {
+        let formulas = "<slot><slot:key>debit-formula</slot:key><slot:value type=\"string\">1234.50</slot:value></slot>"
+        let schedule = "<sx:schedule><gnc:recurrence version=\"1.0.0\">"
+            + "<recurrence:mult>1</recurrence:mult>"
+            + "<recurrence:period_type>year</recurrence:period_type>"
+            + "<recurrence:start><gdate>2022-01-31</gdate></recurrence:start>"
+            + "</gnc:recurrence></sx:schedule>"
+        let sx = try #require(imported(schedule: schedule, debitSlots: formulas).first)
+        #expect(sx.recurrence.period == .yearly)
+        #expect(sx.splits.contains { $0.value == Decimal(string: "1234.50") })
     }
 }

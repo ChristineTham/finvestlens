@@ -70,3 +70,40 @@ struct AmountExpressionTests {
         #expect(AmountExpression.variables(in: "10.50 + 2").isEmpty)
     }
 }
+
+@Suite("Amount expression gaps")
+struct AmountExpressionGapTests {
+
+    private func dec(_ s: String) -> Decimal { Decimal(string: s)! }
+
+    @Test("More malformed input")
+    func malformed() {
+        #expect(AmountExpression.evaluate(")") == nil)
+        #expect(AmountExpression.evaluate("()") == nil)
+        #expect(AmountExpression.evaluate("1.2.3") == nil)
+        #expect(AmountExpression.evaluate("5 % 2") == nil)
+        #expect(AmountExpression.evaluate("*3") == nil)
+        #expect(AmountExpression.evaluate("2 * (") == nil)
+        #expect(AmountExpression.evaluate("2 * (3") == nil)
+        #expect(AmountExpression.evaluate("   ") == nil)
+        #expect(AmountExpression.evaluate("-") == nil)
+    }
+
+    @Test("Unary plus, nested parens, decimal division")
+    func moreArithmetic() {
+        #expect(AmountExpression.evaluate("+5") == dec("5"))
+        #expect(AmountExpression.evaluate("((2 + 3)) * 2") == dec("10"))
+        #expect(AmountExpression.evaluate("10 / 4") == dec("2.5"))
+        #expect(AmountExpression.evaluate("2 * -3") == dec("-6"))
+        #expect(AmountExpression.evaluate("- -4") == dec("4"))
+        #expect(AmountExpression.evaluate("100 / 5 / 2") == dec("10"))   // left-assoc
+    }
+
+    @Test("Identifiers may contain digits and underscores")
+    func identifierNames() {
+        #expect(AmountExpression.evaluate("x_1 * 2", variables: ["x_1": dec("3")]) == dec("6"))
+        #expect(AmountExpression.variables(in: "rate_2026 + _buffer") == ["rate_2026", "_buffer"])
+        // Collection walks the whole formula even where evaluation would fail.
+        #expect(AmountExpression.variables(in: "a / (b - b)") == ["a", "b"])
+    }
+}

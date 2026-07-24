@@ -310,3 +310,165 @@ struct FindTests {
             FindCriterion(test: .balanced(false))])).isEmpty)
     }
 }
+
+@Suite("Find gaps")
+struct FindGapTests {
+
+    // MARK: Fixture: a $25 brokerage fee from CDIA
+
+    private func makeBook() -> (book: Book, cdia: Account, fees: Account, txn: Transaction) {
+        let book = Book()
+        let cdia = Account(name: "CDIA", type: .bank, commodity: .aud)
+        let fees = Account(name: "Fees", type: .expense, commodity: .aud)
+        book.rootAccount.addChild(cdia)
+        book.rootAccount.addChild(fees)
+        let txn = Transaction(currency: .aud, datePosted: day(2026, 3, 5),
+                              description: "Brokerage fee")
+        txn.number = "42"
+        txn.addSplit(account: cdia, value: dec("-25"), memo: "debit")
+        txn.addSplit(account: fees, value: dec("25"), memo: "fee")
+        txn.splits[1].action = "Fee"
+        book.addTransaction(txn)
+        return (book, cdia, fees, txn)
+    }
+
+    private func hits(_ book: Book, _ test: FindTest) -> [Split] {
+        book.splitsMatching(FindQuery(criteria: [FindCriterion(test: test)]))
+    }
+
+    // MARK: Labels
+
+    @Test("Comparator and field labels match the GnuCash dialog")
+    func labels() {
+        #expect(TextComparator.allCases.map(\.label) ==
+                ["contains", "does not contain", "matches exactly", "does not match exactly"])
+        #expect(DateComparator.allCases.map(\.label) ==
+                ["is before", "is before or on", "is on", "is not on", "is after", "is on or after"])
+        #expect(NumberComparator.allCases.map(\.label) ==
+                ["is less than", "is less than or equal to", "equals", "does not equal",
+                 "is greater than or equal to", "is greater than"])
+        #expect(SetComparator.allCases.map(\.label) == ["is", "is not"])
+        #expect(SetComparator.allCases.map(\.accountLabel) ==
+                ["matches any account", "matches no accounts"])
+        #expect(FindTextField.allCases.map(\.label) ==
+                ["Description", "Notes", "Memo", "Description, Notes, or Memo", "Number", "Action"])
+        #expect(FindDateField.allCases.map(\.label) == ["Date Posted", "Reconciled Date"])
+        #expect(FindNumberField.allCases.map(\.label) == ["Value", "Shares", "Share Price"])
+    }
+
+    // MARK: All Accounts
+
+    @Test("All-accounts asks about the whole transaction")
+    func allAccounts() {
+        let (book, cdia, fees, _) = makeBook()
+        // The fee posts to both accounts → every split of it matches.
+        #expect(hits(book, .allAccounts([cdia.guid, fees.guid])).count == 2)
+        // Requiring an account the transaction does not touch → nothing.
+        #expect(hits(book, .allAccounts([cdia.guid, GncGUID.random()])).isEmpty)
+        // An empty set means nothing was asked → no match, like the empty query.
+        #expect(hits(book, .allAccounts([])).isEmpty)
+        // A subset is enough: just CDIA still matches the whole transaction.
+        #expect(hits(book, .allAccounts([cdia.guid])).count == 2)
+    }
+
+    // MARK: Closing entries
+
+    @Test("Closing entries are found by the book_closing slot")
+    func closingCriterion() {
+        let (book, _, _, txn) = makeBook()
+        #expect(hits(book, .closing(true)).isEmpty)
+        #expect(hits(book, .closing(false)).count == 2)
+        txn.kvp["book_closing"] = .int64(1)
+        #expect(hits(book, .closing(true)).count == 2)
+        #expect(hits(book, .closing(false)).isEmpty)
+    }
+
+    @Test("isClosing accepts GnuCash's assorted slot spellings")
+    func isClosingForms() {
+        func txn(_ value: KvpValue?) -> Transaction {
+            let t = Transaction(currency: .aud, datePosted: day(2026, 1, 1))
+            t.kvp["book_closing"] = value
+            return t
+        }
+        #expect(!FindTest.isClosing(txn(nil)))
+        #expect(FindTest.isClosing(txn(.int64(1))))
+        #expect(!FindTest.isClosing(txn(.int64(0))))
+        #expect(FindTest.isClosing(txn(.string("1"))))
+        #expect(!FindTest.isClosing(txn(.string("0"))))
+        #expect(!FindTest.isClosing(txn(.string(""))))
+        #expect(FindTest.isClosing(txn(.double(1))))   // presence is the marker
+    }
+
+    // MARK: Detached splits
+
+    @Test("A split with no account only matches account is-not")
+    func accountlessSplit() {
+        let orphan = Split(value: dec("5"))
+        #expect(FindTest.account(.isNotOneOf, [GncGUID.random()]).matches(orphan))
+        #expect(!FindTest.account(.isOneOf, [GncGUID.random()]).matches(orphan))
+        // Transaction-level tests fail closed without a parent.
+        #expect(!FindTest.allAccounts([GncGUID.random()]).matches(orphan))
+        #expect(!FindTest.balanced(true).matches(orphan))
+        #expect(!FindTest.date(.posted, .isOn, day(2026, 1, 1)).matches(orphan))
+        #expect(!FindTest.closing(true).matches(orphan))
+        // Transaction text fields read as empty through a missing parent.
+        for field in [FindTextField.description, .notes, .descriptionNotesOrMemo, .number] {
+            #expect(!FindTest.text(field, .contains, "x", matchCase: false).matches(orphan),
+                    "\(field)")
+        }
+    }
+
+    // MARK: Text
+
+    @Test("Exact-match text comparators, case both ways")
+    func exactMatch() {
+        let (book, _, _, _) = makeBook()
+        #expect(hits(book, .text(.action, .matchesExactly, "fee", matchCase: false)).count == 1)
+        #expect(hits(book, .text(.action, .matchesExactly, "fee", matchCase: true)).isEmpty)
+        #expect(hits(book, .text(.action, .matchesExactly, "Fee", matchCase: true)).count == 1)
+        #expect(hits(book, .text(.action, .doesNotMatchExactly, "Fee", matchCase: true)).count == 1)
+        #expect(hits(book, .text(.number, .matchesExactly, "42", matchCase: false)).count == 2)
+        #expect(hits(book, .text(.memo, .doesNotContain, "fee", matchCase: false)).count == 1)
+        #expect(hits(book, .text(.memo, .contains, "DEBIT", matchCase: true)).isEmpty)
+    }
+
+    // MARK: Dates
+
+    @Test("A split with no reconcile date matches no reconciled-date test")
+    func missingReconcileDate() {
+        let (book, _, _, _) = makeBook()
+        for comparator in DateComparator.allCases {
+            #expect(hits(book, .date(.reconciled, comparator, day(2026, 1, 1))).isEmpty,
+                    "\(comparator)")
+        }
+    }
+
+    // MARK: Numbers
+
+    @Test("Remaining number comparators")
+    func numberComparators() {
+        let (book, _, _, _) = makeBook()
+        func count(_ comparator: NumberComparator, _ value: String) -> Int {
+            hits(book, .number(.value, comparator, dec(value))).count
+        }
+        #expect(count(.lessThanOrEqual, "-25") == 1)
+        #expect(count(.greaterThan, "0") == 1)
+        #expect(count(.greaterThanOrEqual, "25") == 1)
+        #expect(count(.notEqualTo, "25") == 1)
+        #expect(count(.equalTo, "-25") == 1)
+    }
+
+    // MARK: Balanced
+
+    @Test("Unbalanced transactions are findable")
+    func unbalanced() {
+        let (book, cdia, _, _) = makeBook()
+        let lop = Transaction(currency: .aud, datePosted: day(2026, 3, 6),
+                              description: "Half entered")
+        lop.addSplit(account: cdia, value: dec("-10"))
+        book.addTransaction(lop)
+        let found = hits(book, .balanced(false))
+        #expect(found.count == 1)
+        #expect(found.first?.transaction === lop)
+    }
+}

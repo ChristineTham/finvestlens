@@ -27,6 +27,15 @@ struct ParsingTests {
         #expect(IntelligenceParsing.amount("n/a") == nil)
     }
 
+    @Test("Debit/credit markers and bracketed symbols keep their sign")
+    func debitCreditMarkers() {
+        #expect(IntelligenceParsing.amount("DR 45.20") == Decimal(string: "-45.20"))
+        #expect(IntelligenceParsing.amount("CR 12.00") == Decimal(string: "12.00"))
+        #expect(IntelligenceParsing.amount("($1,045.99)") == Decimal(string: "-1045.99"))
+        #expect(IntelligenceParsing.amount("   ") == nil)
+        #expect(IntelligenceParsing.amount("DR") == nil)
+    }
+
     @Test("Dates prefer ISO and accept common statement formats")
     func dates() throws {
         let calendar = Calendar(identifier: .gregorian)
@@ -45,6 +54,14 @@ struct ParsingTests {
 
         #expect(IntelligenceParsing.date("") == nil)
         #expect(IntelligenceParsing.date("not a date") == nil)
+    }
+
+    @Test("Slashed ISO and US-style month names parse to the same day")
+    func alternateDateForms() throws {
+        let iso = try #require(IntelligenceParsing.date("2026-03-14"))
+        #expect(IntelligenceParsing.date("2026/03/14") == iso)
+        #expect(IntelligenceParsing.date("March 14, 2026") == iso)
+        #expect(IntelligenceParsing.date("  2026-03-14  ") == iso)
     }
 }
 
@@ -178,6 +195,7 @@ struct InvoiceAnalysisTests {
 #if os(macOS)
 import CoreGraphics
 import CoreText
+import ImageIO
 
 @Suite("Document text extraction")
 struct DocumentTextTests {
@@ -218,5 +236,115 @@ struct DocumentTextTests {
             _ = try await DocumentText.extractPages(from: url)
         }
     }
+
+    /// Draws pages of `(text, x, y)` runs into a PDF and returns its bytes.
+    private func renderPDF(pages: [[(String, CGFloat, CGFloat)]]) throws -> Data {
+        let data = NSMutableData()
+        var mediaBox = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let consumer = try #require(CGDataConsumer(data: data as CFMutableData))
+        let context = try #require(CGContext(consumer: consumer, mediaBox: &mediaBox, nil))
+        let font = CTFontCreateWithName("Helvetica" as CFString, 12, nil)
+        for runs in pages {
+            context.beginPDFPage(nil)
+            for (text, x, y) in runs {
+                let attributed = NSAttributedString(string: text, attributes: [.font: font])
+                context.textPosition = CGPoint(x: x, y: y)
+                CTLineDraw(CTLineCreateWithAttributedString(attributed), context)
+            }
+            context.endPDFPage()
+        }
+        context.closePDF()
+        return data as Data
+    }
+
+    /// The content stream carries the amounts first and the bottom row before
+    /// the top row — `PDFPage.string` detaches the amounts from their payees.
+    /// The geometric reflow must reunite each row (top-first, left-to-right)
+    /// and keep the column break visible as a wide gap.
+    @Test("Two-column statement rows reflow into visual order")
+    func columnReflow() async throws {
+        let data = try renderPDF(pages: [[
+            ("-45.20", 420, 650),
+            ("WOOLWORTHS METRO", 72, 650),
+            ("-12.00", 420, 700),
+            ("COFFEE 11 RUN", 72, 700),
+        ]])
+        let pages = try await DocumentText.extractPages(from: data)
+        #expect(pages.count == 1)
+        let lines = (pages.first?.text ?? "").components(separatedBy: "\n")
+        #expect(lines == ["COFFEE 11 RUN   -12.00", "WOOLWORTHS METRO   -45.20"])
+    }
+
+    @Test("Word spacing and separators inside one run survive the reflow")
+    func pdfData() async throws {
+        let data = try renderPDF(pages: [[("Opening balance 4,120.55", 72, 700)]])
+        let text = try await DocumentText.extractText(from: data)
+        #expect(text == "Opening balance 4,120.55")
+    }
+
+    @Test("Pages keep their 1-based numbers and join with blank lines")
+    func multiPage() async throws {
+        let data = try renderPDF(pages: [
+            [("PAGE ONE 1.00", 72, 700)],
+            [("PAGE TWO 2.00", 72, 700)],
+        ])
+        let pages = try await DocumentText.extractPages(from: data)
+        #expect(pages.map(\.number) == [1, 2])
+        #expect(pages.map(\.text) == ["PAGE ONE 1.00", "PAGE TWO 2.00"])
+        let joined = try await DocumentText.extractText(from: data)
+        #expect(joined == "PAGE ONE 1.00\n\nPAGE TWO 2.00")
+    }
+
+    @Test("An all-blank PDF page falls back to OCR, then emptyDocument")
+    func blankPage() async throws {
+        let data = try renderPDF(pages: [[]])
+        await #expect(throws: IntelligenceError.self) {
+            _ = try await DocumentText.extractPages(from: data)
+        }
+    }
+
+    @Test("Non-document bytes throw emptyDocument")
+    func garbageData() async throws {
+        await #expect(throws: IntelligenceError.self) {
+            _ = try await DocumentText.extractPages(from: Data("just some plain text".utf8))
+        }
+    }
+
+    @Test("A blank raster image yields emptyDocument, after an upscaled retry")
+    func blankImage() async throws {
+        // A 300×150 all-white PNG: decodes as an image, contains no text, so
+        // recognition (original, then 2× upscale) finds nothing.
+        let context = try #require(CGContext(
+            data: nil, width: 300, height: 150,
+            bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ))
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 300, height: 150))
+        let image = try #require(context.makeImage())
+        let png = NSMutableData()
+        let destination = try #require(
+            CGImageDestinationCreateWithData(png as CFMutableData, "public.png" as CFString, 1, nil)
+        )
+        CGImageDestinationAddImage(destination, image, nil)
+        #expect(CGImageDestinationFinalize(destination))
+
+        await #expect(throws: IntelligenceError.self) {
+            _ = try await DocumentText.extractPages(from: png as Data)
+        }
+    }
 }
 #endif
+
+@Suite("Amount parsing — debit-marker tokens")
+struct DebitMarkerTests {
+    @Test("DR flips sign only as its own token, never inside a currency code")
+    func drIsAToken() {
+        #expect(IntelligenceParsing.amount("500 DR") == -500)
+        #expect(IntelligenceParsing.amount("DR 500") == -500)
+        // "IDR" is Indonesian rupiah, not a debit marker.
+        #expect(IntelligenceParsing.amount("500 IDR") == 500)
+        #expect(IntelligenceParsing.amount("1,000 SDR") == 1000)
+    }
+}

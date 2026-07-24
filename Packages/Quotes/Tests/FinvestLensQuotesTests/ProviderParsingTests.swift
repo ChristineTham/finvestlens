@@ -106,6 +106,70 @@ struct EODHDProviderTests {
         _ = try await EODHDQuoteProvider(apiKey: "SECRET", http: http).latestQuote(symbol: "X")
         #expect(http.requestedURLs.first?.absoluteString.contains("api_token=SECRET") == true)
     }
+
+    @Test("Real-time close as a JSON string parses too")
+    func stringClose() async throws {
+        let http = StubHTTPClient()
+        http.on("real-time", body: #"{"code":"CBA.AU","timestamp":1700000000,"close":"105.20"}"#)
+        let quote = try await EODHDQuoteProvider(apiKey: "K", http: http).latestQuote(symbol: "CBA.AU")
+        #expect(quote.symbol == "CBA.AU")
+        #expect(quote.price == dec("105.20"))
+    }
+
+    @Test("Real-time row without a close yields noData")
+    func missingClose() async throws {
+        let http = StubHTTPClient()
+        http.on("real-time", body: #"{"code":"X","timestamp":1700000000}"#)
+        await #expect(throws: QuoteError.noData) {
+            _ = try await EODHDQuoteProvider(apiKey: "K", http: http).latestQuote(symbol: "X")
+        }
+    }
+
+    @Test("Real-time row without a timestamp falls back to the epoch")
+    func missingTimestamp() async throws {
+        let http = StubHTTPClient()
+        http.on("real-time", body: #"{"code":"X","close":105.20}"#)
+        let quote = try await EODHDQuoteProvider(apiKey: "K", http: http).latestQuote(symbol: "X")
+        #expect(quote.date == Date(timeIntervalSince1970: 0))
+    }
+
+    @Test("Real-time row without a code falls back to the request symbol")
+    func missingCode() async throws {
+        let http = StubHTTPClient()
+        http.on("real-time", body: #"{"timestamp":1700000000,"close":105.20}"#)
+        let quote = try await EODHDQuoteProvider(apiKey: "K", http: http).latestQuote(symbol: "CBA.AU")
+        #expect(quote.symbol == "CBA.AU")
+    }
+
+    @Test("Empty EOD history yields noData")
+    func emptyHistory() async throws {
+        let http = StubHTTPClient()
+        http.on("/api/eod/", body: "[]")
+        await #expect(throws: QuoteError.noData) {
+            _ = try await EODHDQuoteProvider(apiKey: "K", http: http)
+                .history(symbol: "X", from: Date(timeIntervalSince1970: 0), to: Date(timeIntervalSince1970: 1))
+        }
+    }
+
+    @Test("History rows with unparseable dates are dropped; none left is noData")
+    func badHistoryDates() async throws {
+        let http = StubHTTPClient()
+        http.on("/api/eod/", body: #"[{"date":"15/11/2023","close":105.20}]"#)
+        await #expect(throws: QuoteError.noData) {
+            _ = try await EODHDQuoteProvider(apiKey: "K", http: http)
+                .history(symbol: "X", from: Date(timeIntervalSince1970: 0), to: Date(timeIntervalSince1970: 1))
+        }
+    }
+
+    @Test("A non-array history body (HTML error page) throws")
+    func malformedHistory() async throws {
+        let http = StubHTTPClient()
+        http.on("/api/eod/", body: "<html>Forbidden</html>")
+        await #expect(throws: (any Error).self) {
+            _ = try await EODHDQuoteProvider(apiKey: "K", http: http)
+                .history(symbol: "X", from: Date(timeIntervalSince1970: 0), to: Date(timeIntervalSince1970: 1))
+        }
+    }
 }
 
 @Suite("Alpha Vantage provider")
@@ -145,6 +209,60 @@ struct AlphaVantageProviderTests {
             _ = try await AlphaVantageQuoteProvider(apiKey: "K", http: http).latestQuote(symbol: "IBM")
         }
     }
+
+    @Test("An unparseable price string is malformedResponse")
+    func badPrice() async throws {
+        let http = StubHTTPClient()
+        http.on("GLOBAL_QUOTE", body: """
+        {"Global Quote":{"01. symbol":"IBM","05. price":"None","07. latest trading day":"2023-11-15"}}
+        """)
+        await #expect(throws: QuoteError.malformedResponse("unparseable price None")) {
+            _ = try await AlphaVantageQuoteProvider(apiKey: "K", http: http).latestQuote(symbol: "IBM")
+        }
+    }
+
+    @Test("A body with no Global Quote yields noData")
+    func noGlobalQuote() async throws {
+        let http = StubHTTPClient()
+        http.on("GLOBAL_QUOTE", body: "{}")
+        await #expect(throws: QuoteError.noData) {
+            _ = try await AlphaVantageQuoteProvider(apiKey: "K", http: http).latestQuote(symbol: "NOPE")
+        }
+    }
+
+    @Test("An invalid-key Error Message surfaces on history too")
+    func historyErrorMessage() async throws {
+        let http = StubHTTPClient()
+        http.on("TIME_SERIES_DAILY", body: #"{"Error Message":"the parameter apikey is invalid or missing."}"#)
+        await #expect(throws: QuoteError.providerError("the parameter apikey is invalid or missing.")) {
+            _ = try await AlphaVantageQuoteProvider(apiKey: "BAD", http: http)
+                .history(symbol: "IBM", from: QuoteDate.date(from: "2023-11-01")!, to: QuoteDate.date(from: "2023-11-30")!)
+        }
+    }
+
+    @Test("A symbol-less row and an unparseable trading day use their fallbacks")
+    func fallbacks() async throws {
+        let http = StubHTTPClient()
+        http.on("GLOBAL_QUOTE", body: """
+        {"Global Quote":{"05. price":"182.4500","07. latest trading day":"pending"}}
+        """)
+        let quote = try await AlphaVantageQuoteProvider(apiKey: "K", http: http).latestQuote(symbol: "IBM")
+        #expect(quote.symbol == "IBM")
+        #expect(quote.currencyCode == nil)
+        #expect(quote.date == Date(timeIntervalSince1970: 0))
+    }
+
+    @Test("A window with no surviving bars yields noData")
+    func emptyWindow() async throws {
+        let http = StubHTTPClient()
+        http.on("TIME_SERIES_DAILY", body: """
+        {"Time Series (Daily)":{"2023-10-01":{"4. close":"170.00"}}}
+        """)
+        await #expect(throws: QuoteError.noData) {
+            _ = try await AlphaVantageQuoteProvider(apiKey: "K", http: http)
+                .history(symbol: "IBM", from: QuoteDate.date(from: "2023-11-01")!, to: QuoteDate.date(from: "2023-11-30")!)
+        }
+    }
 }
 
 @Suite("Finnhub provider")
@@ -174,6 +292,39 @@ struct FinnhubProviderTests {
         await #expect(throws: QuoteError.self) {
             _ = try await FinnhubQuoteProvider(apiKey: "K", http: http)
                 .history(symbol: "AAPL", from: Date(timeIntervalSince1970: 0), to: Date(timeIntervalSince1970: 1))
+        }
+    }
+
+    @Test("A quote without a timestamp falls back to the epoch")
+    func missingTimestamp() async throws {
+        let http = StubHTTPClient()
+        http.on("quote", body: #"{"c":182.45}"#)
+        let quote = try await FinnhubQuoteProvider(apiKey: "K", http: http).latestQuote(symbol: "AAPL")
+        #expect(quote.symbol == "AAPL")
+        #expect(quote.price == dec("182.45"))
+        #expect(quote.date == Date(timeIntervalSince1970: 0))
+    }
+
+    @Test("A non-JSON body throws")
+    func malformed() async throws {
+        let http = StubHTTPClient()
+        http.on("quote", body: "You don't have access to this resource.")
+        await #expect(throws: (any Error).self) {
+            _ = try await FinnhubQuoteProvider(apiKey: "K", http: http).latestQuote(symbol: "AAPL")
+        }
+    }
+}
+
+@Suite("Alpha Vantage — unknown-symbol answer")
+struct AlphaVantageEmptyQuoteTests {
+    @Test("An empty Global Quote object is noData, not a decoding failure")
+    func emptyGlobalQuote() async {
+        let http = StubHTTPClient()
+        // Alpha Vantage's documented answer for an unknown symbol.
+        http.on("GLOBAL_QUOTE", body: #"{"Global Quote": {}}"#)
+        await #expect(throws: QuoteError.noData) {
+            _ = try await AlphaVantageQuoteProvider(apiKey: "K", http: http)
+                .latestQuote(symbol: "NOPE")
         }
     }
 }

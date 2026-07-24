@@ -53,11 +53,15 @@ public struct AlphaVantageQuoteProvider: QuoteProvider {
     static func parseLatest(_ data: Data, fallbackSymbol: String) throws -> Quote {
         try checkForNotice(data)
         let response = try JSONDecoder().decode(GlobalQuoteResponse.self, from: data)
-        guard let quote = response.quote else { throw QuoteError.noData }
-        guard let price = Decimal(string: quote.price) else {
-            throw QuoteError.malformedResponse("unparseable price \(quote.price)")
+        // `{"Global Quote": {}}` is Alpha Vantage's unknown-symbol answer.
+        guard let quote = response.quote, let priceText = quote.price else {
+            throw QuoteError.noData
         }
-        let date = QuoteDate.date(from: quote.latestTradingDay) ?? Date(timeIntervalSince1970: 0)
+        guard let price = Decimal(string: priceText) else {
+            throw QuoteError.malformedResponse("unparseable price \(priceText)")
+        }
+        let date = quote.latestTradingDay.flatMap(QuoteDate.date(from:))
+            ?? Date(timeIntervalSince1970: 0)
         return Quote(symbol: quote.symbol ?? fallbackSymbol, currencyCode: nil, price: price, date: date)
     }
 
@@ -103,8 +107,11 @@ public struct AlphaVantageQuoteProvider: QuoteProvider {
         enum CodingKeys: String, CodingKey { case quote = "Global Quote" }
         struct Row: Decodable {
             let symbol: String?
-            let price: String
-            let latestTradingDay: String
+            // Optional: Alpha Vantage answers an unknown symbol with
+            // `{"Global Quote": {}}` — that must surface as `noData`, not a
+            // decoding failure.
+            let price: String?
+            let latestTradingDay: String?
             enum CodingKeys: String, CodingKey {
                 case symbol = "01. symbol"
                 case price = "05. price"
