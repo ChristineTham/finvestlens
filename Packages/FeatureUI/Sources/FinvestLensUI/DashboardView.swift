@@ -93,12 +93,27 @@ extension AppModel {
     }
 }
 
-/// The home dashboard: a responsive masonry of prioritised panels that fills the
-/// available width, all driven by one timescale selector (`FR-PLAN-08`). Narrow
-/// windows show the essentials; wider ones reveal more panels down the priority
-/// list. Investment panels appear only when the book holds securities.
+@MainActor
+extension AppModel {
+    /// The newest transactions (journal headings), memoised per revision —
+    /// the Recent Activity tile asks on every body pass and sizes its own
+    /// row budget from the tile height.
+    var recentJournalHeadings: [JournalRow] {
+        cachedReport("recentHeads") {
+            Array(journalRows(forAccountID: nil)
+                .filter { $0.isHeading && $0.date != nil }
+                .sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+                .prefix(40))
+        } ?? []
+    }
+}
+
+/// The home dashboard: a board of prioritised tiles that packs the actual
+/// window (F8): columns from the width, unit rows from the height, and the
+/// priority list decides which cards make the cut — nothing scrolls.
 struct DashboardView: View {
     @Environment(\.appDateFormat) private var dateFormat
+    @Environment(\.appFontScale) private var appFontScale
     @Bindable var model: AppModel
     #if os(macOS)
     @Environment(\.openWindow) private var openWindow
@@ -133,6 +148,16 @@ struct DashboardView: View {
             case .upNext, .netWorth, .income, .expenses, .cashflow, .savingsRate, .alerts: 1
             case .allocation, .performance, .spendingTrend, .topMovers, .goals, .recentActivity, .bills: 2
             case .composition, .accounts: 3
+            }
+        }
+
+        /// How many board rows the tile spans: charts and lists that need
+        /// real space take two, glance figures take one.
+        var units: Int {
+            switch self {
+            case .income, .expenses, .allocation, .performance,
+                 .accounts, .goals, .recentActivity: 2
+            default: 1
             }
         }
 
@@ -176,16 +201,28 @@ struct DashboardView: View {
     var body: some View {
         let range = model.resolve(period)
         return GeometryReader { geo in
-            let columns = columnCount(for: geo.size.width)
             let portfolio = model.portfolio(asOf: min(range.to, todayCap))
-            ScrollView {
-                masonry(columns: columns, range: range, portfolio: portfolio)
-                    .padding(20)
+            let plan = layoutPlan(size: geo.size, range: range, portfolio: portfolio)
+            // The dashboard is a board, not a page (F8): tiles pack into the
+            // window that actually exists — columns from the width, rows from
+            // the height, stretched to fill it exactly — and the priority
+            // list decides which cards make the cut. Nothing scrolls;
+            // resizing the window re-deals the board.
+            HStack(alignment: .top, spacing: 16) {
+                ForEach(plan.indices, id: \.self) { columnIndex in
+                    VStack(spacing: 16) {
+                        ForEach(plan[columnIndex]) { tile in
+                            view(for: tile.panel, range: range, portfolio: portfolio)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                                .frame(height: tile.height)
+                                .clipped()
+                        }
+                        Spacer(minLength: 0)
+                    }
                     .frame(maxWidth: .infinity, alignment: .top)
+                }
             }
-            // A card at the fold fades softly instead of being sliced dead by
-            // the window edge (F8) — the cue that more is below.
-            .scrollEdgeEffectStyle(.soft, for: .bottom)
+            .padding(20)
         }
         .navigationTitle("Dashboard")
         .toolbar {
@@ -226,36 +263,104 @@ struct DashboardView: View {
         max(1, min(3, Int(width / 380)))
     }
 
-    private func panels(columns: Int, portfolio: Portfolio?) -> [Panel] {
-        let hasInvestments = !(portfolio?.holdings.isEmpty ?? true)
+    private func panels(columns: Int, range: (from: Date, to: Date), portfolio: Portfolio?) -> [Panel] {
         let all: [Panel] = [.upNext, .netWorth, .income, .expenses, .cashflow, .savingsRate,
                             .allocation, .performance, .spendingTrend, .topMovers,
                             .goals, .recentActivity, .composition, .alerts, .bills, .accounts]
         return all.filter { panel in
             guard !hiddenPanels.contains(panel.rawValue) else { return false }
             guard panel.minColumns <= columns else { return false }
-            switch panel {
-            case .upNext: return !(model.upNextState?.isEmpty ?? true)
-            case .allocation, .performance: return hasInvestments
-            case .goals: return !model.savingsGoals.isEmpty
-            default: return true
-            }
+            return hasContent(panel, range: range, portfolio: portfolio)
         }
     }
 
-    @ViewBuilder
-    private func masonry(columns: Int, range: (from: Date, to: Date), portfolio: Portfolio?) -> some View {
-        let shown = panels(columns: columns, portfolio: portfolio)
-        HStack(alignment: .top, spacing: 16) {
-            ForEach(0..<columns, id: \.self) { column in
-                VStack(spacing: 16) {
-                    ForEach(Array(shown.enumerated()).filter { $0.offset % columns == column }, id: \.element) { _, panel in
-                        view(for: panel, range: range, portfolio: portfolio)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .top)
-            }
+    /// Whether a panel has something to say. The board is finite (F8), so a
+    /// card whose whole message is "nothing in this period" gives its tile to
+    /// one with information — the prioritising the fixed board exists for.
+    /// Every check reads memoised model state.
+    private func hasContent(_ panel: Panel, range: (from: Date, to: Date),
+                            portfolio: Portfolio?) -> Bool {
+        switch panel {
+        case .upNext:
+            return !(model.upNextState?.isEmpty ?? true)
+        case .netWorth, .composition:
+            return !model.accountTree.isEmpty
+        case .income:
+            return (model.incomeStatement(from: range.from, to: range.to)?.totalIncome ?? 0) != 0
+        case .expenses:
+            return (model.incomeStatement(from: range.from, to: range.to)?.totalExpenses ?? 0) != 0
+        case .savingsRate:
+            return (model.incomeStatement(from: range.from, to: range.to)?.totalIncome ?? 0) > 0
+        case .cashflow:
+            if let budget = model.budgets.first { return !model.budgetActuals(budget).isEmpty }
+            return !(model.categoryBreakdown(from: range.from, to: range.to)?.months.isEmpty ?? true)
+        case .spendingTrend:
+            return (model.categoryBreakdown(from: range.from, to: range.to)?.months.count ?? 0) >= 2
+        case .topMovers:
+            let statement = model.incomeStatement(from: range.from, to: range.to)
+            return !(statement?.income.isEmpty ?? true) || !(statement?.expenses.isEmpty ?? true)
+        case .allocation:
+            return (portfolio?.holdings.contains { ($0.marketValue ?? 0) > 0 }) ?? false
+        case .performance:
+            return !(portfolio?.holdings.isEmpty ?? true)
+        case .goals:
+            return !model.savingsGoals.isEmpty
+        case .recentActivity:
+            return !(model.book?.transactions.isEmpty ?? true)
+        case .alerts:
+            // "Nothing needs attention" is worth a (single-unit) tile.
+            return !model.accountTree.isEmpty
+        case .bills:
+            return model.billReminders().contains { $0.status != .paid }
+        case .accounts:
+            return !model.accountTree.isEmpty
         }
+    }
+
+    private struct Tile: Identifiable {
+        let panel: Panel
+        let height: CGFloat
+        var id: Panel { panel }
+    }
+
+    /// Deals the board: rows-per-column from the window height (row height
+    /// stretches so the last row lands on the bottom edge), then panels in
+    /// priority order into the emptiest column that still fits them. A panel
+    /// no column can hold is dropped — that is the priority list working,
+    /// not an error.
+    private func layoutPlan(size: CGSize, range: (from: Date, to: Date),
+                            portfolio: Portfolio?) -> [[Tile]] {
+        let spacing: CGFloat = 16
+        let columns = columnCount(for: size.width)
+        let usable = size.height - 40   // the board's own padding
+        guard usable > 120 else { return Array(repeating: [], count: columns) }
+        let targetRow = 200 * appFontScale
+        let rows = max(2, Int((usable + spacing) / (targetRow + spacing)))
+        let rowHeight = (usable - CGFloat(rows - 1) * spacing) / CGFloat(rows)
+
+        var free = Array(repeating: rows, count: columns)
+        var plan = Array(repeating: [Tile](), count: columns)
+        for panel in panels(columns: columns, range: range, portfolio: portfolio) {
+            let units = min(panel.units, rows)
+            // Emptiest column first; ties break leftmost, so the priority
+            // order still reads roughly across then down.
+            guard let column = (0..<columns)
+                .filter({ free[$0] >= units })
+                .max(by: { free[$0] < free[$1] }) else { continue }
+            let height = CGFloat(units) * rowHeight + CGFloat(units - 1) * spacing
+            plan[column].append(Tile(panel: panel, height: height))
+            free[column] -= units
+        }
+        // Leftover rows (fewer cards than slots) stretch the column's last
+        // tile: charts grow into the room and the board still ends flush at
+        // the bottom edge instead of trailing off into blank space.
+        for column in plan.indices where free[column] > 0 && !plan[column].isEmpty {
+            let extra = CGFloat(free[column]) * (rowHeight + spacing)
+            let last = plan[column].count - 1
+            plan[column][last] = Tile(panel: plan[column][last].panel,
+                                      height: plan[column][last].height + extra)
+        }
+        return plan
     }
 
     @ViewBuilder
@@ -351,7 +456,7 @@ struct DashboardView: View {
                         .foregroundStyle(.tint.opacity(0.15))
                     LineMark(x: .value("Month", point.date), y: .value("Net worth", asDouble(point.netWorth)))
                 }
-                .frame(height: 120)
+                .frame(minHeight: 70, maxHeight: .infinity)
                 .chartXAxis { AxisMarks(values: .stride(by: .month, count: 3)) }
                 .accessibilityLabel("Net worth trend over the last 12 months")
             }
@@ -395,7 +500,7 @@ struct DashboardView: View {
                 Text(empty).scaledFont(.callout).foregroundStyle(.secondary)
             } else {
                 Treemap(items: items)
-                    .frame(height: 220)
+                    .frame(minHeight: 140, maxHeight: .infinity)
                     .accessibilityLabel("\(title) by account for \(model.label(for: period))")
             }
         }
@@ -411,7 +516,7 @@ struct DashboardView: View {
                 if actuals.isEmpty {
                     Text("No budget lines set.").scaledFont(.callout).foregroundStyle(.secondary)
                 } else {
-                    ForEach(actuals.prefix(6)) { actual in
+                    ForEach(actuals.prefix(4)) { actual in
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
                                 Text(actual.accountName).lineLimit(1)
@@ -442,7 +547,7 @@ struct DashboardView: View {
                         }
                     }
                     .chartYAxis { AxisMarks(format: .currency(code: code).notation(.compactName)) }
-                    .frame(height: 150)
+                    .frame(minHeight: 100, maxHeight: .infinity)
                     .accessibilityLabel("Monthly income and expenses for \(model.label(for: period))")
                 } else {
                     Text("No cashflow in this period.").scaledFont(.callout).foregroundStyle(.secondary)
@@ -492,7 +597,7 @@ struct DashboardView: View {
                 }
                 .chartLegend(.hidden)
                 .chartAngleSelection(value: $allocationValue)
-                .frame(height: 240)
+                .frame(minHeight: 160, maxHeight: .infinity)
                 // Selected holding's detail sits in the donut hole.
                 .overlay {
                     if let selected, total > 0 {
@@ -606,7 +711,7 @@ struct DashboardView: View {
                 }
                 .chartLegend(.hidden)
                 .chartYAxis { AxisMarks(format: FloatingPointFormatStyle<Double>.Percent.percent.precision(.fractionLength(0))) }
-                .frame(height: 220)
+                .frame(minHeight: 150, maxHeight: .infinity)
                 .chartOverlay { proxy in perfHoverOverlay(proxy) }
                 .overlay(alignment: .topLeading) {
                     if let perfHover {
@@ -730,7 +835,7 @@ struct DashboardView: View {
                         }
                 }
                 .chartYAxis { AxisMarks(format: .currency(code: code).notation(.compactName)) }
-                .frame(height: 150)
+                .frame(minHeight: 100, maxHeight: .infinity)
                 .accessibilityLabel("Monthly spending versus the period average")
             }
         }
@@ -771,7 +876,7 @@ struct DashboardView: View {
         let totalEarmarked = model.savingsGoals.reduce(Decimal(0)) { $0 + $1.savedAmount }
         let goalAccounts = Set(model.savingsGoals.compactMap(\.accountGUID))
         return Card("Savings Goals", systemImage: "target") {
-            ForEach(model.savingsGoals) { goal in
+            ForEach(model.savingsGoals.prefix(6)) { goal in
                 let fraction = goal.targetAmount > 0
                     ? asDouble(goal.savedAmount) / asDouble(goal.targetAmount) : 0
                 VStack(alignment: .leading, spacing: 2) {
@@ -784,6 +889,10 @@ struct DashboardView: View {
                     ProgressView(value: min(1, max(0, fraction)))
                         .tint(fraction >= 1 ? .green : .accentColor)
                 }
+            }
+            if model.savingsGoals.count > 6 {
+                Text("+\(model.savingsGoals.count - 6) more in Savings Goals")
+                    .scaledFont(.caption).foregroundStyle(.secondary)
             }
             Divider()
             HStack {
@@ -809,21 +918,28 @@ struct DashboardView: View {
     // MARK: Recent activity
 
     private var recentActivityCard: some View {
-        let recent = model.journalRows(forAccountID: nil)
-            .filter { $0.isHeading && $0.date != nil }
-            .sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
-            .prefix(7)
-        return Card("Recent Activity", systemImage: "clock") {
-            if recent.isEmpty {
-                Text("No transactions yet.").scaledFont(.callout).foregroundStyle(.secondary)
-            } else {
-                ForEach(Array(recent)) { row in
-                    HStack(spacing: 8) {
-                        Text(dateFormat.monthDay(row.date ?? Date()))
-                            .scaledFont(.caption).foregroundStyle(.secondary)
-                            .frame(width: 52, alignment: .leading)
-                        Text(row.text.isEmpty ? "—" : row.text).lineLimit(1)
-                        Spacer()
+        Card("Recent Activity", systemImage: "clock") {
+            // The tile's height decides how many rows show — a stretched
+            // tile holds more history, a cramped one holds less, and none
+            // of it is half a clipped row.
+            GeometryReader { geo in
+                let rowHeight = 26 * appFontScale
+                let budget = max(3, Int(geo.size.height / rowHeight))
+                let recent = model.recentJournalHeadings.prefix(budget)
+                VStack(alignment: .leading, spacing: 6) {
+                    if recent.isEmpty {
+                        Text("No transactions yet.").scaledFont(.callout).foregroundStyle(.secondary)
+                    } else {
+                        ForEach(Array(recent)) { row in
+                            HStack(spacing: 8) {
+                                Text(dateFormat.monthDay(row.date ?? Date()))
+                                    .scaledFont(.caption).foregroundStyle(.secondary)
+                                    .frame(width: 52, alignment: .leading)
+                                Text(row.text.isEmpty ? "—" : row.text).lineLimit(1)
+                                Spacer()
+                            }
+                            .frame(height: rowHeight - 6)
+                        }
                     }
                 }
             }
@@ -850,7 +966,7 @@ struct DashboardView: View {
                         }
                 }
                 .chartXAxis { AxisMarks(format: .currency(code: code).notation(.compactName)) }
-                .frame(height: 130)
+                .frame(minHeight: 90, maxHeight: .infinity)
                 .accessibilityLabel("Assets, liabilities and equity")
             } else {
                 Text("No data.").scaledFont(.callout).foregroundStyle(.secondary)
@@ -879,7 +995,7 @@ struct DashboardView: View {
                 Label("Nothing needs attention", systemImage: "checkmark.circle")
                     .foregroundStyle(.green).scaledFont(.callout)
             } else {
-                ForEach(alerts) { alert in
+                ForEach(alerts.prefix(3)) { alert in
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: icon(for: alert.severity))
                             .foregroundStyle(color(for: alert.severity))
@@ -891,6 +1007,10 @@ struct DashboardView: View {
                     }
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("\(severityWord(alert.severity)) alert. \(alert.title). \(alert.message)")
+                }
+                if alerts.count > 3 {
+                    Text("+\(alerts.count - 3) more — see Securities for targets")
+                        .scaledFont(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -924,7 +1044,7 @@ struct DashboardView: View {
     // MARK: Bills
 
     private var billsCard: some View {
-        let bills = model.billReminders().filter { $0.status != .paid }.prefix(6)
+        let bills = model.billReminders().filter { $0.status != .paid }.prefix(5)
         return Card("Upcoming Bills", systemImage: "calendar") {
             if bills.isEmpty {
                 Text("No upcoming bills.").scaledFont(.callout).foregroundStyle(.secondary)
@@ -976,7 +1096,7 @@ private struct Card<Content: View>: View {
                 .scaledFont(.headline).foregroundStyle(.secondary)
             content
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(16)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
     }

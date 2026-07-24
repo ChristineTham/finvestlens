@@ -303,10 +303,14 @@ customisation.
 > **Status (24 Jul 2026): all phases implemented** — commits `Phase 0:
 > consolidation` → `Phase 3: EOFY pack…`; 386 tests green, macOS + iOS build.
 > Deviations from the letter of the plan, with reasons:
-> - **F8** — the hard bottom-edge clip could not be reproduced after the
->   restructure (scroll reaches the end with margin, verified by driven
->   scroll + screenshot); shipped the soft bottom scroll-edge fade so a card
->   at the fold reads as "more below" instead of sliced.
+> - **F8** — clarified by the user after the first fix attempt: the
+>   dashboard must not scroll at all. It is now a fixed **tile board** that
+>   packs prioritised cards into the actual viewport — columns from the
+>   width, unit rows from the height (row height stretches so the board
+>   fills the window exactly), panels placed in priority order into the
+>   emptiest fitting column, and anything that doesn't fit is dropped.
+>   Charts stretch into their tiles; list cards cap their rows with
+>   "+N more". Resizing the window re-deals the board.
 > - **P3 async reports** — reports are memoised per (parameters, revision)
 >   and build behind a placeholder after first paint, but still *on* the main
 >   actor: the engine `Book` is a non-Sendable object graph, and a genuinely
