@@ -19,6 +19,58 @@ Companions: [PRD](prd.md) · [Architecture](architecture.md) · [Plan](plan.md) 
 
 ---
 
+## Report consistency pass (24 Jul 2026)
+
+A full review of every report surface against the annual-report standard the
+Jul 2026 redesign set, closing the "internals migrate to the document
+scaffold later" tail. The audit matrix covered headers, amount formatting,
+period controls, export, empty states, charts, and typography across all 23
+report kinds plus the decks, FY pack, and passport. What changed:
+
+- **One masthead everywhere.** The shared `ReportMasthead` (entity · serif
+  title · period · units line, centred — the statement standard) now heads
+  the document scaffold (so every scaffold report incl. the six business
+  documents), and the two interactive tools. PDF exports carry the same
+  masthead: `PrintableStatement` gained the entity line and serif title.
+- **Five legacy views migrated onto the scaffold** — Transactions,
+  Reconciliation, Portfolio, Investment Lots, Capital Gains now render as
+  `ReportDocument`s (their print builders were already the source of truth),
+  which gives them the masthead, KPI callouts, ruled tables, notes, PDF
+  **and Share** for free. Period control is now uniformly the parameter
+  bar's `PeriodSelector` (as-of kinds read the period end); Transactions and
+  Reconciliation gained a single-account picker there (defaulting to the
+  selected register account), and the investment kinds host the cost-basis /
+  fee pickers in the same bar. ~550 lines of one-off view code deleted.
+- **Two tools remain interactive by design** — the Forecast (what-if editor)
+  and Price History (explorer) — but now open with the masthead, share the
+  palette, and export branded PDFs. `CashFlowView` was renamed
+  `ForecastView` (it renders the `.forecast` kind; the `.cashFlow` document
+  is a different report).
+- **Spending Insights joined the scaffold** with a new `summary` block
+  (plain-language sentences between callouts and tables, also in the PDF) —
+  it had been the one report with no export at all.
+- **Portfolio gained an allocation donut** in the document (top holdings,
+  tail rolled into "Other"), and every multi-series chart (both allocation
+  donuts, the price scatter) now draws from one `ReportPalette` anchored on
+  the accent colour instead of SwiftUI's default rainbow. The forecast's
+  what-if markers moved from orange to a reserved purple.
+- **Real empty states.** A scaffold kind that builds nothing (or an empty
+  document) shows a `ContentUnavailableView` with a kind-specific reason —
+  previously an infinite "Preparing…" spinner.
+- **Share everywhere.** The report screen's toolbar now offers Share beside
+  PDF for statements (new `ShareableStatementPDF`) and scaffold documents
+  alike; previously only the legacy views could share.
+- The dead **Compare stepper** (gated on a hardcoded-false flag) was
+  removed; the passport page now honours the app's text-size preference
+  (`scaledFont` throughout); the reconciliation integrity note lost its
+  debug-ish "Please report this" phrasing.
+
+Verified by `LiveReportCatalogueTests` on the real book: all 17 scaffold
+kinds build under their default configurations — 11 content-bearing kinds
+asserted non-empty (sections/KPIs/charts counted), business documents build,
+price history prints, and the forecast's empty state is exercised. 412
+FeatureUI tests green; both platforms build.
+
 ## P9 — Planning & insights (24 Jul 2026)
 
 The final phase: Microsoft Money's flagship planning layer plus the

@@ -303,6 +303,7 @@ struct SlideCard: View {
                     .cornerRadius(2)
                     .foregroundStyle(by: .value("Security", holding.symbol))
             }
+            .chartForegroundStyleScale(range: ReportPalette.categorical)
             .chartLegend(position: .trailing, alignment: .center)
         case .none:
             Color.clear

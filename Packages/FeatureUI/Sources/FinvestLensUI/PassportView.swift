@@ -129,27 +129,27 @@ struct PassportPage: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(data.title)
-                    .font(.system(.title, design: .serif, weight: .semibold))
+                    .scaledFont(.title, weight: .semibold, design: .serif)
                 Text("Financial summary as of \(data.asOf.formatted(date: .long, time: .omitted))")
-                    .font(.callout)
+                    .scaledFont(.callout)
                     .foregroundStyle(.secondary)
             }
 
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading) {
-                    Text("NET WORTH").font(.caption2.weight(.semibold)).kerning(1)
+                    Text("NET WORTH").scaledFont(.caption2, weight: .semibold).kerning(1)
                         .foregroundStyle(.secondary)
                     Text(AmountFormat.string(data.netWorth, code: data.currencyCode))
-                        .font(.system(.largeTitle, design: .serif, weight: .bold))
+                        .scaledFont(.largeTitle, weight: .bold, design: .serif)
                         .monospacedDigit()
                 }
                 Spacer()
                 if let rate = data.savingsRate {
                     VStack(alignment: .trailing) {
-                        Text("SAVINGS RATE (12 MO)").font(.caption2.weight(.semibold)).kerning(1)
+                        Text("SAVINGS RATE (12 MO)").scaledFont(.caption2, weight: .semibold).kerning(1)
                             .foregroundStyle(.secondary)
                         Text("\(SpendingInsights.wholePercent(rate * 100))%")
-                            .font(.system(.title, design: .serif, weight: .semibold))
+                            .scaledFont(.title, weight: .semibold, design: .serif)
                     }
                 }
             }
@@ -183,7 +183,7 @@ struct PassportPage: View {
 
             Spacer(minLength: 0)
             Text("Prepared with FinvestLens from the owner's own records — a snapshot, not a verified statement.")
-                .font(.caption2)
+                .scaledFont(.caption2)
                 .foregroundStyle(.tertiary)
         }
         .padding(28)
@@ -207,7 +207,7 @@ struct PassportPage: View {
 
     private func heading(_ text: String) -> some View {
         Text(text.uppercased())
-            .font(.caption.weight(.semibold))
+            .scaledFont(.caption, weight: .semibold)
             .kerning(1)
             .foregroundStyle(.secondary)
     }
@@ -219,6 +219,6 @@ struct PassportPage: View {
             Text(AmountFormat.string(value, code: data.currencyCode))
                 .monospacedDigit()
         }
-        .font(.callout.weight(bold ? .semibold : .regular))
+        .scaledFont(.callout, weight: bold ? .semibold : .regular)
     }
 }

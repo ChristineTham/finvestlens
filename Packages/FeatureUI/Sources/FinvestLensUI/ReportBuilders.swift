@@ -400,6 +400,22 @@ extension AppModel {
                                 entity: "Jobs", asOf: to, asOfLabel: asOfLabel,
                                 owners: book.jobs.map { ($0.guid, $0.name) })
 
+        case .spendingInsights:
+            return spendingInsightsDocument(period: configuration.period)
+        case .transactions:
+            guard let account = configuration.accountIDs?.first ?? selectedAccountID
+                ?? postableAccounts.first?.id else { return nil }
+            return transactionsDocument(accountID: account, from: from, to: to)
+        case .reconcile:
+            guard let account = configuration.accountIDs?.first ?? selectedAccountID
+                ?? postableAccounts.first?.id else { return nil }
+            return reconcileDocument(accountID: account, asOf: to)
+        case .portfolio:
+            return portfolioDocument(asOf: to)
+        case .investmentLots:
+            return investmentLotsDocument(asOf: to)
+        case .capitalGains:
+            return capitalGainsDocument(from: from, to: to)
         default:
             return nil
         }

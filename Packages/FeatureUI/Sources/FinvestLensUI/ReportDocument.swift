@@ -69,6 +69,8 @@ enum ReportDocumentChart {
     case monthlyBars([MonthlyFlow])
     case line([NetWorthPoint])
     case averageBars([AverageBalanceInterval])
+    /// A composition donut (portfolio allocation): label + positive value.
+    case allocation([(label: String, value: Decimal)])
 }
 
 /// A complete report, ready to render or print.
@@ -77,12 +79,23 @@ struct ReportDocument {
     var periodLabel: String
     var currencyCode: String
     var kpis: [ReportKPI]
+    /// Deterministic plain-language reading of the figures, shown between the
+    /// callouts and the chart (Spending Insights' sentences).
+    var summary: [String] = []
     var chart: ReportDocumentChart?
     var sections: [ReportDocumentSection]
     /// Fixed methodology notes ("Securities valued at market…").
     var notes: [String]
     /// The facts commentary is narrated from, when the report offers it.
     var facts: ReportFactsSource?
+}
+
+extension ReportDocument {
+    /// No figures anywhere — the report ran but had nothing to say.
+    var isEmpty: Bool {
+        kpis.isEmpty && summary.isEmpty && chart == nil
+            && sections.allSatisfy { $0.rows.isEmpty }
+    }
 }
 
 /// What the narrator gets: headline figures and ranked lines, no access to
@@ -107,6 +120,7 @@ struct ReportDocumentView: View {
             VStack(alignment: .leading, spacing: 20) {
                 header
                 if !document.kpis.isEmpty { kpiRow }
+                if !document.summary.isEmpty { summaryBlock }
                 if let chart = document.chart { chartView(chart) }
                 ForEach(document.sections) { section in
                     ReportTableView(section: section, code: document.currencyCode)
@@ -120,15 +134,10 @@ struct ReportDocumentView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(document.title)
-                .scaledFont(.largeTitle)
-                .fontWeight(.bold)
-            Text("\(document.periodLabel) · \(document.currencyCode)")
-                .scaledFont(.title3)
-                .foregroundStyle(.secondary)
-            Divider().padding(.top, 8)
-        }
+        ReportMasthead(entity: model.statementEntityName,
+                       title: document.title,
+                       period: document.periodLabel,
+                       code: document.currencyCode)
     }
 
     private var kpiRow: some View {
@@ -150,6 +159,24 @@ struct ReportDocumentView: View {
                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
             }
         }
+    }
+
+    /// The deterministic plain-language reading, one sentence per line.
+    private var summaryBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(document.summary, id: \.self) { line in
+                Label {
+                    Text(line).scaledFont(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "text.bubble")
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
     }
 
     @ViewBuilder
@@ -189,6 +216,17 @@ struct ReportDocumentView: View {
                     .foregroundStyle(Color.accentColor)
             }
             .frame(height: 200)
+        case .allocation(let slices):
+            Chart(slices, id: \.label) { slice in
+                SectorMark(angle: .value("Value",
+                                         NSDecimalNumber(decimal: slice.value).doubleValue),
+                           innerRadius: .ratio(0.6), angularInset: 1)
+                    .cornerRadius(2)
+                    .foregroundStyle(by: .value("Holding", slice.label))
+            }
+            .chartForegroundStyleScale(range: ReportPalette.categorical)
+            .chartLegend(position: .trailing, alignment: .center)
+            .frame(height: 220)
         }
     }
 
@@ -377,6 +415,11 @@ extension ReportDocument {
         if !kpis.isEmpty {
             sections.append(PrintableSection(heading: "Summary", rows:
                 kpis.map { PrintableRow(label: $0.label, amount: $0.amount, bold: true) }))
+        }
+        if !summary.isEmpty {
+            // Text-only rows: the single nil amount column renders blank.
+            sections.append(PrintableSection(heading: "In brief", rows:
+                summary.map { PrintableRow(label: $0, amount: 0, amounts: [nil]) }))
         }
         for section in self.sections {
             if let columns = section.columns {

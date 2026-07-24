@@ -27,6 +27,55 @@ extension AppModel {
         "\(shortDate(from)) – \(shortDate(to))"
     }
 
+    // MARK: Spending Insights (FR-PLAN-13)
+
+    func spendingInsightsDocument(period: ReportPeriod) -> ReportDocument? {
+        guard let insights = spendingInsights(period: period) else { return nil }
+        let code = insights.currencyCode
+        func money(_ value: Decimal) -> String { AmountFormat.string(value, code: code) }
+
+        func comparison(_ title: String, rows: [CategoryComparison],
+                        totalCurrent: Decimal, totalPrior: Decimal) -> ReportDocumentSection? {
+            guard !rows.isEmpty else { return nil }
+            return ReportDocumentSection(
+                title: title,
+                rows: rows.map { row in
+                    ReportDocumentRow(label: row.name + (row.isNew ? " (new)" : (row.isGone ? " (gone)" : "")),
+                                      amounts: [row.current, row.prior, row.delta])
+                },
+                columns: ["This period", "Prior", "Change"],
+                columnTotals: ("Total", [totalCurrent, totalPrior, totalCurrent - totalPrior]))
+        }
+
+        return ReportDocument(
+            title: "Spending Insights",
+            periodLabel: "\(label(for: period)) · vs \(range(insights.priorFrom, insights.priorTo))",
+            currencyCode: code,
+            kpis: [ReportKPI(label: "Spending", amount: insights.totalSpendingCurrent),
+                   ReportKPI(label: "Income", amount: insights.totalIncomeCurrent),
+                   ReportKPI(label: "Net saved",
+                             amount: insights.totalIncomeCurrent - insights.totalSpendingCurrent,
+                             signed: true)],
+            summary: insights.summary(format: money),
+            chart: nil,
+            sections: [
+                comparison("Spending by category", rows: insights.expenses,
+                           totalCurrent: insights.totalSpendingCurrent,
+                           totalPrior: insights.totalSpendingPrior),
+                comparison("Income", rows: insights.income,
+                           totalCurrent: insights.totalIncomeCurrent,
+                           totalPrior: insights.totalIncomePrior),
+            ].compactMap { $0 },
+            notes: ["Compared against the immediately-preceding period of the same length. "
+                    + "Categories are top-level, subtrees rolled up — the same figures as the "
+                    + "income & expense breakdown."],
+            facts: ReportFactsSource(
+                headline: [("Spending", insights.totalSpendingCurrent),
+                           ("Prior spending", insights.totalSpendingPrior),
+                           ("Income", insights.totalIncomeCurrent)],
+                lines: insights.expenses.prefix(12).map { ($0.name, $0.delta) }))
+    }
+
     // MARK: Transactions (FR-RPT-01)
 
     func transactionsDocument(accountID: GncGUID, from: Date, to: Date) -> ReportDocument? {
@@ -73,7 +122,7 @@ extension AppModel {
                 ReportDocumentSection(title: "Outstanding — not on a statement", rows: rows(report.outstanding),
                                       total: ("Outstanding total", report.outstandingTotal)),
             ],
-            notes: report.isConsistent ? [] : ["These figures do not add up. Please report this."],
+            notes: report.isConsistent ? [] : ["The sections above do not sum to the ending balance — the account may hold edits newer than its last reconciliation."],
             facts: nil)
     }
 
@@ -93,9 +142,18 @@ extension AppModel {
         if portfolio.totalIncome != 0 {
             kpis.append(ReportKPI(label: "Income", amount: portfolio.totalIncome))
         }
+        // The allocation donut: the largest holdings by value, the tail rolled
+        // into "Other" so the legend stays legible.
+        let valued = portfolio.holdings
+            .compactMap { h in (h.marketValue ?? 0) > 0 ? (h.symbol, h.marketValue!) : nil }
+            .sorted { $0.1 > $1.1 }
+        var slices = valued.prefix(9).map { (label: $0.0, value: $0.1) }
+        let tail = valued.dropFirst(9).reduce(Decimal(0)) { $0 + $1.1 }
+        if tail > 0 { slices.append((label: "Other", value: tail)) }
+
         return ReportDocument(
             title: "Portfolio", periodLabel: "As of \(shortDate(asOf))", currencyCode: code,
-            kpis: kpis, chart: nil,
+            kpis: kpis, chart: slices.count > 1 ? .allocation(slices) : nil,
             sections: [ReportDocumentSection(title: "Holdings", rows: rows,
                                              total: ("Market value", portfolio.totalValue))],
             notes: ["Securities valued at their most recent price; unpriced holdings show zero value."],

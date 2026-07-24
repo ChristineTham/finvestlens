@@ -224,3 +224,43 @@ public extension View {
     /// Applies the user's persisted appearance preferences.
     func finvestLensAppearance() -> some View { modifier(AppearanceModifier()) }
 }
+
+
+// MARK: - Report identity
+
+/// The centred report masthead every report surface shares — the statement
+/// standard (report-redesign §3.2) applied to working documents and
+/// interactive reports alike: entity, serif title, period, units line.
+struct ReportMasthead: View {
+    let entity: String
+    let title: String
+    let period: String
+    let code: String
+
+    var body: some View {
+        VStack(spacing: 3) {
+            Text(entity)
+                .scaledFont(.title3, weight: .semibold)
+            Text(title)
+                .scaledFont(.title, weight: .bold, design: .serif)
+            Text(period)
+                .scaledFont(.subheadline)
+                .foregroundStyle(.secondary)
+            Text("Amounts in \(code)")
+                .scaledFont(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 4)
+    }
+}
+
+/// One categorical palette for every multi-series chart (allocation donuts,
+/// per-security scatters) — anchored on the accent so charts read as one
+/// family instead of SwiftUI's default rainbow.
+enum ReportPalette {
+    static let categorical: [Color] = [
+        .accentColor, .teal, .indigo, .orange, .purple,
+        .pink, .mint, .brown, .cyan, .yellow,
+    ]
+}

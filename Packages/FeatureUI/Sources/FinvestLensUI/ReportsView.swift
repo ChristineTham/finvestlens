@@ -30,460 +30,6 @@ public struct ReportsWindow: View {
     }
 }
 
-private struct TotalRow: View {
-    let label: String
-    let amount: Decimal
-    let code: String
-    var emphasised = false
-
-    var body: some View {
-        HStack {
-            Text(label).fontWeight(emphasised ? .bold : .regular)
-            Spacer()
-            Text(AmountFormat.string(amount, code: code))
-                .monospacedDigit()
-                .fontWeight(emphasised ? .bold : .regular)
-        }
-    }
-}
-
-private struct LineRows: View {
-    let lines: [ReportLine]
-    let code: String
-    var body: some View {
-        ForEach(lines) { line in
-            HStack {
-                // The full path, not the leaf: a real book has five accounts
-                // called "Franked", one per holding, and a statement that
-                // cannot tell them apart is not a statement.
-                Text(line.fullName).foregroundStyle(.secondary)
-                Spacer()
-                Text(AmountFormat.string(line.amount, code: code)).monospacedDigit()
-            }
-        }
-    }
-}
-
-struct PortfolioView: View {
-    @Bindable var model: AppModel
-
-    var body: some View {
-        AsyncReport(key: "\(model.bookRevision):\(model.costBasisMethod.rawValue):\(model.feeTreatment.rawValue)",
-                    title: "Portfolio",
-                    build: { model.advancedPortfolio() }) { portfolio in
-            List {
-                Section {
-                    Picker("Method", selection: $model.costBasisMethod) {
-                        ForEach(CostBasisMethod.allCases) { Text($0.displayName).tag($0) }
-                    }
-                    Picker("Fees", selection: $model.feeTreatment) {
-                        ForEach(FeeTreatment.allCases) { Text($0.displayName).tag($0) }
-                    }
-                }
-                if portfolio.totalValue != 0 {
-                    Section("Allocation") {
-                        AllocationChart(portfolio: portfolio)
-                    }
-                }
-                Section("Holdings") {
-                    ForEach(portfolio.holdings) { holding in
-                        HoldingRow(holding: holding, code: portfolio.currencyCode)
-                    }
-                }
-                Section {
-                    TotalRow(label: "Cost basis", amount: portfolio.totalCost, code: portfolio.currencyCode)
-                    TotalRow(label: "Market value", amount: portfolio.totalValue, code: portfolio.currencyCode, emphasised: true)
-                    signedTotal("Unrealized gain", portfolio.totalUnrealized, portfolio.currencyCode)
-                    signedTotal("Realized gain", portfolio.totalRealized, portfolio.currencyCode)
-                    if let ror = portfolio.totalReturnFraction {
-                        HStack {
-                            Text("Total return").fontWeight(.bold)
-                            Spacer()
-                            Text(ror.formatted(.percent.precision(.fractionLength(1))))
-                                .monospacedDigit().fontWeight(.bold)
-                                .foregroundStyle(ror < 0 ? .red : (ror > 0 ? .green : .primary))
-                        }
-                    }
-                }
-                PriceHistorySection(model: model)
-            }
-        }
-        .reportPDFToolbar(title: "Portfolio") { model.portfolioDocument() }
-    }
-
-    private func signedTotal(_ label: String, _ amount: Decimal, _ code: String) -> some View {
-        HStack {
-            Text(label).fontWeight(.bold)
-            Spacer()
-            Text(AmountFormat.string(amount, code: code))
-                .monospacedDigit().fontWeight(.bold)
-                .foregroundStyle(amount < 0 ? .red : (amount > 0 ? .green : .primary))
-        }
-    }
-}
-
-private struct HoldingRow: View {
-    let holding: AdvancedHolding
-    let code: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(holding.symbol).fontWeight(.medium)
-                if let allocation = holding.allocation {
-                    Text(allocation.formatted(.percent.precision(.fractionLength(0))))
-                        .scaledFont(.caption2).foregroundStyle(.secondary)
-                        .padding(.horizontal, 4).background(.secondary.opacity(0.15)).clipShape(Capsule())
-                }
-                Spacer()
-                if let value = holding.marketValue {
-                    Text(AmountFormat.string(value, code: code)).monospacedDigit()
-                } else {
-                    Text("no price").scaledFont(.caption).foregroundStyle(.secondary)
-                }
-            }
-            HStack {
-                Text("\(holding.shares.formatted()) @ \(holding.averageCost.map { AmountFormat.string($0, code: code) } ?? "—") avg")
-                    .scaledFont(.caption).foregroundStyle(.secondary)
-                Spacer()
-                if let gain = holding.unrealizedGain {
-                    Text(gainText(gain, fraction: holding.unrealizedFraction, code: code))
-                        .scaledFont(.caption).foregroundStyle(gain < 0 ? .red : .green)
-                }
-            }
-            if holding.realizedGain != 0 {
-                HStack {
-                    Text("Realized").scaledFont(.caption2).foregroundStyle(.secondary)
-                    Spacer()
-                    Text(AmountFormat.string(holding.realizedGain, code: code))
-                        .scaledFont(.caption2).monospacedDigit()
-                        .foregroundStyle(holding.realizedGain < 0 ? .red : .green)
-                }
-            }
-            HStack {
-                Text("In \(AmountFormat.string(holding.moneyIn, code: code)) · Out \(AmountFormat.string(holding.moneyOut, code: code))"
-                     + (holding.income != 0 ? " · Income \(AmountFormat.string(holding.income, code: code))" : ""))
-                    .scaledFont(.caption2).foregroundStyle(.secondary)
-                Spacer()
-                if let roi = holding.returnFraction {
-                    Text("ROI \(roi.formatted(.percent.precision(.fractionLength(1))))")
-                        .scaledFont(.caption2).monospacedDigit()
-                        .foregroundStyle(roi < 0 ? .red : .green)
-                }
-            }
-        }
-        .padding(.vertical, 2)
-    }
-
-    private func gainText(_ gain: Decimal, fraction: Double?, code: String) -> String {
-        let amount = AmountFormat.string(gain, code: code)
-        if let fraction { return "\(amount) (\(fraction.formatted(.percent.precision(.fractionLength(1)))))" }
-        return amount
-    }
-}
-
-private struct AllocationChart: View {
-    let portfolio: AdvancedPortfolio
-
-    private var slices: [(symbol: String, value: Double)] {
-        portfolio.holdings.compactMap { h in
-            guard let v = h.marketValue, v != 0 else { return nil }
-            return (h.symbol, NSDecimalNumber(decimal: v).doubleValue)
-        }
-    }
-
-    var body: some View {
-        Chart(slices, id: \.symbol) { slice in
-            SectorMark(angle: .value("Value", slice.value), innerRadius: .ratio(0.6), angularInset: 1.5)
-                .foregroundStyle(by: .value("Security", slice.symbol))
-                .cornerRadius(3)
-        }
-        .frame(height: 180)
-        .padding(.vertical, 4)
-        .accessibilityLabel("Portfolio allocation by security")
-    }
-}
-
-private struct PriceHistorySection: View {
-    @Bindable var model: AppModel
-    @State private var selected: String = ""
-
-    private var securities: [Commodity] { model.securitiesWithPriceHistory }
-
-    /// Default to a security that actually has a chartable trend (≥2 prices),
-    /// falling back to the first one; never leaves the picker blank.
-    private var defaultCode: String {
-        securities.first { model.priceHistory(for: $0).count >= 2 }?.mnemonic
-            ?? securities.first?.mnemonic ?? ""
-    }
-    private var chosen: Commodity? {
-        securities.first { $0.mnemonic == selected }
-            ?? securities.first { $0.mnemonic == defaultCode }
-    }
-
-    var body: some View {
-        if !securities.isEmpty, let commodity = chosen {
-            Section("Price History") {
-                if securities.count > 1 {
-                    Picker("Security", selection: Binding(
-                        get: { chosen?.mnemonic ?? defaultCode },
-                        set: { selected = $0 })) {
-                        ForEach(securities, id: \.mnemonic) { Text($0.mnemonic).tag($0.mnemonic) }
-                    }
-                    .pickerStyle(.menu)
-                }
-                let points = model.priceHistory(for: commodity)
-                if points.count < 2 {
-                    Text("Add more prices to chart a trend.").scaledFont(.caption).foregroundStyle(.secondary)
-                } else {
-                    Chart(points) { point in
-                        LineMark(x: .value("Date", point.date),
-                                 y: .value("Price", NSDecimalNumber(decimal: point.value).doubleValue))
-                        PointMark(x: .value("Date", point.date),
-                                  y: .value("Price", NSDecimalNumber(decimal: point.value).doubleValue))
-                            .symbolSize(20)
-                    }
-                    .frame(height: 160)
-                    .padding(.vertical, 4)
-                    .accessibilityLabel("Price history for \(commodity.mnemonic)")
-                }
-            }
-        }
-    }
-}
-
-/// GnuCash's Reconciliation Report: of what is in this account, how much has the
-/// bank agreed to? (`FR-RPT-05`)
-struct ReconcileReportView: View {
-    @Environment(\.appDateFormat) private var dateFormat
-    @Bindable var model: AppModel
-    @State private var accountID: GncGUID?
-    @State private var asOf = Date()
-    @Environment(\.appFontScale) private var appFontScale
-    private var dateWidth: CGFloat { 90 * appFontScale }
-
-    /// Reconciling is a bank-statement idea, so the accounts offered are the
-    /// ones a statement arrives for.
-    private var accounts: [AccountNode] {
-        model.postableAccounts.filter { ["Bank", "Cash", "Credit", "Asset", "Liability"]
-            .contains($0.typeName) }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                LabeledContent("Account") {
-                    AccountField(nodes: accounts, selection: $accountID)
-                }
-                DatePicker("As of", selection: $asOf, displayedComponents: .date)
-            }
-            .frame(maxHeight: 110)
-            Divider()
-            if let id = accountID {
-                AsyncReport(key: "\(model.bookRevision):\(id.hexString):\(asOf.timeIntervalSinceReferenceDate)",
-                            title: "Reconciliation",
-                            build: { model.reconcileReport(accountID: id, asOf: asOf) },
-                            content: content)
-            } else {
-                ContentUnavailableView("Choose an account", systemImage: "checkmark.circle",
-                                       description: Text("See what has been reconciled, what is "
-                                                         + "cleared, and what is neither."))
-            }
-        }
-        .reportPDFToolbar(title: "Reconciliation") {
-            accountID.flatMap { model.reconcileDocument(accountID: $0, asOf: asOf) }
-        }
-    }
-
-    private func content(_ report: ReconcileReport) -> some View {
-        List {
-            section("Funds In", report.fundsIn, report.totalIn, report)
-            section("Funds Out", report.fundsOut, report.totalOut, report)
-            Section("Reconciled") {
-                total("Reconciled balance", report.reconciledBalance, report, emphasised: true)
-            }
-            section("Cleared — on a statement, not yet reconciled",
-                    report.cleared, report.clearedTotal, report)
-            Section {
-                total("Cleared balance", report.clearedBalance, report)
-            }
-            section("Outstanding — not on a statement", report.outstanding,
-                    report.outstandingTotal, report)
-            Section {
-                total("Ending balance", report.endingBalance, report, emphasised: true)
-            } footer: {
-                // The report's whole claim, said out loud. If it ever fails the
-                // figures are lying, and saying nothing would be worse.
-                if !report.isConsistent {
-                    Text("These figures do not add up. Please report this.")
-                        .foregroundStyle(.red)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func section(_ title: String, _ rows: [ReconcileReportRow],
-                         _ sum: Decimal, _ report: ReconcileReport) -> some View {
-        Section(title) {
-            if rows.isEmpty {
-                Text("Nothing.").scaledFont(.caption).foregroundStyle(.secondary)
-            } else {
-                ForEach(rows) { row in
-                    HStack {
-                        Text(dateFormat.short(row.date))
-                            .foregroundStyle(.secondary)
-                            .frame(width: dateWidth, alignment: .leading)
-                        VStack(alignment: .leading) {
-                            Text(row.description)
-                            if !row.memo.isEmpty {
-                                Text(row.memo).scaledFont(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer()
-                        Text(AmountFormat.string(row.amount, code: report.currencyCode))
-                            .monospacedDigit()
-                            .foregroundStyle(row.amount < 0 ? .red : .primary)
-                    }
-                }
-                total("Total", sum, report)
-            }
-        }
-    }
-
-    private func total(_ label: String, _ amount: Decimal, _ report: ReconcileReport,
-                       emphasised: Bool = false) -> some View {
-        HStack {
-            Text(label).fontWeight(emphasised ? .semibold : .regular)
-            Spacer()
-            Text(AmountFormat.string(amount, code: report.currencyCode))
-                .monospacedDigit()
-                .fontWeight(emphasised ? .semibold : .regular)
-        }
-    }
-}
-
-struct TransactionReportView: View {
-    @Environment(\.appDateFormat) private var dateFormat
-    @Bindable var model: AppModel
-    @State private var accountID: GncGUID?
-    @State private var from = Calendar.current.date(byAdding: .month, value: -3, to: Date()) ?? Date()
-    @State private var to = Date()
-    @Environment(\.appFontScale) private var appFontScale
-    private var dateWidth: CGFloat { 90 * appFontScale }
-    private var amountWidth: CGFloat { 90 * appFontScale }
-
-    private var accounts: [AccountNode] { model.postableAccounts }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Form {
-                LabeledContent("Account") {
-                    AccountField(nodes: accounts, selection: $accountID)
-                }
-                DatePicker("From", selection: $from, displayedComponents: .date)
-                DatePicker("To", selection: $to, displayedComponents: .date)
-            }
-            .frame(maxHeight: 140)
-            Divider()
-            if let id = accountID {
-                AsyncReport(key: "\(model.bookRevision):\(id.hexString):\(from.timeIntervalSinceReferenceDate):\(to.timeIntervalSinceReferenceDate)",
-                            title: "Transactions",
-                            build: { model.transactionReport(accountID: id, from: from, to: to) }) { report in
-                if report.rows.isEmpty {
-                    ContentUnavailableView("No postings", systemImage: "list.bullet.rectangle",
-                                           description: Text("No transactions in this period."))
-                } else {
-                    List {
-                        ForEach(report.rows) { row in
-                            HStack {
-                                Text(dateFormat.short(row.date))
-                                    .foregroundStyle(.secondary).frame(width: dateWidth, alignment: .leading)
-                                VStack(alignment: .leading) {
-                                    Text(row.description)
-                                    Text(row.transfer).scaledFont(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text(AmountFormat.string(row.amount, code: report.currencyCode))
-                                    .monospacedDigit().foregroundStyle(row.amount < 0 ? .red : .primary)
-                                Text(AmountFormat.string(row.balance, code: report.currencyCode))
-                                    .monospacedDigit().frame(width: amountWidth, alignment: .trailing)
-                            }
-                        }
-                        Section {
-                            TotalRow(label: "Opening", amount: report.opening, code: report.currencyCode)
-                            TotalRow(label: "Net change", amount: report.total, code: report.currencyCode)
-                            TotalRow(label: "Closing", amount: report.closing, code: report.currencyCode, emphasised: true)
-                        }
-                    }
-                }
-                }
-            } else {
-                ContentUnavailableView("Choose an account", systemImage: "list.bullet.rectangle",
-                                       description: Text("Pick an account to list its postings."))
-            }
-        }
-        .reportPDFToolbar(title: "Transactions") {
-            accountID.flatMap { model.transactionsDocument(accountID: $0, from: from, to: to) }
-        }
-    }
-}
-
-struct InvestmentLotsView: View {
-    @Environment(\.appDateFormat) private var dateFormat
-    @Bindable var model: AppModel
-
-    var body: some View {
-        AsyncReport(key: "\(model.bookRevision):\(model.costBasisMethod.rawValue):\(model.feeTreatment.rawValue)",
-                    title: "Investment Lots",
-                    build: { model.investmentLots() }) { lots in
-        if lots.isEmpty {
-            ContentUnavailableView("No open lots", systemImage: "square.stack.3d.up",
-                                   description: Text("Buy a security to see its tax lots."))
-        } else {
-            List {
-                Section {
-                    Picker("Method", selection: $model.costBasisMethod) {
-                        ForEach(CostBasisMethod.allCases) { Text($0.displayName).tag($0) }
-                    }
-                    Picker("Fees", selection: $model.feeTreatment) {
-                        ForEach(FeeTreatment.allCases) { Text($0.displayName).tag($0) }
-                    }
-                }
-                Section("Open Lots") {
-                    ForEach(lots) { lot in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Text(lot.symbol).fontWeight(.medium)
-                                if let date = lot.acquisitionDate {
-                                    Text(dateFormat.short(date))
-                                        .scaledFont(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text(lot.marketValue.map { AmountFormat.string($0, code: model.reportCurrency.mnemonic) } ?? "no price")
-                                    .monospacedDigit()
-                            }
-                            HStack {
-                                Text("\(lot.quantity.formatted()) · cost \(AmountFormat.string(lot.costBasis, code: model.reportCurrency.mnemonic))")
-                                    .scaledFont(.caption).foregroundStyle(.secondary)
-                                Spacer()
-                                if let gain = lot.unrealizedGain {
-                                    Text(AmountFormat.string(gain, code: model.reportCurrency.mnemonic))
-                                        .scaledFont(.caption).monospacedDigit()
-                                        .foregroundStyle(gain < 0 ? .red : .green)
-                                }
-                            }
-                        }
-                        .padding(.vertical, 2)
-                    }
-                }
-            }
-        }
-        }
-        .reportPDFToolbar(title: "Investment Lots") { model.investmentLotsDocument() }
-    }
-}
-
 struct PriceScatterView: View {
     @Bindable var model: AppModel
 
@@ -510,114 +56,29 @@ struct PriceScatterView: View {
             ContentUnavailableView("No prices", systemImage: "chart.dots.scatter",
                                    description: Text("Record security prices to plot them over time."))
         } else {
-            VStack(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 0) {
+                ReportMasthead(entity: model.statementEntityName,
+                               title: "Price History",
+                               period: "All recorded security prices",
+                               code: model.reportCurrency.mnemonic)
+                    .padding(.top, 12)
                 Chart(data) { point in
                     PointMark(x: .value("Date", point.date),
                               y: .value("Price", point.price))
                         .foregroundStyle(by: .value("Security", point.symbol))
                 }
+                .chartForegroundStyleScale(range: ReportPalette.categorical)
                 .frame(minHeight: 260)
                 .padding()
                 .accessibilityLabel("Price scatter of all securities over time")
             }
         }
         }
-        .reportPDFToolbar(title: "Price History") { model.priceHistoryDocument() }
+        .reportPDFToolbar(title: "Price History", entity: model.statementEntityName) { model.priceHistoryDocument() }
     }
 }
 
-struct CapitalGainsView: View {
-    @Environment(\.appDateFormat) private var dateFormat
-    @Bindable var model: AppModel
-
-    var body: some View {
-        AsyncReport(key: "\(model.bookRevision):\(model.costBasisMethod.rawValue):\(model.feeTreatment.rawValue)",
-                    title: "Capital Gains",
-                    build: { model.capitalGains() }) { report in
-            List {
-                Section {
-                    Picker("Method", selection: $model.costBasisMethod) {
-                        ForEach(CostBasisMethod.allCases) { Text($0.displayName).tag($0) }
-                    }
-                    Picker("Fees", selection: $model.feeTreatment) {
-                        ForEach(FeeTreatment.allCases) { Text($0.displayName).tag($0) }
-                    }
-                }
-                if report.lines.isEmpty {
-                    Text("No realised gains yet.").foregroundStyle(.secondary)
-                } else {
-                    Section("Realised gains") {
-                        ForEach(report.lines) { line in
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack {
-                                    Text(line.symbol).fontWeight(.medium)
-                                    termBadge(line.longTerm)
-                                    Spacer()
-                                    Text(AmountFormat.string(line.gain, code: report.currencyCode))
-                                        .monospacedDigit()
-                                        .foregroundStyle(line.gain < 0 ? .red : .green)
-                                }
-                                HStack {
-                                    Text("\(line.quantity.formatted()) sold \(dateFormat.short(line.disposalDate))")
-                                        .scaledFont(.caption).foregroundStyle(.secondary)
-                                    Spacer()
-                                    Text("proceeds \(AmountFormat.string(line.proceeds, code: report.currencyCode)) − cost \(AmountFormat.string(line.costBasis, code: report.currencyCode))")
-                                        .scaledFont(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
-                    Section {
-                        TotalRow(label: "Short-term gain", amount: report.shortTermGain, code: report.currencyCode)
-                        TotalRow(label: "Long-term gain", amount: report.longTermGain, code: report.currencyCode)
-                        if report.otherGain != 0 {
-                            TotalRow(label: "Other", amount: report.otherGain, code: report.currencyCode)
-                        }
-                        HStack {
-                            Text("Total realised").fontWeight(.bold)
-                            Spacer()
-                            Text(AmountFormat.string(report.totalGain, code: report.currencyCode))
-                                .monospacedDigit().fontWeight(.bold)
-                                .foregroundStyle(report.totalGain < 0 ? .red : .green)
-                        }
-                    }
-                }
-                if !report.openLots.isEmpty {
-                    Section("Open lots") {
-                        ForEach(report.openLots) { lot in
-                            HStack {
-                                Text(lot.symbol).fontWeight(.medium)
-                                if let date = lot.acquisitionDate {
-                                    Text(dateFormat.short(date))
-                                        .scaledFont(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Text("\(lot.quantity.formatted()) · \(AmountFormat.string(lot.costBasis, code: report.currencyCode))")
-                                    .scaledFont(.caption).monospacedDigit().foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .reportPDFToolbar(title: "Capital Gains") { model.capitalGainsDocument() }
-    }
-
-    @ViewBuilder
-    private func termBadge(_ longTerm: Bool?) -> some View {
-        switch longTerm {
-        case .some(true):
-            Text("LT").scaledFont(.caption2).padding(.horizontal, 4).background(.green.opacity(0.2)).clipShape(Capsule())
-        case .some(false):
-            Text("ST").scaledFont(.caption2).padding(.horizontal, 4).background(.orange.opacity(0.2)).clipShape(Capsule())
-        case .none:
-            EmptyView()
-        }
-    }
-}
-
-struct CashFlowView: View {
+struct ForecastView: View {
     @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
     @State private var showAddWhatIf = false
@@ -637,6 +98,11 @@ struct CashFlowView: View {
             let points = model.cashFlowForecast(accountID: accountID)
             let events = points.filter { $0.change != 0 }
             VStack(spacing: 0) {
+                ReportMasthead(entity: model.statementEntityName,
+                               title: "Forecast",
+                               period: model.accountName(accountID) ?? "Projected balances",
+                               code: model.reportCurrency.mnemonic)
+                    .padding(.top, 12)
                 whatIfBar
                 Divider()
                 if events.isEmpty {
@@ -649,8 +115,10 @@ struct CashFlowView: View {
                                 .interpolationMethod(.stepEnd)
                         }
                         ForEach(points.filter(\.isWhatIf)) { point in
+                            // Hypotheticals in a reserved tint, distinct from
+                            // the accent-coloured actual projection.
                             PointMark(x: .value("Date", point.date), y: .value("Balance", point.balance))
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(.purple)
                         }
                         RuleMark(y: .value("Zero", 0))
                             .lineStyle(StrokeStyle(lineWidth: 0.5, dash: [4]))
@@ -672,7 +140,7 @@ struct CashFlowView: View {
                             Text(event.label)
                             if event.isWhatIf {
                                 Text("what-if").scaledFont(.caption2)
-                                    .padding(.horizontal, 4).background(.orange.opacity(0.2)).clipShape(Capsule())
+                                    .padding(.horizontal, 4).background(.purple.opacity(0.2)).clipShape(Capsule())
                             }
                             Spacer()
                             Text(AmountFormat.string(event.change, code: model.reportCurrency.mnemonic))
@@ -691,7 +159,7 @@ struct CashFlowView: View {
                                    description: Text("Create an asset account first."))
         }
         }
-        .reportPDFToolbar(title: "Forecast") { model.forecastDocument() }
+        .reportPDFToolbar(title: "Forecast", entity: model.statementEntityName) { model.forecastDocument() }
     }
 
     private var whatIfBar: some View {

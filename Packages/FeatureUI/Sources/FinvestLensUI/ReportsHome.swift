@@ -72,10 +72,14 @@ public enum ReportKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    /// The kinds rendered as documents through ``ReportDocumentView``. The
-    /// rest keep their existing interactive views inside the new navigation.
+    /// The kinds rendered as documents through ``ReportDocumentView``. Only
+    /// genuinely interactive *tools* — the forecast's what-if editor and the
+    /// price explorer — keep their own layouts (with the shared masthead).
     var usesScaffold: Bool {
-        group == .statements || self == .averageBalance || group == .business
+        switch self {
+        case .forecast, .priceScatter: false
+        default: true
+        }
     }
 
     /// Point-in-time reports read the period's *end* as their as-of date, so
@@ -84,19 +88,21 @@ public enum ReportKind: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .balanceSheet, .trialBalance, .accountSummary, .receivableAging,
              .payableAging, .customerSummary, .vendorSummary, .employeeSummary,
-             .jobSummary: true
+             .jobSummary, .reconcile, .portfolio, .investmentLots: true
         default: false
         }
     }
 
     var usesDepth: Bool { self == .accountSummary }
     var usesAccounts: Bool { self == .cashFlow || self == .averageBalance }
+    /// Reports over exactly one account (a register listing, a reconciliation).
+    var usesSingleAccount: Bool { self == .transactions || self == .reconcile }
+    /// Reports whose figures depend on the cost-basis method and fee treatment.
+    var usesInvestmentOptions: Bool {
+        self == .portfolio || self == .investmentLots || self == .capitalGains
+    }
     /// Whether the report takes an interval size (the average-balance report).
     var usesStep: Bool { self == .averageBalance }
-    /// Whether the report can show prior periods as comparison columns.
-    /// The statement kinds carry their own prior-year comparative column
-    /// (report-redesign §3.1 rule 7), so the stepper is gone for them.
-    var usesCompare: Bool { false }
 
     var icon: String {
         switch self {
@@ -555,6 +561,7 @@ struct ReportScreen: View {
     @State private var savingName = ""
     @State private var exporting = false
     @State private var pdfDocument: PDFReportDocument?
+    @State private var computeFinished = false
 
     private var kind: ReportKind? { ReportKind(rawValue: configuration.kind) }
 
@@ -586,6 +593,21 @@ struct ReportScreen: View {
                 if document != nil || statement != nil {
                     Button("PDF", systemImage: "arrow.up.doc") { exportPDF() }
                         .help("Export this report as a PDF")
+                    if let statement {
+                        ShareLink(item: ShareableStatementPDF(title: configuration.kind,
+                                                              statement: statement),
+                                  preview: SharePreview("\(configuration.kind).pdf")) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                        .help("Share this report as a PDF")
+                    } else if let printable = sharablePrintable {
+                        ShareLink(item: ShareableReportPDF(title: configuration.kind,
+                                                           statement: printable),
+                                  preview: SharePreview("\(configuration.kind).pdf")) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                        .help("Share this report as a PDF")
+                    }
                 }
             }
         }
@@ -617,6 +639,24 @@ struct ReportScreen: View {
             if kind?.usesAccounts == true {
                 AccountScopeButton(model: model, accountIDs: $configuration.accountIDs)
             }
+            if kind?.usesSingleAccount == true {
+                AccountField(nodes: model.postableAccounts, selection: Binding(
+                    get: { configuration.accountIDs?.first ?? model.selectedAccountID },
+                    set: { configuration.accountIDs = $0.map { [$0] } }))
+                    .frame(maxWidth: 320)
+            }
+            if kind?.usesInvestmentOptions == true {
+                Picker("Method", selection: $model.costBasisMethod) {
+                    ForEach(CostBasisMethod.allCases) { Text($0.displayName).tag($0) }
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
+                Picker("Fees", selection: $model.feeTreatment) {
+                    ForEach(FeeTreatment.allCases) { Text($0.displayName).tag($0) }
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
+            }
             if kind?.usesStep == true {
                 Picker("Interval", selection: Binding(
                     get: { configuration.step ?? .month },
@@ -627,12 +667,6 @@ struct ReportScreen: View {
                 }
                 .pickerStyle(.menu)
                 .fixedSize()
-            }
-            if kind?.usesCompare == true, configuration.period.comparisonStride != nil {
-                Stepper("Compare: \(configuration.comparePeriods ?? 0)", value: Binding(
-                    get: { configuration.comparePeriods ?? 0 },
-                    set: { configuration.comparePeriods = $0 }), in: 0...4)
-                    .fixedSize()
             }
             Spacer()
         }
@@ -653,9 +687,19 @@ struct ReportScreen: View {
             }
         } else if let kind, kind.usesScaffold {
             if let document {
-                ReportDocumentView(model: model, document: document)
-                    // Recompute when parameters change — and only then. The
-                    // computation never runs in `body`.
+                if document.isEmpty {
+                    ContentUnavailableView("Nothing to report", systemImage: kind.icon,
+                                           description: Text(emptyReason(kind)))
+                        .task(id: configuration) { await recompute() }
+                } else {
+                    ReportDocumentView(model: model, document: document)
+                        // Recompute when parameters change — and only then. The
+                        // computation never runs in `body`.
+                        .task(id: configuration) { await recompute() }
+                }
+            } else if computeFinished {
+                ContentUnavailableView("Nothing to report", systemImage: kind.icon,
+                                       description: Text(emptyReason(kind)))
                     .task(id: configuration) { await recompute() }
             } else {
                 ProgressView("Preparing \(configuration.kind)…")
@@ -672,14 +716,8 @@ struct ReportScreen: View {
     @ViewBuilder
     private var legacyContent: some View {
         switch kind {
-        case .transactions: TransactionReportView(model: model)
-        case .reconcile: ReconcileReportView(model: model)
-        case .forecast: CashFlowView(model: model)
-        case .spendingInsights: SpendingInsightsView(model: model)
-        case .portfolio: PortfolioView(model: model)
-        case .investmentLots: InvestmentLotsView(model: model)
+        case .forecast: ForecastView(model: model)
         case .priceScatter: PriceScatterView(model: model)
-        case .capitalGains: CapitalGainsView(model: model)
         default:
             ContentUnavailableView("Unknown report", systemImage: "questionmark",
                                    description: Text("This favourite was saved by a newer version."))
@@ -691,6 +729,17 @@ struct ReportScreen: View {
         // computation runs.
         await Task.yield()
         document = model.reportDocument(for: configuration)
+        computeFinished = true
+    }
+
+    /// Why a report can be empty, in the report's own terms.
+    private func emptyReason(_ kind: ReportKind) -> String {
+        if kind.usesSingleAccount { return "Choose an account above." }
+        switch kind.group {
+        case .business: return "No business activity to report for this period."
+        case .investments: return "No security accounts or activity to report."
+        default: return "No activity to report for this period."
+        }
     }
 
     private func recomputeStatement() async {
@@ -711,12 +760,20 @@ struct ReportScreen: View {
         }
     }
 
+    /// The scaffold document as a printable, branded with the entity line.
+    private var sharablePrintable: PrintableStatement? {
+        guard let document else { return nil }
+        var printable = document.printable
+        printable.entity = model.statementEntityName
+        return printable
+    }
+
     private func exportPDF() {
         let data: Data?
         if let statement {
             data = ReportExport.pdf(StatementSheet(statement: statement))
-        } else if let document {
-            data = ReportExport.pdf(document.printable)
+        } else if let printable = sharablePrintable {
+            data = ReportExport.pdf(printable)
         } else {
             data = nil
         }

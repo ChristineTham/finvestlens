@@ -36,13 +36,19 @@ struct PrintableStatement: View {
     let subtitle: String
     let code: String
     let sections: [PrintableSection]
+    /// The masthead's entity line (the book's name); empty prints no line.
+    var entity: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.title2.bold())
+            VStack(spacing: 2) {
+                if !entity.isEmpty {
+                    Text(entity).font(.callout.weight(.semibold))
+                }
+                Text(title).font(.system(.title2, design: .serif, weight: .bold))
                 Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
             }
+            .frame(maxWidth: .infinity)
             ForEach(sections) { section in
                 if let columns = section.columns {
                     comparativeSection(section, columns: columns)
@@ -121,6 +127,20 @@ struct ShareableReportPDF: Transferable {
     }
 }
 
+/// A statement shareable as a PDF via `ShareLink` — the annual-report sheet
+/// itself, rendered only when the share is performed.
+struct ShareableStatementPDF: Transferable {
+    let title: String
+    let statement: Statement
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .pdf) { item in
+            await MainActor.run { ReportExport.pdf(StatementSheet(statement: item.statement)) } ?? Data()
+        }
+        .suggestedFileName { "\($0.title).pdf" }
+    }
+}
+
 /// Renders a SwiftUI view to single-page PDF data via `ImageRenderer`. Use with
 /// a static, VStack-based layout (not `List`/`Table`, which virtualise).
 @MainActor
@@ -179,6 +199,7 @@ enum ReportExport {
 /// returns `nil` when there is nothing to print (no account chosen, no data).
 struct ReportPDFToolbar: ViewModifier {
     let title: String
+    var entity: String = ""
     let makeDocument: () -> ReportDocument?
     @State private var exporting = false
     @State private var document: PDFReportDocument?
@@ -189,7 +210,7 @@ struct ReportPDFToolbar: ViewModifier {
                 ToolbarItem {
                     Button("PDF", systemImage: "arrow.up.doc") {
                         guard let doc = makeDocument(),
-                              let data = ReportExport.pdf(doc.printable) else { return }
+                              let data = ReportExport.pdf(branded(doc)) else { return }
                         document = PDFReportDocument(data: data)
                         exporting = true
                     }
@@ -198,7 +219,7 @@ struct ReportPDFToolbar: ViewModifier {
                 ToolbarItem {
                     // Share the report straight to Mail / Messages / AirDrop; the
                     // PDF is only rendered when the share is actually performed.
-                    if let statement = makeDocument()?.printable {
+                    if let statement = makeDocument().map(branded) {
                         ShareLink(item: ShareableReportPDF(title: title, statement: statement),
                                   preview: SharePreview("\(title).pdf")) {
                             Label("Share", systemImage: "square.and.arrow.up")
@@ -210,12 +231,19 @@ struct ReportPDFToolbar: ViewModifier {
             .fileExporter(isPresented: $exporting, document: document,
                           contentType: .pdf, defaultFilename: title) { _ in }
     }
+
+    /// The printable, branded with the masthead's entity line.
+    private func branded(_ doc: ReportDocument) -> PrintableStatement {
+        var printable = doc.printable
+        printable.entity = entity
+        return printable
+    }
 }
 
 extension View {
     /// Attaches a PDF-export toolbar button that renders `document()` on demand.
-    func reportPDFToolbar(title: String,
+    func reportPDFToolbar(title: String, entity: String = "",
                           document: @escaping () -> ReportDocument?) -> some View {
-        modifier(ReportPDFToolbar(title: title, makeDocument: document))
+        modifier(ReportPDFToolbar(title: title, entity: entity, makeDocument: document))
     }
 }
