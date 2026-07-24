@@ -124,6 +124,39 @@ Severity: **P0** blocks/derails the journey · **P1** real friction each visit �
   place in the documents workflow (Match Attachments sheet / Up-next card);
   the others are acceptable as menu items but should sit in the right menus.
 
+### Session, resilience, accessibility & platform (fourth pass)
+
+- **F18 (P1) The app forgets everything between launches.** Persisted today:
+  appearance, date format, autosave interval, Double Line, attachments-panel
+  visibility, hidden-accounts toggle — and nothing else. Not restored: the
+  selected sidebar destination/account, the dashboard period, the last
+  register position, the Quotes provider choice. The persona reopens to the
+  Dashboard and re-navigates every single visit. Fix: `@SceneStorage`/model
+  restoration for sidebar selection + selected account + dashboard period
+  (per-book where it matters).
+- **F19 (P2) Escape-to-close is inconsistent.** `onEscapeCommand` coverage by
+  sweep: missing in QuotesView, all five ParityViews sheets, HelpView, one
+  ReportsView sheet, and one sheet each in Budget/Rules/Scheduled/Prices. A
+  sheet the keyboard can't dismiss reads as stuck.
+- **F20 (P2) Errors can vanish.** A handful of `try? model.…` mutations in
+  views (attach/link flows) fail silently — e.g. attaching with no document
+  folder configured does nothing. Route failures through the toast layer
+  (6.8) or local alerts.
+- **F21 (P2) Accessibility is partial.** Good bones exist (spoken amounts,
+  reconcile rotor, chart labels), but a sweep finds icon-only buttons without
+  labels and the new inline register fields unaudited under VoiceOver.
+  Concrete pass: label every `Button { Image(…) }`, verify the inline-edit
+  register with VoiceOver, contrast-check tertiary text.
+- **F22 (P2) iPad parity gaps.** Web links open via `NSWorkspace` only (no-op
+  on iPad); Attachments' "Link File…" is macOS-`MacFilePanel`-only (needs
+  `fileImporter` fallback); the document pane beside the editor is macOS-only
+  (acceptable, but say so in UI). List and fix the actionable ones; the iPad
+  build compiles and is otherwise functional.
+
+*Verified fine (no action): `AmountFormat` uses Foundation `FormatStyle`
+(internally cached — no per-cell formatter allocation); quote auto-refresh is
+wired at open; Check & Repair is surfaced (Book menu).*
+
 ### Feedback & state
 
 - **F16 (P1) Long operations lack ambient feedback** — progress and
@@ -306,7 +339,10 @@ customisation.
 9. One-click Update Prices + **determinate progress** + last-updated + toast
    (6.4; perf §3).
 10. Securities surfaced as a destination/tab; Alerts card links there (6.5).
-11. Toast/status overlay; route quote/import/match/categorise completions (6.8).
+11. Toast/status overlay; route quote/import/match/categorise completions —
+    **and the silent `try?` failure paths (F20)** — through it (6.8).
+11a. **Session restoration (F18)**: sidebar selection, selected account,
+    dashboard period survive relaunch.
 12. **Async reports with progress placeholders** — capital gains, lots,
     advanced portfolio, forecast, transaction, reconcile, close-preview — via
     `cachedReport` + `.task` + `nonisolated` cores (perf P3); Auto-Categorise
@@ -317,15 +353,37 @@ customisation.
 ### Phase 3 — depth (P2)
 15. EOFY Financial Year Pack with export (6.6b).
 16. Dashboard customisation (F10); earmarked-total on Goals card (5A).
-17. Register empty-state prompt; inline disabled-state explanations; iPad
-    audit of the new toolbar.
+17. Register empty-state prompt; inline disabled-state explanations.
+17a. **Escape-consistency sweep (F19)**; **accessibility pass (F21)** —
+    icon-button labels, VoiceOver on inline register editing, contrast;
+    **iPad parity fixes (F22)** — link opening, file picking, toolbar audit.
 18. *(Only if Phase 0.5 numbers demand)* incremental account-tree balances and
     incremental journal rebuild (perf P5.4/P7).
 
 Each step ships independently: build both platforms, run the test suite,
 commit, relaunch for visual verification (standing workflow).
 
-## 8. Out of scope (noted, not forgotten)
+## 8. Review closure
+
+Four passes completed across the three criteria:
+1. **Usability** — persona/journey walkthrough of every use case (§4), plus
+   the bold-redesign pass with GnuCash familiarity dropped (§6A).
+2. **Functionality** — every public `AppModel` function swept for UI callers,
+   every `RootPanel` for entry points, every account-picking site catalogued;
+   hidden features, dead code and duplicates registered (§5).
+3. **Performance** — render/refresh paths traced, per-render full-book scans
+   swept, undo/save/startup costs measured by inspection, progress-feedback
+   inventory built (`performance-review.md`).
+4. **Session/resilience/accessibility/platform** — persistence inventory,
+   escape/error-path sweeps, a11y and iPad gap lists (§4, fourth pass).
+
+Remaining opportunities are judged **implementation-sized, not
+investigation-sized**: everything actionable is captured in Phases 0–3.
+Further audit passes would re-tread these surfaces; the next real information
+comes from executing Phase 0.5's measurement harness and validating the
+targets on the reference book.
+
+## 9. Out of scope (noted, not forgotten)
 
 - Multi-window / tabs for side-by-side registers.
 - iCloud sync; iPhone layout (iPad compiles today).

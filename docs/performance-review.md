@@ -170,6 +170,14 @@ numbers still demand it (Phase 3).
 | Save / autosave | silent | brief toast on manual save failure only |
 | FX live-rate fetch | button spinner ✓ | — |
 
+### Verified fine (checked, no action)
+
+- `AmountFormat` — Foundation `FormatStyle` (cached internally), no per-cell
+  formatter allocation.
+- `AppDateFormat` — locked one-formatter-per-pattern cache.
+- Startup reopen — async with determinate progress.
+- Sidebar (559 rows) — OutlineGroup with cheap rows; fine at this scale.
+
 ## 4. Measurement (before/after, not vibes)
 
 - `os_signpost` intervals around: `refreshAll`, `rebuildAccountTree`,
