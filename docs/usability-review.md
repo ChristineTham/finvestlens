@@ -4,7 +4,9 @@
 below. Second pass adds a full functionality inventory (implemented but
 unsurfaced / hard to reach) and a redundancy register (duplicates, dead code)
 — audited by sweeping every public `AppModel` function for UI callers, every
-`RootPanel` for entry points, and every account-picking site.*
+`RootPanel` for entry points, and every account-picking site. Third pass:
+`performance-review.md` (hot paths, progress-feedback inventory) — its fixes
+are merged into the phases below as Phase 0.5 and Phase 2 items.*
 
 ---
 
@@ -236,6 +238,19 @@ customisation.
 3. **Single rate API**; Settings pricing pane routed through the model.
 4. Build + full test suite after each step.
 
+### Phase 0.5 — performance quick wins (see `performance-review.md`)
+*Register and editing must be super responsive before (and after) the UI moves.*
+1. `registerSummary` becomes a per-refresh snapshot (kills 3 full-book scans
+   per register click — P1).
+2. Cached recency list for description suggestions (kills the 46k sort per
+   editor keystroke — P2).
+3. Cached `postableAccounts` (+ derived account lists) rebuilt with the tree
+   (P4).
+4. Dead-work skips in `refreshAll` (search only when active; batch-path
+   coalescing audit — P5).
+5. `os_signpost` + DEBUG timing harness; record before/after numbers on the
+   reference book.
+
 ### Phase 1 — the visible pain (P0/P1 structural)
 5. Toolbar restructure (6.1); Saved Searches → search suggestions.
 6. Register toolbar (6.2); strip deleted; style persisted.
@@ -243,17 +258,24 @@ customisation.
 8. Dashboard bottom clipping fix (F8).
 
 ### Phase 2 — journey accelerators (P1)
-9. One-click Update Prices + last-updated + toast (6.4).
+9. One-click Update Prices + **determinate progress** + last-updated + toast
+   (6.4; perf §3).
 10. Securities surfaced as a destination/tab; Alerts card links there (6.5).
 11. Toast/status overlay; route quote/import/match/categorise completions (6.8).
-12. Reports Recents (6.6a).
-13. Menu bar restructure + shortcut pass (6.7).
+12. **Async reports with progress placeholders** — capital gains, lots,
+    advanced portfolio, forecast, transaction, reconcile, close-preview — via
+    `cachedReport` + `.task` + `nonisolated` cores (perf P3); Auto-Categorise
+    corpus off the main actor (perf P6).
+13. Reports Recents (6.6a).
+14. Menu bar restructure + shortcut pass (6.7).
 
 ### Phase 3 — depth (P2)
-14. EOFY Financial Year Pack with export (6.6b).
-15. Dashboard customisation (F10); earmarked-total on Goals card (5A).
-16. Register empty-state prompt; inline disabled-state explanations; iPad
+15. EOFY Financial Year Pack with export (6.6b).
+16. Dashboard customisation (F10); earmarked-total on Goals card (5A).
+17. Register empty-state prompt; inline disabled-state explanations; iPad
     audit of the new toolbar.
+18. *(Only if Phase 0.5 numbers demand)* incremental account-tree balances and
+    incremental journal rebuild (perf P5.4/P7).
 
 Each step ships independently: build both platforms, run the test suite,
 commit, relaunch for visual verification (standing workflow).
