@@ -87,6 +87,19 @@ surfaced, and what was built:
   absorbs at most one row per batch, so four identical recurring transfers
   against two book entries import the two genuinely new ones (GnuCash's
   matcher claims matches the same way).
+- **Statement dates are exact** — user fact (24 Jul 2026): a **daily payment
+  limit** chunks a large movement into identical amounts on consecutive days,
+  so near-day amount equality between statement-sourced entries is
+  coincidence, not identity. Consequences: a **wash-parked book half matches
+  a row on the same calendar day only** (its date IS the bank's posting
+  date); **transfer healing pairs same-day only** (banks post both sides the
+  same day — every historical transfer in the reference book confirms); and
+  duplicate matching tries **same-day candidates before the ±window**, so
+  identical recurring amounts pair with their own day instead of an earlier
+  row greedily claiming a neighbour's leg and starving the last row. The
+  ±4-day window survives solely for its real purpose: a hand-entered
+  transaction (which has a real destination, not a wash leg) drifting from
+  its bank posting date.
 - **Wash-half demotion** — a "duplicate" whose counter-legs all sit in wash
   accounts is itself just an unfinished half; completing a pending transfer
   outranks matching it.
@@ -111,12 +124,17 @@ Verified by `LiveBankImportTests` (env-gated on `FL_PERF_FILE` +
 `FL_IMPORT_DIR`): both import orders on copies of the real book — parse counts
 (220/58/39/3), all dates in-window, the two card payments (8 Jun, 11 May) and
 the SMSF internal transfer (20 May) each land exactly once with clean legs,
-re-importing all four files is a no-op, and the run reports per-file coverage
-(e.g. VISA: 142/220 auto-categorised, 78 to Imbalance for review). A bonus:
-the heal pass also paired the book's own pre-existing late-April wash-halves.
-The remaining human calls are two truly ambiguous QIF boundary rows (identical
-recurring $20k transfers, no references to discriminate) — flagged as
-duplicates for the user to untick, which is the honest floor without bank ids.
+**zero false duplicates on the reference-less QIF side** (asserted: CMA.qif
+flags nothing, and the boundary window holds exactly six $20,000 legs per
+side — the book's two April transfers plus all four daily-limit May chunks,
+nothing absorbed, nothing doubled), re-importing all four files is a no-op,
+and the run reports per-file coverage (e.g. VISA: 142/220 auto-categorised,
+78 to Imbalance for review). The only flags left are true duplicates: each
+card payment seen from its second statement, and a transfer row whose
+transaction the counterpart import had already completed. One chunk pair that
+posted across a weekend (CDIA debit Sat 2 May, CMA credit Mon 4 May) stays as
+two wash-parked halves rather than guessing a cross-day pairing — totals
+correct, linkable in review.
 
 ## Report redesign — annual-report statements & review decks (24 Jul 2026)
 

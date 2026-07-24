@@ -109,6 +109,14 @@ struct LiveBankImportTests {
                 let row = result.staged
                 print("   ⇄ transfer \(fmt(row.date)) \(row.amount) \(String((row.payee.isEmpty ? row.memo : row.payee).prefix(44)))")
             }
+            // None of CMA.qif's rows pre-exist in the book, so every flag
+            // would be a false positive: the boundary week only *looks*
+            // duplicated because a daily payment limit chunks large transfers
+            // into identical amounts on consecutive days. (CMAA's transfer row
+            // legitimately flags when the CMA side imported first.)
+            if statement.file == "CMA.qif" {
+                #expect(duplicates == 0, "CMA.qif: flagged \(duplicates) rows of a disjoint statement")
+            }
             let imported = model.importMatched(results, intoAccountID: target.guid,
                                                fallbackToImbalance: true)
             // With the imbalance fallback, everything that isn't a duplicate imports.
@@ -129,6 +137,22 @@ struct LiveBankImportTests {
         assertSingleTransfer(book: book, from: cmaa, to: cma,
                              amount: Decimal(5000), around: day(2026, 5, 20))
 
+        // The daily-limit chunks: the four May $20,000 SMSF contribution
+        // transfers (CDIA debits 1/2/4/5 May, CMA deposits 1/4/4/5 May) are
+        // all distinct events on top of the book's two late-April ones —
+        // nothing absorbed, nothing doubled: exactly six legs a side.
+        func boundaryLegs(_ account: Account, _ value: Decimal) -> Int {
+            book.splits(for: account).filter { split in
+                split.value == value && (split.transaction.map {
+                    $0.datePosted >= day(2026, 4, 25) && $0.datePosted <= day(2026, 5, 10)
+                } ?? false)
+            }.count
+        }
+        #expect(boundaryLegs(cma, Decimal(20000)) == 6,
+                "CMA has \(boundaryLegs(cma, Decimal(20000))) $20k deposits at the boundary (want 6)")
+        #expect(boundaryLegs(cdia, Decimal(-20000)) == 6,
+                "CDIA has \(boundaryLegs(cdia, Decimal(-20000))) $20k debits at the boundary (want 6)")
+
         // Idempotency: importing every file again changes nothing.
         for statement in Self.statements {
             let url = URL(fileURLWithPath: importDir).appendingPathComponent(statement.file)
@@ -137,6 +161,12 @@ struct LiveBankImportTests {
             let target = try #require(account(statement.account))
             let results = model.matchStaged(staged, intoAccountID: target.guid)
             let nonDuplicates = results.filter { !$0.isDuplicate }.count
+            for result in results where !result.isDuplicate {
+                let row = result.staged
+                print("   ⟳ re-import NOT dup: \(statement.file) \(row.date.formatted(.iso8601.year().month().day())) "
+                      + "\(row.amount) \(String((row.payee.isEmpty ? row.memo : row.payee).prefix(48))) "
+                      + "transfer=\(result.transferSplitID != nil) suggested=\(result.suggestedAccountID != nil)")
+            }
             #expect(nonDuplicates == 0,
                     "\(statement.file): re-import found \(nonDuplicates) non-duplicates")
             let imported = model.importMatched(results, intoAccountID: target.guid,

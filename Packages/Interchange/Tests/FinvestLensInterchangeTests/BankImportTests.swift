@@ -291,16 +291,41 @@ struct ImportTransferMatchTests {
         #expect(results[0].suggestedAccountID == cmaa.guid)
     }
 
-    @Test("No transfer match outside the date window or at the wrong amount")
+    @Test("A transfer match requires the same day and the exact amount")
     func transferBounds() {
         let (book, cma, _, _, _) = makeBook()
-        let farAway = StagedTransaction(date: day(2026, 6, 20), amount: Decimal(5000),
-                                        payee: "From Smsf")
+        // Banks post both sides of a transfer on the same day — and a daily
+        // payment limit produces identical amounts on consecutive days, so
+        // even one day off is no evidence of being the same movement.
+        let nextDay = StagedTransaction(date: day(2026, 5, 21), amount: Decimal(5000),
+                                        payee: "From Smsf Pty Ltd Atf")
         let wrongAmount = StagedTransaction(date: day(2026, 5, 20), amount: Decimal(4999),
-                                            payee: "From Smsf")
-        let results = ImportMatcher.match([farAway, wrongAmount], into: cma, book: book)
+                                            payee: "From Smsf Pty Ltd Atf")
+        let results = ImportMatcher.match([nextDay, wrongAmount], into: cma, book: book)
         #expect(results[0].transferSplitID == nil)
         #expect(results[1].transferSplitID == nil)
+    }
+
+    @Test("A wash-parked book entry only matches a row on the exact same day")
+    func washHalfSameDayOnly() {
+        let (book, cma, _, wash, _) = makeBook()
+        // Last statement's final chunk, still uncategorised in CMA itself.
+        let older = Transaction(currency: .aud, datePosted: day(2026, 5, 19),
+                                description: "From Smsf Pty Ltd Atf")
+        older.addSplit(account: cma, value: Decimal(5000))
+        older.addSplit(account: wash, value: Decimal(-5000))
+        book.addTransaction(older)
+
+        // Next chunk of the same movement, one day later (daily payment
+        // limit): a distinct transaction, not a duplicate.
+        let nextChunk = StagedTransaction(date: day(2026, 5, 21), amount: Decimal(5000),
+                                          payee: "From Smsf Pty Ltd Atf")
+        // A true re-import of the same statement row: same day → duplicate.
+        let reImport = StagedTransaction(date: day(2026, 5, 19), amount: Decimal(5000),
+                                         payee: "From Smsf Pty Ltd Atf")
+        let results = ImportMatcher.match([nextChunk, reImport], into: cma, book: book)
+        #expect(!results[0].isDuplicate)
+        #expect(results[1].isDuplicate)
     }
 
     @Test("Equal amount and date alone don't make a transfer — narratives must agree")
@@ -333,16 +358,16 @@ struct ImportTransferMatchTests {
     @Test("Completing a transfer beats matching a wash-parked half of the same amount")
     func healBeatsWashHalfDuplicate() {
         let (book, cma, cmaa, wash, washSplit) = makeBook()
-        // The book also holds an OLDER wash-parked deposit of the same amount in
-        // the target account itself — last statement's still-uncategorised entry.
-        let older = Transaction(currency: .aud, datePosted: day(2026, 5, 18),
+        // The book also holds a same-day wash-parked deposit of the same amount
+        // in the target account itself — a still-uncategorised earlier entry.
+        let older = Transaction(currency: .aud, datePosted: day(2026, 5, 20),
                                 description: "From Smsf Pty Ltd Atf")
         older.addSplit(account: cma, value: Decimal(5000))
         older.addSplit(account: wash, value: Decimal(-5000))
         book.addTransaction(older)
 
-        // The row is within the window of both the older half (a would-be
-        // duplicate) and the pending CMAA transfer. Completing the transfer is
+        // The row matches both the older half (a would-be duplicate) and the
+        // pending CMAA transfer, on the same day. Completing the transfer is
         // the stronger read: a wash-parked half proves the amount recurs, not
         // that this row is already recorded.
         let staged = [StagedTransaction(date: day(2026, 5, 20), amount: Decimal(5000),
@@ -350,6 +375,7 @@ struct ImportTransferMatchTests {
         let results = ImportMatcher.match(staged, into: cma, book: book)
         #expect(!results[0].isDuplicate)
         #expect(results[0].transferSplitID == washSplit.guid)
+        _ = cmaa
     }
 
     @Test("Credit-card payment rows fall back to the historical funding account")

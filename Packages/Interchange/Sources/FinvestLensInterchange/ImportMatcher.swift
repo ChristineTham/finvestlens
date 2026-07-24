@@ -224,11 +224,15 @@ public enum ImportMatcher {
             }
         }
 
-        func daysBetween(_ transaction: Transaction, and date: Date) -> Int {
+        /// Same **calendar day** as the transaction's posted (or statement)
+        /// date. Statement-sourced entries compare date-exactly: banks post
+        /// both sides of a transfer, and every re-export of the same event,
+        /// on the same day — while chunked streams (a large movement split by
+        /// a daily payment limit into identical amounts on consecutive days)
+        /// make *near*-day equality meaningless as evidence.
+        func sameDay(_ transaction: Transaction, as date: Date) -> Bool {
             let dates = [transaction.datePosted, transaction.statementDate].compactMap { $0 }
-            return dates.map {
-                abs(calendar.dateComponents([.day], from: $0, to: date).day ?? .max)
-            }.min() ?? .max
+            return dates.contains { calendar.isDate($0, inSameDayAs: date) }
         }
 
         func transferMatch(_ row: StagedTransaction, excluding claimed: Set<GncGUID>) -> TransferCandidate? {
@@ -239,75 +243,92 @@ public enum ImportMatcher {
                 .filter { candidate in
                     !claimed.contains(candidate.washSplit.guid)
                         && target.commodity.round(candidate.washSplit.value) == amount
-                        && daysBetween(candidate.transaction, and: row.date) <= dayWindow
+                        && sameDay(candidate.transaction, as: row.date)
                         && narrativesAgree(rowTokens, candidate.tokens)
                 }
                 .min { lhs, rhs in
-                    let lhsDays = daysBetween(lhs.transaction, and: row.date)
-                    let rhsDays = daysBetween(rhs.transaction, and: row.date)
-                    return lhsDays == rhsDays
-                        ? lhs.washSplit.guid.description < rhs.washSplit.guid.description
-                        : lhsDays < rhsDays
+                    lhs.washSplit.guid.description < rhs.washSplit.guid.description
                 }
         }
 
+        /// Whether every leg of the split's transaction other than the split
+        /// itself sits in a wash account — i.e. the book entry is itself an
+        /// unfinished import half.
+        func counterLegsAllWash(_ split: Split) -> Bool {
+            guard let transaction = split.transaction else { return false }
+            let others = transaction.splits.filter { $0 !== split }
+            return !others.isEmpty && others.allSatisfy { $0.account.map(Self.isWash) ?? false }
+        }
+
         func duplicateMatch(_ row: StagedTransaction, excluding claimed: Set<GncGUID>) -> Split? {
-            let target = target.commodity.round(row.amount)
-            for split in targetSplits where !claimed.contains(split.guid) {
-                guard let transaction = split.transaction else { continue }
-                if !row.reference.isEmpty {
-                    // The OFX/HBCI FITID GnuCash records in the split's
-                    // `online_id` KVP slot is a definitive duplicate match
-                    // (xaccSplitGetOnlineID); check it first.
+            let amount = target.commodity.round(row.amount)
+
+            // Whether an amount-equal split can be this row: both sides
+            // carrying bank references that differ is a definitive NO — a bank
+            // never re-issues an event under a new FITID, so equal amount and
+            // close dates notwithstanding, these are different transactions
+            // (the boundary-week trap: a new statement's rows against last
+            // statement's entries).
+            func amountCandidate(_ split: Split) -> Bool {
+                guard split.account?.commodity.round(split.quantity) == amount else { return false }
+                if !row.reference.isEmpty, case .string? = split.kvp["online_id"] { return false }
+                return true
+            }
+
+            // Pass 1 — references: the OFX/HBCI FITID GnuCash records in the
+            // split's `online_id` KVP slot is a definitive duplicate match
+            // (xaccSplitGetOnlineID). Otherwise the reference matches only
+            // fields that hold it verbatim — a `memo.contains` substring test
+            // would treat a short cheque number ("202") as a duplicate of any
+            // memo that merely embeds it ("Invoice 20205"), silently dropping
+            // a real transaction; a genuine re-import is still caught below.
+            if !row.reference.isEmpty {
+                for split in targetSplits where !claimed.contains(split.guid) {
+                    guard let transaction = split.transaction else { continue }
                     if case let .string(onlineID)? = split.kvp["online_id"],
                        onlineID == row.reference {
                         return split
                     }
-                    // Match the reference only against fields that hold it
-                    // verbatim. A `memo.contains` substring test would treat a
-                    // short cheque number ("202") as a duplicate of any memo that
-                    // merely embeds it ("Invoice 20205"), silently dropping a real
-                    // transaction; require equality. A genuine re-import is still
-                    // caught by the amount + date-window check below.
                     if transaction.number == row.reference
                         || split.action == row.reference
                         || split.memo == row.reference {
                         return split
                     }
                 }
-                if split.account?.commodity.round(split.quantity) == target {
-                    // Definitive negative: both sides carry bank references and
-                    // they differ — a bank never re-issues an event under a new
-                    // FITID, so equal amount and close dates notwithstanding,
-                    // these are different transactions (the boundary-week trap:
-                    // a new statement's rows against last statement's entries).
-                    if !row.reference.isEmpty,
-                       case .string? = split.kvp["online_id"] {
-                        continue
-                    }
-                    // Check the statement date too: when a transaction's
-                    // posted date was adjusted to its invoice date, the bank's
-                    // date lives in `statementDate` — a re-imported statement
-                    // must still recognise it.
-                    let dates = [transaction.datePosted, transaction.statementDate].compactMap { $0 }
-                    let withinWindow = dates.contains { date in
-                        let days = abs(calendar.dateComponents([.day], from: date,
-                                                               to: row.date).day ?? .max)
-                        return days <= dayWindow
-                    }
-                    if withinWindow { return split }
+            }
+
+            // Pass 2 — same calendar day. Matching same-day before falling
+            // back to the drift window keeps identical recurring amounts
+            // (a large movement chunked by a daily payment limit) pairing
+            // one-to-one with their own day, instead of an earlier row
+            // greedily claiming a neighbouring day's leg and starving the
+            // last row into a false "new" transaction.
+            for split in targetSplits where !claimed.contains(split.guid) {
+                guard let transaction = split.transaction, amountCandidate(split),
+                      sameDay(transaction, as: row.date) else { continue }
+                return split
+            }
+
+            // Pass 3 — the ±window, for a hand-entered transaction drifting a
+            // few days from the statement's posting date. A wash-parked half
+            // never matches here: it came from a statement, so its date IS the
+            // bank's posting date (same-day only, handled by pass 2) — while a
+            // hand-entry has a real destination, not a wash leg. The statement
+            // date is checked too: when a transaction's posted date was
+            // adjusted to its invoice date, the bank's date lives in
+            // `statementDate` — a re-imported statement must still recognise it.
+            for split in targetSplits where !claimed.contains(split.guid) {
+                guard let transaction = split.transaction, amountCandidate(split),
+                      !counterLegsAllWash(split) else { continue }
+                let dates = [transaction.datePosted, transaction.statementDate].compactMap { $0 }
+                let withinWindow = dates.contains { date in
+                    let days = abs(calendar.dateComponents([.day], from: date,
+                                                           to: row.date).day ?? .max)
+                    return days <= dayWindow
                 }
+                if withinWindow { return split }
             }
             return nil
-        }
-
-        /// Whether every leg of the matched split's transaction other than the
-        /// split itself sits in a wash account — i.e. the book entry is itself
-        /// an unfinished import half, weak evidence that this row is old news.
-        func counterLegsAllWash(_ split: Split) -> Bool {
-            guard let transaction = split.transaction else { return false }
-            let others = transaction.splits.filter { $0 !== split }
-            return !others.isEmpty && others.allSatisfy { $0.account.map(isWash) ?? false }
         }
 
         // Each existing split (or pending wash leg) matches at most one row —
