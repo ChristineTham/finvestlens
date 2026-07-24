@@ -2,10 +2,21 @@
 
 | | |
 |---|---|
-| **Document status** | Draft v0.1 |
-| **Last updated** | 2026-07-12 |
+| **Document status** | v1.0 — evaluation stands; delivery status below |
+| **Last updated** | 2026-07-24 |
 | **Purpose** | Evaluate Firefly III features and decide which should enhance FinvestLens |
 | **Companions** | [PRD](prd.md) · [Architecture](architecture.md) · [Money study](enhancements-msmoney.md) |
+
+> **Delivery status (24 Jul 2026).** The rules engine (groups, triggers,
+> actions incl. allocate-to-goal, apply-to-history with preview), tags,
+> piggy banks (savings goals — the Jul 2026 redesign also surfaces the
+> earmarked total and what it leaves unallocated on the dashboard Goals
+> card), the operator search language, bill matching, and auto-budgets have
+> all shipped (P2–P5). **Saved searches** now live as suggestions inside the
+> search field rather than a toolbar menu (Jul 2026 redesign). The remaining
+> rule-action tail (convert-type, link-to-bill) is in
+> [deferred.md](deferred.md); modern **bank sync** (SimpleFIN / GoCardless)
+> remains **P8**.
 | **Upstream** | [docs.firefly-iii.org](https://docs.firefly-iii.org) · [github.com/firefly-iii/firefly-iii](https://github.com/firefly-iii/firefly-iii) |
 
 ## Why look at Firefly III

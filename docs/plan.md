@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Document status** | **Phases P0–P7 complete** (v1.0 was P0–P6, 13 July 2026; P7 business features since). P8–P9 remain. |
-| **Last updated** | 2026-07-18 |
+| **Document status** | **Phases P0–P7 complete** (v1.0 was P0–P6, 13 July 2026; P7 business features since), **plus the Jul 2026 usability & performance redesign**. P8–P9 remain. |
+| **Last updated** | 2026-07-24 |
 | **Scope** | The build plan: phases, workstreams, tasks, dependencies, and exit criteria |
 | **Companions** | [PRD](prd.md) · [Architecture](architecture.md) · [Porting Strategy](porting.md) · [Implemented](implemented.md) · [Deferred backlog](deferred.md) · [Money study](enhancements-msmoney.md) · [Firefly study](enhancements-firefly.md) · [Frollo study](enhancements-frollo.md) |
 
@@ -21,6 +21,7 @@ This is the authoritative **delivery schedule and status record**. It sequences 
 | **P5 — Investments & multi-currency** | ✅ Complete | Investment reports GnuCash-verified to the cent. |
 | **P6 — Sync, dashboard, alerts & polish** | ✅ Complete | Plus the post-1.0 **Apple Intelligence** layer (FR-AI-01…08). |
 | **P7 — Business features** | ✅ Complete | Engine + persistence + XML round-trip + UI. |
+| **Usability & performance redesign** | ✅ Complete (24 Jul 2026) | A post-P7 pass over the P2/P4/P6 surfaces, driven by four audits ([usability-review.md](usability-review.md), [performance-review.md](performance-review.md)): one expandable register, plain language, the non-scrolling tile-board dashboard, auto-clear-first reconcile, one-click prices (⌘⇧U), a single status overlay, session restoration, memoised async reports, and the EOFY Financial Year Pack. Narrative in [implemented.md](implemented.md). |
 | **P8 — Extended import & bank sync** | ⬜ Not started | |
 | **P9 — Planning & insights** | ⬜ Not started | |
 
@@ -65,7 +66,7 @@ Dependencies point downward only; `Engine` builds/tests with nothing above it (`
 | **Testing & CI** | Swift Testing; CI runs unit + round-trip + perf on each PR; coverage tracked | P0 |
 | **Fixture corpus** | Curated `.gnucash` files (small→large, personal/business, multi-currency, investments) under `Tests/Fixtures`; a synthetic 100k-txn generator | P1 |
 | **Design system** | SwiftUI component kit, dark/light, Dynamic Type; charts per the [dataviz](enhancements-firefly.md) standards | P2 |
-| **Performance harness** | Open/scroll/import/save benchmarks vs NFR-02; NAS write-back tests | P1 |
+| **Performance harness** | Open/scroll/import/save benchmarks vs NFR-02; NAS write-back tests. *An `os_signpost` + DEBUG over-budget harness (`Perf`) now wraps the hot paths (Jul 2026).* | P1 |
 | **Accessibility & localization** | VoiceOver, Dynamic Type, locale-aware formatting; string catalogs | P2 (audit in P6) |
 | **Security** | Keychain for API keys; optional Face/Touch ID to open a book | P5 (keys), P6 (lock) |
 
@@ -120,7 +121,7 @@ Dependencies point downward only; `Engine` builds/tests with nothing above it (`
 **Workstreams & tasks**
 - **App shell:** SwiftUI document app; `NavigationSplitView` (macOS/iPad) / stacks (iOS); open/save/recent UI; macOS menu-bar mapping. *(FR-PLT-01, Architecture §8)*
 - **Chart of accounts:** hierarchical tree + balances; create/edit/reparent/hide/delete with guards; placeholder/hidden; codes + renumber. *(FR-COA-01..06)*
-- **Register/ledger:** basic/auto-split/journal styles; simple + multi-split entry with live balancing; transfer/duplicate/delete/void; inline reconcile-state; reversing/jump/copy/remove-splits; general ledger view. *(FR-REG-01..09)*
+- **Register/ledger:** simple + multi-split entry with live balancing; transfer/duplicate/delete/void; inline reconcile-state; reversing/jump/copy/remove-splits; whole-book journal view. *(FR-REG-01..09.)* *Built with GnuCash's three view styles; the Jul 2026 redesign replaced them with **one expandable register** + a Show All Splits option (PRD FR-REG-03), and the whole-book journal ships as **All Transactions**.*
 - **QuickFill** autofill (payee/description/last-split). *(FR-REG-04)*
 - **Find/search (basic)** via GRDB predicates. *(FR-REG-06 — upgraded in P4)*
 - **Tags (model + minimal UI).** *(FR-TAG-01, early)*
@@ -210,7 +211,7 @@ Dependencies point downward only; `Engine` builds/tests with nothing above it (`
 - ✅ **File-level sync:** `NSFilePresenter` external-change handling + a reload banner; `NSFileVersion` conflict listing/resolution; reuses the P1 SHA256 fingerprint. Storage-agnostic (local / network share / iCloud). ⏸️ Enabling an **iCloud Documents container** is a project-capability step (dev team/provisioning). *(FR-PLT-02)*
 - ✅ **App Intents / Shortcuts:** Net Worth, Upcoming Bills, Financial Alerts intents + `AppShortcutsProvider` (Siri/Spotlight/Shortcuts). ⏸️ **Widgets / Quick Look** need separate extension targets — deferred (project-target work, untestable headlessly). *(FR-PLT-03)*
 - ✅ **Alerts engine (Advisor-FYI):** bill-due, projected low/negative balance, over-budget, price-target; severity-ranked; KVP-persisted price targets. Surfaced on the dashboard and via the Alerts intent. ⏸️ System notifications deferred (needs UNUserNotificationCenter + entitlement). *(FR-PLAN-05)*
-- ✅ **Home dashboard:** net-worth headline + 12-month trend, alerts, account balances, upcoming bills, budget status. *(FR-PLAN-08)*
+- ✅ **Home dashboard:** net-worth headline + 12-month trend, alerts, account balances, upcoming bills, budget status. *(FR-PLAN-08.)* *Reworked by the Jul 2026 redesign into a **non-scrolling tile board** — prioritised, content-aware cards packed into the actual window, per-user show/hide, and an Up Next action card.*
 - ✅ **Accessibility pass:** VoiceOver labels/values on account rows, dashboard, alerts and every chart. ⏸️ **Localization** (string catalogs) deferred. *(NFR-05/06)*
 - ✅ **Optional book lock** (Face/Touch ID via injectable `Authenticating`; Security menu; lock screen). *(NFR-07)*
 

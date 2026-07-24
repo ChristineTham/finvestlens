@@ -2,10 +2,21 @@
 
 | | |
 |---|---|
-| **Document status** | Draft v0.1 |
-| **Last updated** | 2026-07-12 |
+| **Document status** | v1.0 — evaluation stands; delivery status below |
+| **Last updated** | 2026-07-24 |
 | **Purpose** | Evaluate Microsoft Money Plus features and decide which should enhance FinvestLens beyond GnuCash parity |
 | **Companions** | [PRD](prd.md) · [Architecture](architecture.md) |
+
+> **Delivery status (24 Jul 2026).** Everything in *Adopt now* has shipped
+> across P4–P7 (alerts, forecast + what-if, bill reminders/calendar/matching,
+> budget rollover + auto-budgets, payee rules via the rules engine, portfolio
+> watch lists / allocation / rate of return, onboarding, time & mileage).
+> The **home dashboard** shipped in P6 and was then reworked by the Jul 2026
+> usability redesign into a **non-scrolling, prioritised tile board** with
+> per-user show/hide and an **Up Next** action card — see
+> [implemented.md](implemented.md). *Adopt later* (Debt Reduction Planner,
+> Lifetime Planner, tax estimator, insights/comparison reports) remains
+> **P9**, not started.
 
 ## Why look at Money
 

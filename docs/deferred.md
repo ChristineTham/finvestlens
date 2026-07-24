@@ -43,7 +43,7 @@ larger-than-a-fix or needing infrastructure that isn't built yet.
 
 | Item | FR / Phase | Notes |
 |---|---|---|
-| Load-time warning for non-canonical persisted data | NFR-05 / P1 | The SQLite load path defaults silently on unparseable data it never itself writes (`parseDecimal`→0, `parseKvp`→empty frame, `decodeAddress`→empty, GUID parse→random). Kept as resilience (open-what-you-can) — throwing would turn recoverable corruption into "can't open your book". The right fix is a **load-time warning channel** so these are surfaced rather than silent; that channel doesn't exist yet. |
+| Load-time warning for non-canonical persisted data | NFR-05 / P1 | The SQLite load path defaults silently on unparseable data it never itself writes (`parseDecimal`→0, `parseKvp`→empty frame, `decodeAddress`→empty, GUID parse→random). Kept as resilience (open-what-you-can) — throwing would turn recoverable corruption into "can't open your book". The **warning channel now exists** — the Jul 2026 redesign's status overlay / toast layer (`AppModel.showToast`); what remains is wiring the load path's silent defaults into it. |
 | GnuCash-XML round-trip fidelity tail | FR-XIO-01 / P7 | Two minor slots don't round-trip: an invoice entry's `entry:entered` timestamp is re-derived from `entry:date` (needs a separate `entered` field on `InvoiceEntry`), and a KVP `timespec` slot at exactly midnight re-exports as `gdate` (the `KvpValue` model maps both date types to one case). Negligible data impact; each needs a model change. |
 
 ## 3 — Apple Intelligence import caveats (monitor)
@@ -62,7 +62,7 @@ Quality limits of the on-device import layer (PRD §5.18), caught by the review 
 |---|---|
 | App Sandbox | Disabled by decision: sibling `.lock` files at user-selected locations are denied by the sandbox; related-item declaration + coordinated I/O are in place but macOS still refused. Direct (notarized) distribution doesn't need it. Revisit before any Mac App Store submission. |
 | iOS move/rename flow for new books | New books land in the app's Documents directory with safe naming; an in-app move/rename flow is todo. |
-| Esc inside a focused text field | AppKit's field editor consumes the raw Escape (completion); ⌘. always cancels, Esc works otherwise. SwiftUI offers no clean override (accepted). |
+| Esc inside a focused text field | AppKit's field editor consumes the raw Escape (completion); ⌘. always cancels, Esc works otherwise. SwiftUI offers no clean override (accepted). *The Jul 2026 F19 sweep put `onEscapeCommand` on every sheet — this field-editor caveat is the one remaining Esc limit.* |
 
 ---
 
@@ -81,10 +81,19 @@ Not open work — recorded so they aren't re-raised as bugs. Detail in
   GnuCash's money-in/out model washes them out (~$34k realised across ~6
   accounts). Matching would mean adopting GnuCash's money-flow model, which is
   arguably *not* more correct — kept per-parcel by decision.
-- **`rebuildAccountTree` subtree-only rebuild** (NFR-02) — the ~0.04s of a
-  refresh spent on a full-tree rebuild is fast enough to feel instant; a
-  subtree-only rebuild is a micro-optimization to do only if a future profile
-  ever shows it matters.
+- **`rebuildAccountTree` subtree-only rebuild / incremental journal rebuild**
+  (NFR-02) — the ~0.04s of a refresh spent on a full-tree rebuild is fast
+  enough to feel instant; subtree-only and incremental-journal rebuilds are
+  micro-optimizations to do only if a profile shows they matter. The Jul 2026
+  `Perf` signpost harness now watches exactly these paths, so the trigger is
+  a measured number, not a hunch.
+- **Report computation stays on the main actor** (Jul 2026 redesign) — heavy
+  reports are memoised per (parameters, revision) and build behind a
+  placeholder after first paint, but the build runs on the main actor: the
+  engine `Book` is a non-`Sendable` object graph, and a background read would
+  race main-actor edits. Going further needs a book **read-gate** (writers
+  wait on in-flight readers) — deliberately deferred until the memoised
+  first-build is shown too slow in practice (Architecture §10).
 - **Local-time date bucketing** (production review, 2026-07-19) — reports and the
   register bucket dates with `Calendar.current` throughout, an internally
   consistent local-time convention. GnuCash files store dates in UTC, so an

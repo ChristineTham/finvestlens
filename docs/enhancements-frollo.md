@@ -2,10 +2,20 @@
 
 | | |
 |---|---|
-| **Document status** | Draft v0.1 |
-| **Last updated** | 2026-07-12 |
+| **Document status** | v1.0 — evaluation stands; delivery status below |
+| **Last updated** | 2026-07-24 |
 | **Purpose** | Evaluate Frollo's app features and decide which should enhance FinvestLens |
 | **Companions** | [PRD](prd.md) · [Architecture](architecture.md) · [Money study](enhancements-msmoney.md) · [Firefly study](enhancements-firefly.md) |
+
+> **Delivery status (24 Jul 2026).** The default category taxonomy +
+> heuristic auto-categorisation shipped in P4 and is exceeded by the
+> on-device Apple Intelligence layer (PDF import, per-line invoice
+> categorisation, attachment matching). **Open Banking via CDR** remains
+> **P8**; savings challenges, the financial wellbeing score, and the
+> Financial Passport remain **P9**. (The Jul 2026 EOFY **Financial Year
+> Pack** — one-PDF P&L / balance sheet / capital gains / dividends &
+> franking — is a first step toward the passport idea; see
+> [implemented.md](implemented.md).)
 | **Upstream** | [frollo.com.au/frollo-app](https://frollo.com.au/frollo-app/) |
 
 ## Why look at Frollo
