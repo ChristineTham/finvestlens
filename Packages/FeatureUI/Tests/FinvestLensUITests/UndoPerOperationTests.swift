@@ -471,7 +471,7 @@ struct UndoActionNameTests {
 
         f.model.applyCleanup()
         #expect(book.transactions.isEmpty)
-        #expect(f.undo.undoActionName == "Check & Repair")
+        #expect(f.undo.undoActionName == "Repair Book")
 
         // One undo brings all three back.
         f.undo.undo()

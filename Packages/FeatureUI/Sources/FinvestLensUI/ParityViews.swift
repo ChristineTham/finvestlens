@@ -243,13 +243,13 @@ struct CloseBookView: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Close Book")
+            .navigationTitle("Close Financial Year")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Close Book") {
+                    Button("Close Financial Year") {
                         if let equityID { posted = model.closeBook(asOf: date, equityID: equityID,
                                                                    description: description) }
                     }

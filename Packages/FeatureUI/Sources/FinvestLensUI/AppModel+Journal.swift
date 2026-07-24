@@ -119,18 +119,6 @@ public struct AutoSplitRow: Identifiable, Hashable, Sendable {
     public var amount: Decimal { main?.amount ?? legAmount }
 }
 
-/// How the register presents transactions (`FR-REG-01`) — GnuCash's three
-/// styles. The General Ledger (the whole book in journal form) is a sidebar
-/// destination, as it is a separate tool in GnuCash, not a register style.
-public enum RegisterStyle: String, CaseIterable, Identifiable, Sendable {
-    case basic = "Basic"
-    /// GnuCash's Auto-Split Ledger: one line per transaction, and the selected
-    /// one opened out into its legs.
-    case autoSplit = "Auto-Split"
-    case journal = "Journal"
-    public var id: String { rawValue }
-}
-
 @MainActor
 extension AppModel {
 
@@ -206,14 +194,46 @@ extension AppModel {
     /// one split of the expanded transaction. Legs posting to accounts already
     /// shown as main rows are skipped — they are on screen, and a split GUID
     /// can only appear once in the table.
-    public func autoSplitRows(expanding transactionID: GncGUID?) -> [AutoSplitRow] {
-        cachedAutoSplitRows(expanding: transactionID) {
+    public func autoSplitRows(expanding transactionID: GncGUID?,
+                              expandAll: Bool = false) -> [AutoSplitRow] {
+        cachedAutoSplitRows(expanding: transactionID, all: expandAll) {
             let rows = registerRows
+            let mainIDs = Set(rows.map(\.id))
+
+            func legs(of txn: Transaction) -> [AutoSplitRow] {
+                txn.splits.compactMap { split in
+                    guard !mainIDs.contains(split.guid) else { return nil }
+                    return AutoSplitRow(
+                        legID: split.guid,
+                        account: split.account?.fullName ?? "—",
+                        memo: split.memo,
+                        action: split.action,
+                        reconcile: split.reconcileState.rawValue,
+                        amount: split.value,
+                        currencyCode: txn.currency.mnemonic)
+                }
+            }
+
+            // Show All Splits: every transaction opened out, once — the
+            // journal read, in the same table. A transaction with several
+            // focus legs (a subtree register) expands under its first row.
+            if expandAll, let book {
+                var expanded = Set<GncGUID>()
+                var out: [AutoSplitRow] = []
+                out.reserveCapacity(rows.count * 3)
+                for row in rows {
+                    out.append(AutoSplitRow(main: row))
+                    guard let txn = book.split(with: row.id)?.transaction,
+                          expanded.insert(txn.guid).inserted else { continue }
+                    out.append(contentsOf: legs(of: txn))
+                }
+                return out
+            }
+
             guard let transactionID, let txn = book?.transaction(with: transactionID) else {
                 return rows.map(AutoSplitRow.init(main:))
             }
             let expandedIDs = Set(txn.splits.map(\.guid))
-            let mainIDs = Set(rows.map(\.id))
             var out: [AutoSplitRow] = []
             out.reserveCapacity(rows.count + txn.splits.count)
             var inserted = false
@@ -221,16 +241,7 @@ extension AppModel {
                 out.append(AutoSplitRow(main: row))
                 if !inserted, expandedIDs.contains(row.id) {
                     inserted = true
-                    for split in txn.splits where !mainIDs.contains(split.guid) {
-                        out.append(AutoSplitRow(
-                            legID: split.guid,
-                            account: split.account?.fullName ?? "—",
-                            memo: split.memo,
-                            action: split.action,
-                            reconcile: split.reconcileState.rawValue,
-                            amount: split.value,
-                            currencyCode: txn.currency.mnemonic))
-                    }
+                    out.append(contentsOf: legs(of: txn))
                 }
             }
             return out

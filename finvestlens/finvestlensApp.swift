@@ -86,7 +86,7 @@ struct finvestlensApp: App {
             // File ▸ New/Open/Open Recent (replaces the stock New Window item).
             CommandGroup(replacing: .newItem) {
                 Button("New Book…") { DocumentDialogs.newBook(model) }
-                    .keyboardShortcut("n", modifiers: .command)
+                    .keyboardShortcut("n", modifiers: [.command, .option])
                 Button("Open…") { Task { await DocumentDialogs.openBook(model) } }
                     .keyboardShortcut("o", modifiers: .command)
                 Menu("Open Recent") {
@@ -160,11 +160,16 @@ struct finvestlensApp: App {
             // Book: every tool panel, so all functionality is reachable (and
             // discoverable, with shortcuts) from the menu bar.
             CommandMenu("Book") {
-                Button("New Transaction…") { model.presentedPanel = .newTransaction }
-                    .keyboardShortcut("t", modifiers: .command)
+                // ⌘N adds a transaction where you are — the register's entry
+                // bar when one is showing, the editor otherwise. ⇧⌘N always
+                // opens the full split editor (RD4).
+                Button("New Transaction") { model.requestQuickEntry() }
+                    .keyboardShortcut("n", modifiers: .command)
+                    .disabled(!model.isOpen || model.postableAccounts.count < 2)
+                Button("New Transaction (All Fields)…") { model.presentedPanel = .newTransaction }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
                     .disabled(!model.isOpen || model.postableAccounts.count < 2)
                 Button("New Account…") { model.presentedPanel = .newAccount }
-                    .keyboardShortcut("n", modifiers: [.command, .shift])
                     .disabled(!model.isOpen)
                 Button("Stock Transaction…") { model.presentedPanel = .stockTransaction }
                     .disabled(!model.isOpen || model.securityAccountNodes.isEmpty)
@@ -219,9 +224,9 @@ struct finvestlensApp: App {
                     .disabled(!model.isOpen)
                 Button("Loan Calculator…") { model.presentedPanel = .loanCalculator }
                     .disabled(!model.isOpen)
-                Button("Check & Repair…") { model.checkAndRepair() }
+                Button("Repair Book…") { model.checkAndRepair() }
                     .disabled(!model.isOpen)
-                Button("Period-End Close…") { model.presentedPanel = .closeBook }
+                Button("Close Financial Year…") { model.presentedPanel = .closeBook }
                     .disabled(!model.isOpen)
                 Divider()
                 // Apple Intelligence features — disabled (with the reason as

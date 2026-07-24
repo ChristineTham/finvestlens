@@ -53,10 +53,24 @@ struct AutoSplitLedgerTests {
         return Fixture(model: model, url: url, bank: bank, simple: simple, multi: multi)
     }
 
-    @Test("Auto-Split is a register style of its own")
-    func styleExists() {
-        #expect(RegisterStyle.allCases.contains(.autoSplit))
-        #expect(RegisterStyle.autoSplit.rawValue == "Auto-Split")
+    /// RD1's Show All Splits: every transaction opened out at once — the
+    /// journal read in the same table. Legs on screen as main rows are not
+    /// repeated, and each transaction expands exactly once.
+    @Test("Show All Splits opens every transaction out")
+    func expandAll() throws {
+        let f = try makeFixture()
+        defer { f.model.close(); try? FileManager.default.removeItem(at: f.url) }
+        f.model.selectedAccountID = f.bank
+        let rows = f.model.autoSplitRows(expanding: nil, expandAll: true)
+        // Two main rows + one counter-leg (Lunch) + three counter-legs (Shop).
+        #expect(rows.count == 6)
+        #expect(rows.filter { $0.main != nil }.count == 2)
+        #expect(rows.filter { $0.main == nil }.count == 4)
+        // Order: each transaction's legs directly follow its row.
+        #expect(rows[0].main?.description == "Lunch")
+        #expect(rows[1].main == nil)
+        #expect(rows[2].main?.description == "Shop")
+        #expect(rows[3].main == nil)
     }
 
     /// With nothing selected it is one line per transaction — Basic's shape.

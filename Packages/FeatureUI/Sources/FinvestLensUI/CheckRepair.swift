@@ -68,7 +68,7 @@ extension AppModel {
         // a single action however many transactions they touched — and because
         // the scrub also files orphans under new accounts.
         var cleaned: Scrub.CleanupSummary?
-        editingWholeBook(named: "Check & Repair") {
+        editingWholeBook(named: "Repair Book") {
             cleaned = Scrub.clean(book)
         }
         guard let summary = cleaned else { return }
@@ -194,11 +194,11 @@ public struct CheckRepairSheet: View {
                 Section {
                     EmptyView()
                 } footer: {
-                    Text("The same repairs as GnuCash’s Check & Repair. Nothing changes unless you choose Clean Up — you can also run this later from Book ▸ Check & Repair.")
+                    Text("The same repairs as GnuCash’s Check & Repair. Nothing changes unless you choose Clean Up — you can also run this later from Book ▸ Repair Book.")
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Check & Repair")
+            .navigationTitle("Repair Book")
             .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

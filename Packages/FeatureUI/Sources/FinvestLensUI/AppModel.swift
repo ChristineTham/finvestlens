@@ -334,6 +334,19 @@ public final class AppModel {
         set { sidebarSelection = newValue.map(SidebarSelection.account) ?? .dashboard }
     }
 
+    /// Bumped by New Transaction (⌘N) while a register is showing; the entry
+    /// bar focuses its description field in response (RD4: entry without
+    /// ceremony). When no register is on screen the full editor opens instead.
+    public private(set) var entryBarFocusRequest = 0
+
+    public func requestQuickEntry() {
+        if selectedAccountID != nil, !registerIncludesSubaccounts {
+            entryBarFocusRequest &+= 1
+        } else {
+            presentedPanel = .newTransaction
+        }
+    }
+
     /// Navigates the sidebar to `selection` (closing any open modal panel and
     /// leaving search) — how menu-bar and toolbar commands open an app area now
     /// that these are inline destinations rather than sheets.
@@ -1843,13 +1856,15 @@ public final class AppModel {
     /// handing SwiftUI a brand-new array to diff, is what made the register
     /// feel sluggish. Returning the identical array instance lets the diff
     /// short-circuit. Dropped whenever the register rows are rebuilt.
-    @ObservationIgnored private var autoSplitRowsCache: (key: GncGUID?, rows: [AutoSplitRow])?
+    @ObservationIgnored private var autoSplitRowsCache: (key: GncGUID?, all: Bool, rows: [AutoSplitRow])?
 
-    func cachedAutoSplitRows(expanding key: GncGUID?,
+    func cachedAutoSplitRows(expanding key: GncGUID?, all: Bool,
                              build: () -> [AutoSplitRow]) -> [AutoSplitRow] {
-        if let cached = autoSplitRowsCache, cached.key == key { return cached.rows }
+        if let cached = autoSplitRowsCache, cached.key == key, cached.all == all {
+            return cached.rows
+        }
         let rows = build()
-        autoSplitRowsCache = (key, rows)
+        autoSplitRowsCache = (key, all, rows)
         return rows
     }
 

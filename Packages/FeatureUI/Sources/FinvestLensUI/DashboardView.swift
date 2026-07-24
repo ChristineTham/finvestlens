@@ -11,6 +11,88 @@ import Charts
 import FinvestLensEngine
 import FinvestLensReports
 
+/// What the Up-next card offers (redesign 6.3): the journey's next verbs,
+/// each present only when live state says it is actually due.
+struct UpNextState {
+    /// Days since the newest security price, when the book holds securities
+    /// and the newest price is stale (≥ 2 days old).
+    var priceAgeDays: Int?
+    /// Postings sitting in Imbalance/Orphan accounts.
+    var uncategorisedCount: Int = 0
+    /// The account that has gone longest without reconciling (≥ 30 days),
+    /// among accounts that have been reconciled before.
+    var staleReconcileID: GncGUID?
+    var staleReconcileName: String = ""
+    var staleReconcileDays: Int = 0
+    /// True when no bank/card account has a posting this calendar month —
+    /// the monthly statement import hasn't happened yet.
+    var quietImportMonth = false
+
+    var isEmpty: Bool {
+        priceAgeDays == nil && uncategorisedCount == 0
+            && staleReconcileID == nil && !quietImportMonth
+    }
+}
+
+@MainActor
+extension AppModel {
+    /// One pass over the book per (revision, day) — the dashboard body asks
+    /// on every pass.
+    var upNextState: UpNextState? {
+        let today = Calendar.current.startOfDay(for: Date())
+        return cachedReport("upNext:\(today.timeIntervalSince1970)") {
+            guard let book else { return UpNextState?.none }
+            var state = UpNextState()
+
+            // Prices: only meaningful when the book holds securities.
+            let hasSecurities = book.accounts.contains {
+                $0.commodity.namespace != .currency && !$0.isPlaceholder
+            }
+            if hasSecurities {
+                let newest = book.prices.lazy
+                    .filter { $0.commodity.namespace != .currency }
+                    .map(\.date).max()
+                let days = newest.map {
+                    Calendar.current.dateComponents([.day], from: $0, to: today).day ?? 0
+                } ?? Int.max
+                if days >= 2 { state.priceAgeDays = days == Int.max ? nil : days }
+                if newest == nil { state.priceAgeDays = nil }
+            }
+
+            state.uncategorisedCount = uncategorizedItems().count
+
+            // Reconcile staleness and this month's import, in one book walk.
+            let cashTypes: Set<AccountType> = [.bank, .credit]
+            let monthStart = Calendar.current.dateInterval(of: .month, for: today)?.start ?? today
+            var lastReconciled: [GncGUID: (name: String, date: Date)] = [:]
+            var postedThisMonth = false
+            for txn in book.transactions {
+                for split in txn.splits {
+                    guard let account = split.account, cashTypes.contains(account.type) else { continue }
+                    if txn.datePosted >= monthStart, txn.datePosted <= today.addingTimeInterval(86_400) {
+                        postedThisMonth = true
+                    }
+                    if split.reconcileState == .reconciled, let date = split.reconcileDate {
+                        let prior = lastReconciled[account.guid]?.date ?? .distantPast
+                        if date > prior { lastReconciled[account.guid] = (account.name, date) }
+                    }
+                }
+            }
+            if let stalest = lastReconciled.min(by: { $0.value.date < $1.value.date }) {
+                let days = Calendar.current.dateComponents(
+                    [.day], from: stalest.value.date, to: today).day ?? 0
+                if days >= 30 {
+                    state.staleReconcileID = stalest.key
+                    state.staleReconcileName = stalest.value.name
+                    state.staleReconcileDays = days
+                }
+            }
+            state.quietImportMonth = !postedThisMonth && !book.transactions.isEmpty
+            return state
+        }
+    }
+}
+
 /// The home dashboard: a responsive masonry of prioritised panels that fills the
 /// available width, all driven by one timescale selector (`FR-PLAN-08`). Narrow
 /// windows show the essentials; wider ones reveal more panels down the priority
@@ -18,6 +100,9 @@ import FinvestLensReports
 struct DashboardView: View {
     @Environment(\.appDateFormat) private var dateFormat
     @Bindable var model: AppModel
+    #if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+    #endif
 
     /// The timescale that drives every panel. This financial year by default.
     @State private var period: ReportPeriod = .currentFinancialYear
@@ -37,13 +122,14 @@ struct DashboardView: View {
     }
 
     private enum Panel: Hashable {
+        case upNext
         case netWorth, income, expenses, cashflow, savingsRate, allocation, performance
         case spendingTrend, topMovers, goals, recentActivity, composition
         case alerts, bills, accounts
 
         var minColumns: Int {
             switch self {
-            case .netWorth, .income, .expenses, .cashflow, .savingsRate, .alerts: 1
+            case .upNext, .netWorth, .income, .expenses, .cashflow, .savingsRate, .alerts: 1
             case .allocation, .performance, .spendingTrend, .topMovers, .goals, .recentActivity, .bills: 2
             case .composition, .accounts: 3
             }
@@ -60,6 +146,9 @@ struct DashboardView: View {
                     .padding(20)
                     .frame(maxWidth: .infinity, alignment: .top)
             }
+            // A card at the fold fades softly instead of being sliced dead by
+            // the window edge (F8) — the cue that more is below.
+            .scrollEdgeEffectStyle(.soft, for: .bottom)
         }
         .navigationTitle("Dashboard")
         .toolbar {
@@ -76,12 +165,13 @@ struct DashboardView: View {
 
     private func panels(columns: Int, portfolio: Portfolio?) -> [Panel] {
         let hasInvestments = !(portfolio?.holdings.isEmpty ?? true)
-        let all: [Panel] = [.netWorth, .income, .expenses, .cashflow, .savingsRate,
+        let all: [Panel] = [.upNext, .netWorth, .income, .expenses, .cashflow, .savingsRate,
                             .allocation, .performance, .spendingTrend, .topMovers,
                             .goals, .recentActivity, .composition, .alerts, .bills, .accounts]
         return all.filter { panel in
             guard panel.minColumns <= columns else { return false }
             switch panel {
+            case .upNext: return !(model.upNextState?.isEmpty ?? true)
             case .allocation, .performance: return hasInvestments
             case .goals: return !model.savingsGoals.isEmpty
             default: return true
@@ -107,6 +197,7 @@ struct DashboardView: View {
     @ViewBuilder
     private func view(for panel: Panel, range: (from: Date, to: Date), portfolio: Portfolio?) -> some View {
         switch panel {
+        case .upNext: upNextCard
         case .netWorth: netWorthCard(asOf: min(range.to, todayCap))
         case .income: incomeCard(range)
         case .expenses: expensesCard(range)
@@ -122,6 +213,58 @@ struct DashboardView: View {
         case .alerts: alertsCard
         case .bills: billsCard
         case .accounts: accountsCard
+        }
+    }
+
+    // MARK: Up next
+
+    /// The glance that leads to action (F9): each row is a journey verb with
+    /// its button, present only while it is actually due.
+    private var upNextCard: some View {
+        Card("Up Next", systemImage: "checklist") {
+            if let state = model.upNextState {
+                VStack(alignment: .leading, spacing: 10) {
+                    if let days = state.priceAgeDays {
+                        upNextRow("clock.arrow.circlepath",
+                                  "Prices updated \(days) day\(days == 1 ? "" : "s") ago",
+                                  button: "Update Prices") { model.show(.prices) }
+                    }
+                    if state.uncategorisedCount > 0 {
+                        upNextRow("sparkles",
+                                  "\(state.uncategorisedCount) uncategorised transaction\(state.uncategorisedCount == 1 ? "" : "s")",
+                                  button: "Categorise…") { model.presentedPanel = .autoCategorize }
+                    }
+                    if let id = state.staleReconcileID {
+                        upNextRow("checkmark.seal",
+                                  "\(state.staleReconcileName) last reconciled \(state.staleReconcileDays) days ago",
+                                  button: "Reconcile") {
+                            model.selectedAccountID = id
+                            #if os(macOS)
+                            openWindow(id: "reconcile", value: id)
+                            #else
+                            model.presentedPanel = .reconcile
+                            #endif
+                        }
+                    }
+                    if state.quietImportMonth {
+                        upNextRow("square.and.arrow.down",
+                                  "Import this month’s statements",
+                                  button: "Import…") { model.bankImportRequested = true }
+                    }
+                }
+            }
+        }
+    }
+
+    private func upNextRow(_ systemImage: String, _ text: String,
+                           button: String, action: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Label(text, systemImage: systemImage)
+                .scaledFont(.callout)
+                .lineLimit(2)
+            Spacer(minLength: 12)
+            Button(button, action: action)
+                .controlSize(.small)
         }
     }
 

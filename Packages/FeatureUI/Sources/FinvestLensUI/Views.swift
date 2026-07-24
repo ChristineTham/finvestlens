@@ -286,6 +286,26 @@ public struct FinvestLensRootView: View {
             detailPane
         }
         .searchable(text: $model.searchQuery, prompt: "Search transactions")
+        .searchSuggestions {
+            let trimmed = model.searchQuery.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                ForEach(model.savedSearches) { search in
+                    Label(search.name, systemImage: "bookmark")
+                        .searchCompletion(search.query)
+                        .contextMenu {
+                            Button("Delete Saved Search", role: .destructive) {
+                                model.deleteSavedSearch(search.id)
+                            }
+                        }
+                }
+            } else {
+                Button {
+                    model.presentedPanel = .saveSearch
+                } label: {
+                    Label("Save This Search…", systemImage: "bookmark.badge.plus")
+                }
+            }
+        }
         .safeAreaInset(edge: .top) {
             if model.externalChangePending {
                 ExternalChangeBanner(model: model)
@@ -294,8 +314,9 @@ public struct FinvestLensRootView: View {
         .toolbar {
             // Primary create actions (the rest live in the menu bar). Areas
             // (Dashboard, Reports, Budgets, …) are now in the sidebar, so they
-            // no longer need toolbar buttons.
-            ToolbarItemGroup {
+            // no longer need toolbar buttons. Pinned leading (redesign 6.1):
+            // `[+ New ▾] [⬇ Import ▾] … [Search]` — never behind ».
+            ToolbarItemGroup(placement: .navigation) {
                 Menu {
                     Button("New Transaction…", systemImage: "plus.circle") {
                         model.presentedPanel = .newTransaction
@@ -317,18 +338,6 @@ public struct FinvestLensRootView: View {
                     Label("New", systemImage: "plus")
                 }
                 .help("Create a transaction or account")
-                Button("Reconcile", systemImage: "checkmark.seal") {
-                    #if os(macOS)
-                    if let id = model.selectedAccountID { openWindow(id: "reconcile", value: id) }
-                    #else
-                    model.presentedPanel = .reconcile
-                    #endif
-                }
-                .help("Reconcile the selected account against a statement")
-                .disabled(model.selectedAccountID == nil)
-            }
-            ToolbarSpacer(.fixed)
-            ToolbarItemGroup {
                 Menu {
                     Button("Import Bank File…", systemImage: "square.and.arrow.down.on.square") {
                         model.bankImportRequested = true
@@ -355,24 +364,6 @@ public struct FinvestLensRootView: View {
                     Label("Import", systemImage: "square.and.arrow.down")
                 }
                 .help("Import a bank file, read PDFs, or auto-categorise")
-                Menu {
-                    if model.savedSearches.isEmpty {
-                        Text("No saved searches")
-                    } else {
-                        ForEach(model.savedSearches) { search in
-                            Menu(search.name) {
-                                Button("Apply") { model.applySavedSearch(search.id) }
-                                Button("Delete", role: .destructive) { model.deleteSavedSearch(search.id) }
-                            }
-                        }
-                    }
-                    Divider()
-                    Button("Save Current Search…") { model.presentedPanel = .saveSearch }
-                        .disabled(model.searchQuery.trimmingCharacters(in: .whitespaces).isEmpty)
-                } label: {
-                    Label("Saved Searches", systemImage: "bookmark")
-                }
-                .help("Saved searches")
             }
         }
         // Editing a transaction happens in a trailing inspector, not a modal, so
@@ -708,7 +699,7 @@ struct CascadeAccountSheet: View {
                         .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                     Toggle("Colour", isOn: $options.color)
-                    Toggle("Placeholder", isOn: $options.isPlaceholder)
+                    Toggle("Group", isOn: $options.isPlaceholder)
                     Toggle("Hidden", isOn: $options.isHidden)
                 }
             }
@@ -909,7 +900,7 @@ struct AccountsSidebar: View {
                 Section {
                     Label("Dashboard", systemImage: "square.grid.2x2").tag(SidebarSelection.dashboard)
                     Label("Reports", systemImage: "chart.pie").tag(SidebarSelection.reports)
-                    Label("General Ledger", systemImage: "text.book.closed").tag(SidebarSelection.generalLedger)
+                    Label("All Transactions", systemImage: "text.book.closed").tag(SidebarSelection.generalLedger)
                 }
                 Section("Planning") {
                     Label("Budgets", systemImage: "chart.bar.doc.horizontal").tag(SidebarSelection.budgets)
@@ -1139,8 +1130,6 @@ struct RegisterView: View {
     @Environment(\.appFontScale) private var appFontScale
     @Bindable var model: AppModel
     @State private var selection: Set<GncGUID> = []
-    @State private var editingTransactionID: GncGUID?
-    @State private var style: RegisterStyle = .basic
     @State private var filterShown = false
     @State private var goToDateShown = false
     /// The register's current width, for folding side columns on narrow windows.
@@ -1149,9 +1138,15 @@ struct RegisterView: View {
     private func select(_ rowID: GncGUID) {
         if selection != [rowID] { selection = [rowID] }
     }
-    /// GnuCash's View ▸ Double Line. A preference rather than per-register
-    /// state, as in GnuCash, so it survives moving between accounts.
+    /// GnuCash's View ▸ Double Line, renamed Show Details. A preference
+    /// rather than per-register state, so it survives moving between accounts.
     @AppStorage("registerDoubleLine") private var doubleLine = false
+    /// Every transaction opened out into its legs — the journal read, in the
+    /// same table (RD1: one register, not three styles).
+    @AppStorage("registerShowAllSplits") private var showAllSplits = false
+    #if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+    #endif
     /// Whether the attachments sidebar is shown (persisted like Double Line).
     @AppStorage("registerAttachmentsShown") private var attachmentsShown = false
     /// Set by the ⌘↑/⌘↓ shortcuts; the scrolling view consumes and clears it.
@@ -1159,35 +1154,6 @@ struct RegisterView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // One stable control row for every style — controls that only apply
-            // to Basic are disabled elsewhere rather than removed, so switching
-            // styles doesn't pop the header around.
-            HStack {
-                Picker("Style", selection: $style) {
-                    ForEach(RegisterStyle.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented).labelsHidden()
-                .fixedSize()
-                // A discreet edit affordance for the current selection: Edit
-                // (inspector) for one transaction, Bulk Edit for several. Sits
-                // in the flexible middle so its coming and going moves neither
-                // the style picker nor the right-hand controls.
-                editSelectionButton
-                Spacer()
-                // Every control applies to every style: Subaccounts, Sort and
-                // Filter shape which transactions all three styles show, and
-                // Double Line toggles the detail lines (notes; and in Journal
-                // the per-leg action · memo).
-                if model.selectedAccountHasChildren {
-                    subaccountsToggle
-                }
-                doubleLineToggle
-                attachmentsToggle
-                sortMenu
-                filterButton
-            }
-            .padding(6)
-            Divider()
             HStack(spacing: 0) {
                 content
                     // The entry bar belongs to every single-account style, not just
@@ -1219,65 +1185,84 @@ struct RegisterView: View {
         .sheet(isPresented: $goToDateShown) {
             GoToDateSheet(model: model)
         }
+        .toolbar { registerToolbar }
+    }
+
+    /// The register's toolbar (redesign 6.2): View ▾ · Sort ▾ · Filter ·
+    /// Reconcile · Edit. Register controls live with the window's, so the
+    /// register itself is all rows — no strip eating a line of every account.
+    @ToolbarContentBuilder
+    private var registerToolbar: some ToolbarContent {
+        ToolbarItemGroup {
+            viewMenu
+            sortMenu
+            filterButton
+            reconcileButton
+            editSelectionButton
+        }
+    }
+
+    /// What to show, not which style: details (notes/memo), all splits, the
+    /// subtree, the attachments panel — orthogonal toggles, not modes.
+    private var viewMenu: some View {
+        let selectedHasDocument = model.selectedTransactionIDs.count == 1
+            && model.selectedTransactionIDs.first.map(model.hasLinkedDocument) == true
+        return Menu {
+            Toggle(isOn: $doubleLine) {
+                Label("Show Details", systemImage: "text.alignleft")
+            }
+            .help("Show notes, memo and action under each transaction")
+            Toggle(isOn: $showAllSplits) {
+                Label("Show All Splits", systemImage: "list.bullet.indent")
+            }
+            .help("Open every transaction out into its splits")
+            Divider()
+            Toggle(isOn: $model.registerIncludesSubaccounts) {
+                Label("Include Subaccounts", systemImage: "arrow.triangle.branch")
+            }
+            .disabled(!model.selectedAccountHasChildren)
+            .help("Include this account’s subaccounts in the register")
+            Toggle(isOn: $attachmentsShown) {
+                Label("Attachments",
+                      systemImage: selectedHasDocument ? "paperclip.badge.ellipsis" : "paperclip")
+            }
+            .help("Show the selected transaction’s attachment")
+        } label: {
+            Label("View", systemImage: "slider.horizontal.3")
+        }
+        .help("Choose what the register shows")
+    }
+
+    private var reconcileButton: some View {
+        Button("Reconcile", systemImage: "checkmark.seal") {
+            #if os(macOS)
+            if let id = model.selectedAccountID { openWindow(id: "reconcile", value: id) }
+            #else
+            model.presentedPanel = .reconcile
+            #endif
+        }
+        .help("Reconcile this account against a statement")
+        .disabled(model.selectedAccountID == nil)
     }
 
     /// Edit (one transaction → the inspector) or Bulk Edit (several → the
-    /// uniform-change sheet), shown only while something is selected.
-    @ViewBuilder
+    /// uniform-change sheet). Always present, disabled with nothing selected.
     private var editSelectionButton: some View {
         let count = model.selectedTransactionIDs.count
-        if count > 0 {
-            Button {
-                if count == 1 {
-                    model.editingTransactionID = model.selectedTransactionIDs.first
-                } else {
-                    model.presentedPanel = .bulkEdit
-                }
-            } label: {
-                Label(count == 1 ? "Edit" : "Bulk Edit \(count)",
-                      systemImage: "square.and.pencil")
+        return Button {
+            if count == 1 {
+                model.editingTransactionID = model.selectedTransactionIDs.first
+            } else {
+                model.presentedPanel = .bulkEdit
             }
-            .help(count == 1
-                  ? "Edit the selected transaction in the inspector"
-                  : "Apply a uniform change to the \(count) selected transactions")
+        } label: {
+            Label(count > 1 ? "Bulk Edit \(count)" : "Edit",
+                  systemImage: "square.and.pencil")
         }
-    }
-
-    /// GnuCash's Open Subaccounts, as a toggle rather than a second window:
-    /// show the whole subtree's postings in this register. Only offered when
-    /// the account has something under it — on a leaf it would do nothing.
-    private var subaccountsToggle: some View {
-        Toggle(isOn: $model.registerIncludesSubaccounts) {
-            Label("Subaccounts", systemImage: "list.bullet.indent")
-        }
-        .toggleStyle(.button)
-        .help("Include this account’s subaccounts in the register")
-        .popoverTip(SubaccountsTip())
-    }
-
-    /// GnuCash's View ▸ Double Line: show each row's notes, memo and action
-    /// under its description. Worth having beyond parity — 40% of the
-    /// transactions in a real book carry notes, and without this there is
-    /// nowhere they are visible.
-    private var doubleLineToggle: some View {
-        Toggle(isOn: $doubleLine) {
-            Label("Double Line", systemImage: "text.alignleft")
-        }
-        .toggleStyle(.button)
-        .help("Show notes, memo and action under each transaction")
-    }
-
-    /// The attachments sidebar toggle. The paperclip fills when the selected
-    /// transaction carries a link — visible before the panel is even opened.
-    private var attachmentsToggle: some View {
-        let selectedHasDocument = model.selectedTransactionIDs.count == 1
-            && model.selectedTransactionIDs.first.map(model.hasLinkedDocument) == true
-        return Toggle(isOn: $attachmentsShown) {
-            Label("Attachments",
-                  systemImage: selectedHasDocument ? "paperclip.badge.ellipsis" : "paperclip")
-        }
-        .toggleStyle(.button)
-        .help("Show the selected transaction’s attachment — view, open, add or remove its link")
+        .disabled(count == 0)
+        .help(count > 1
+              ? "Apply a uniform change to the \(count) selected transactions"
+              : "Edit the selected transaction in the inspector")
     }
 
     /// GnuCash's View ▸ Sort By, as a menu rather than a dialog — the options
@@ -1331,37 +1316,14 @@ struct RegisterView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch style {
-        case .basic:
-            if model.selectedAccountID == nil {
-                ContentUnavailableView("Select an account", systemImage: "list.bullet.rectangle",
-                                       description: Text("Choose an account to see its transactions."))
-            } else if model.registerRows.isEmpty {
-                ContentUnavailableView("No transactions", systemImage: "tray",
-                                       description: Text("This account has no postings yet."))
-            } else {
-                registerTable
-            }
-        case .autoSplit:
-            // GnuCash's Auto-Split Ledger is the Basic register with the selected
-            // transaction opened into its legs — the same table, not a journal.
-            if model.selectedAccountID == nil {
-                ContentUnavailableView("Select an account", systemImage: "list.bullet.rectangle",
-                                       description: Text("Choose an account to see its transactions."))
-            } else if model.registerRows.isEmpty {
-                ContentUnavailableView("No transactions", systemImage: "tray",
-                                       description: Text("This account has no postings yet."))
-            } else {
-                registerTable
-            }
-        case .journal:
-            if model.selectedAccountID == nil {
-                ContentUnavailableView("Select an account", systemImage: "list.bullet.rectangle",
-                                       description: Text("Choose an account to see its transactions."))
-            } else {
-                JournalView(model: model, accountID: model.selectedAccountID,
-                            editingTransactionID: $editingTransactionID, jump: $jump)
-            }
+        if model.selectedAccountID == nil {
+            ContentUnavailableView("Select an account", systemImage: "list.bullet.rectangle",
+                                   description: Text("Choose an account to see its transactions."))
+        } else if model.registerRows.isEmpty {
+            ContentUnavailableView("No transactions", systemImage: "tray",
+                                   description: Text("This account has no postings yet."))
+        } else {
+            registerTable
         }
     }
 
@@ -1432,10 +1394,11 @@ struct RegisterView: View {
             })
     }
 
-    /// The transaction opened out in Auto-Split: whichever one the selected row
-    /// belongs to (a leg keeps its transaction open). Basic never expands.
+    /// The transaction opened out into its legs: whichever one the selected
+    /// row belongs to (a leg keeps its transaction open). With Show All
+    /// Splits everything is already open, so no single expansion is needed.
     private var expandedTransactionID: GncGUID? {
-        guard style == .autoSplit, let first = selection.first else { return nil }
+        guard !showAllSplits, let first = selection.first else { return nil }
         return model.transactionID(ofSplit: first)
     }
 
@@ -1449,7 +1412,7 @@ struct RegisterView: View {
         // Basic and Auto-Split share this table: with nothing expanded the rows
         // are identical, so the two styles are pixel-for-pixel the same until a
         // transaction is selected and its legs unfold beneath it.
-        Table(model.autoSplitRows(expanding: expandedTransactionID),
+        Table(model.autoSplitRows(expanding: expandedTransactionID, expandAll: showAllSplits),
               selection: $selection, sortOrder: tableSortOrder) {
             if showsDate {
                 TableColumn("Date", value: \.date) { row in
@@ -1720,7 +1683,7 @@ struct GeneralLedgerView: View {
     var body: some View {
         JournalView(model: model, accountID: nil,
                     editingTransactionID: $editingTransactionID, jump: $jump)
-            .navigationTitle("General Ledger")
+            .navigationTitle("All Transactions")
     }
 }
 
@@ -2117,26 +2080,34 @@ struct RegisterEntryBar: View {
                 .labelsHidden()
                 .fixedSize()
 
-            TextField("Description", text: $descriptionText)
-                .textFieldStyle(.roundedBorder)
-                .focused($descriptionFocused)
-                .frame(minWidth: 140)
-
-            // QuickFill: the last transaction with this description, offered
-            // rather than applied — autofilling on a prefix match would race
-            // the typing it is matching.
-            let suggestions = model.descriptionSuggestions(prefix: descriptionText)
-            Menu {
-                ForEach(suggestions, id: \.self) { suggestion in
-                    Button(suggestion) { applySuggestion(suggestion) }
+            // QuickFill as ghost text: the best recent match completes the
+            // typed prefix in-place; Tab accepts it (and fills the transfer
+            // account and amount from that transaction). Offered, not applied
+            // — autofilling on a prefix match would race the typing.
+            ZStack(alignment: .leading) {
+                if let ghost = ghostSuggestion {
+                    HStack(spacing: 0) {
+                        Text(descriptionText).foregroundStyle(.clear)
+                        Text(ghost.dropFirst(descriptionText.count))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .lineLimit(1)
+                    .allowsHitTesting(false)
                 }
-            } label: {
-                Image(systemName: "wand.and.stars")
+                TextField("Add a transaction (⌘N)", text: $descriptionText)
+                    .textFieldStyle(.plain)
+                    .focused($descriptionFocused)
+                    .onKeyPress(.tab) {
+                        guard let ghost = ghostSuggestion else { return .ignored }
+                        applySuggestion(ghost)
+                        return .handled
+                    }
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .disabled(suggestions.isEmpty)
-            .help("Fill from a recent transaction with this description")
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 6).fill(.background))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
+            .frame(minWidth: 160)
 
             Picker("", selection: $transferID) {
                 Text("Transfer from…").tag(GncGUID?.none)
@@ -2161,6 +2132,20 @@ struct RegisterEntryBar: View {
         .scaledFont(.body)
         .padding(8)
         .background(.bar)
+        .onChange(of: model.entryBarFocusRequest) {
+            descriptionFocused = true
+        }
+    }
+
+    /// The recent description that completes what's typed so far, if any —
+    /// rendered as ghost text after the caret.
+    private var ghostSuggestion: String? {
+        guard descriptionFocused,
+              !descriptionText.trimmingCharacters(in: .whitespaces).isEmpty,
+              let match = model.descriptionSuggestions(prefix: descriptionText, limit: 1).first,
+              match.count > descriptionText.count
+        else { return nil }
+        return match
     }
 
     private func applySuggestion(_ suggestion: String) {
@@ -3130,7 +3115,7 @@ struct TransactionEditorSheet: View {
 
                 Section {
                     HStack {
-                        Text("Imbalance")
+                        Text("Out of balance")
                         Spacer()
                         Text(AmountFormat.string(imbalance, code: displayCurrency.mnemonic))
                             .monospacedDigit()
@@ -3554,7 +3539,7 @@ struct EditAccountSheet: View {
                         Text(node.fullName).tag(GncGUID?.some(node.id))
                     }
                 }
-                Toggle("Placeholder", isOn: $isPlaceholder)
+                Toggle("Group", isOn: $isPlaceholder)
                 Toggle("Hidden", isOn: $isHidden)
 
                 // GnuCash account colour — shown as a dot in the sidebar.

@@ -423,7 +423,7 @@ extension AppModel {
         guard let book, let equity = book.account(with: equityID) else { return nil }
         let result = BookClosing.build(in: book, asOf: date, into: equity, description: description)
         guard !result.transactions.isEmpty else { return 0 }
-        editingWholeBook(named: "Close Book") {
+        editingWholeBook(named: "Close Financial Year") {
             for txn in result.transactions { book.addTransaction(txn) }
         }
         return result.closedAccountCount
