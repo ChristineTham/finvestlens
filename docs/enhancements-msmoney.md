@@ -16,7 +16,10 @@
 > per-user show/hide and an **Up Next** action card — see
 > [implemented.md](implemented.md). *Adopt later* (Debt Reduction Planner,
 > Lifetime Planner, tax estimator, insights/comparison reports) remains
-> **P9**, not started.
+> **P9**, not started — though the Jul 2026 **Financial Review / Investment
+> Review decks** ([report-redesign.md](report-redesign.md)) already deliver
+> period-vs-period comparisons with plain-language, validator-grounded
+> summaries, a first instalment of the insights idea (FR-PLAN-13).
 
 ## Why look at Money
 

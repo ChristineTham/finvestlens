@@ -4,7 +4,7 @@
 |---|---|
 | **Product** | FinvestLens — native Apple double-entry accounting |
 | **Platforms** | macOS, iPadOS, iOS |
-| **Document status** | Requirements baseline v1.1 (Jul 2026 — usability-redesign decisions folded in) |
+| **Document status** | Requirements baseline v1.2 (Jul 2026 — usability- and report-redesign decisions folded in) |
 | **Author** | Christine Tham |
 | **License** | GNU GPL v3.0 |
 
@@ -229,12 +229,13 @@ FinvestLens is a **document-based app** with its **own native file format** (a s
 
 | ID | Requirement | Pri | Phase |
 |---|---|---|---|
-| FR-RPT-01 | Provide core reports: **Account Summary / Balance Sheet**, **Income & Expense (Profit & Loss)**, **Net Worth over time**, **Transaction Report**, **Cash Flow**. | Should | P4 |
+| FR-RPT-01 | Provide core reports: **Account Summary / Balance Sheet**, **Income & Expense (Profit & Loss)**, **Net Worth over time**, **Transaction Report**, **Cash Flow**. *(Jul 2026 report redesign — statements present at annual-report standard: a hierarchical **face** built from the user's own top-level groups with detail in numbered **notes** that tie back to it; ASC 274 personal-statement ordering (assets by liquidity, liabilities by maturity); materiality folding into "Other" with cash-and-equivalents and Uncategorised protected; accounting typography — Note column, prior-period comparative, parenthesised negatives, single rule above subtotals, double rule under closing figures. Titles use the personal-statements vocabulary: Statement of Financial Position (net worth on the face, the equity view reconciled in a note with a currency-translation line), Income Statement, Statement of Changes in Net Worth. The **Trial Balance** presents the same way with Debit/Credit columns, grouped by category, its unrealised valuation adjustment on the face. The presentation layer only arranges the engine's verified figures — identity tests enforce that no dollar moves.)* | Should | P4 |
 | FR-RPT-02 | Provide investment reports: **Portfolio value**, **Advanced Portfolio**, **Price scatter**. | Could | P5 |
 | FR-RPT-03 | Provide charts (bar/line/pie) for income/expense, net worth, and portfolio, following the app's data-visualization design system. | Should | P4 |
 | FR-RPT-04 | Allow date-range, account selection, and currency options; save report configurations. | Should | P4 |
 | FR-RPT-05 | **Export/print** reports to PDF and share via the platform share sheet. | Should | P4 |
-| FR-RPT-06 | **Financial Year Pack** *(Jul 2026)*: a one-export EOFY bundle — Income Statement, Balance Sheet, Capital Gains, and a **Dividends & Franking** summary (per security: franked / unfranked / imputation credits, grossed-up total) — for a chosen financial year, as a single PDF. The Reports gallery also keeps **Recents** (last five opened). | Should | P6 |
+| FR-RPT-06 | **Financial Year Pack** *(Jul 2026)*: a one-export EOFY bundle — the Income Statement, Statement of Financial Position, and Statement of Changes in Net Worth (annual-report presentation, FR-RPT-01), then Capital Gains and a **Dividends & Franking** summary (per security: franked / unfranked / imputation credits, grossed-up total) — for a chosen financial year, as a single PDF. The Reports gallery also keeps **Recents** (last five opened). | Should | P6 |
+| FR-RPT-07 | **Presentation decks** *(Jul 2026)*: results presented as 16:9 slide decks — a **Financial Review** (highlights, net-worth waterfall bridge, income/spending analysis vs prior year, cash flow, portfolio, dividends, capital gains, financial position) and an **Investment Review** built on fund-factsheet/brokerage-report structure (overview, allocation + concentration, mark-to-market leaders, income with yield, realised gains split at the one-year CGT boundary, return decomposition over money in). Slides appear only with meaningful data; every slide has a deterministic action title; on-device insights may rewrite it but must pass a **deterministic number validator** (FR-AI-09). Paged with keyboard, exportable as landscape PDF. | Should | P6 |
 
 ### 5.12 Budgets
 
@@ -336,6 +337,7 @@ An optional layer that runs entirely on-device over Apple's **Foundation Models*
 | FR-AI-06 | **Forecast narration**: turn computed cash-flow-forecast facts into a plain-language headline and insights in the Cash Flow report. | Could | P5 |
 | FR-AI-07 | **Smart Import (multi-PDF)**: classify each dropped PDF and route it — statements to `FR-AI-01` review, dividend statements to a verified booking, invoices matched to their transaction, split by line item, and re-dated to the invoice's economic date. | Could | P7 |
 | FR-AI-08 | **Document links**: copy applied statements/invoices into the document folder and link them to their transaction via GnuCash's `assoc_uri` slot, round-trippable through GnuCash XML. | Could | P6 |
+| FR-AI-09 | **Slide narration** *(Jul 2026)*: for the presentation decks (FR-RPT-07), turn each slide's deterministic facts pack into an investor-deck action title and a one-to-two-sentence insight. Output is **disposed deterministically**: every numeric token must round-match a listed figure (raw or k/m-scaled), a listed delta percent, a label numeral, or a calendar year — otherwise the story is rejected and the deterministic title stands. The deck must read fully with Apple Intelligence off. | Could | P6 |
 
 ---
 
@@ -390,6 +392,7 @@ Book
 - **Plain language (Jul 2026 redesign)** — UI strings avoid GnuCash jargon: *Repair Book* (Check & Repair), *Close Financial Year* (Period-End Close), *Group* (placeholder account), *Show Details* (Double Line), *All Transactions* (General Ledger), *Out of balance* (Imbalance, in the editor). Engine names and the GnuCash file format keep GnuCash's vocabulary — the sweep is strings-only.
 - **One feedback surface (Jul 2026 redesign)** — long operations (quote fetches, price updates, saves) report progress and completion through a single bottom-of-window status overlay; failures that used to vanish in `try?` route there too.
 - **Session restoration (Jul 2026 redesign)** — where you were (sidebar destination, selected account, dashboard period) survives relaunch, stored per book **outside** the document: desk state must never dirty the book.
+- **Statements read like statements; working papers read like working papers (Jul 2026 report redesign)** — the statement reports present at annual-report standard (face and notes, no raw account paths, accounting rules and typography — FR-RPT-01), while operational reports (transactions, reconciliation, lots) deliberately keep their tabular working-paper form. Presentation *arranges* verified figures; it never computes new ones.
 
 ---
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Document status** | **Phases P0–P7 complete** (v1.0 was P0–P6, 13 July 2026; P7 business features since), **plus the Jul 2026 usability & performance redesign**. P8–P9 remain. |
+| **Document status** | **Phases P0–P7 complete** (v1.0 was P0–P6, 13 July 2026; P7 business features since), **plus the Jul 2026 usability/performance and report-quality redesigns**. P8–P9 remain. |
 | **Last updated** | 2026-07-24 |
 | **Scope** | The build plan: phases, workstreams, tasks, dependencies, and exit criteria |
 | **Companions** | [PRD](prd.md) · [Architecture](architecture.md) · [Porting Strategy](porting.md) · [Implemented](implemented.md) · [Deferred backlog](deferred.md) · [Money study](enhancements-msmoney.md) · [Firefly study](enhancements-firefly.md) · [Frollo study](enhancements-frollo.md) |
@@ -22,6 +22,7 @@ This is the authoritative **delivery schedule and status record**. It sequences 
 | **P6 — Sync, dashboard, alerts & polish** | ✅ Complete | Plus the post-1.0 **Apple Intelligence** layer (FR-AI-01…08). |
 | **P7 — Business features** | ✅ Complete | Engine + persistence + XML round-trip + UI. |
 | **Usability & performance redesign** | ✅ Complete (24 Jul 2026) | A post-P7 pass over the P2/P4/P6 surfaces, driven by four audits ([usability-review.md](usability-review.md), [performance-review.md](performance-review.md)): one expandable register, plain language, the non-scrolling tile-board dashboard, auto-clear-first reconcile, one-click prices (⌘⇧U), a single status overlay, session restoration, memoised async reports, and the EOFY Financial Year Pack. Narrative in [implemented.md](implemented.md). |
+| **Report-quality redesign** | ✅ Complete (24 Jul 2026) | Statements at annual-report standard — face-and-notes presentation from the user's own tree, ASC 274 ordering, accounting typography, comparatives, incl. the Trial Balance — plus the Financial Review and Investment Review slide decks with validator-grounded on-device insights. Plan/research: [report-redesign.md](report-redesign.md); design: [architecture.md §5.6a](architecture.md); narrative in [implemented.md](implemented.md). |
 | **P8 — Extended import & bank sync** | ⬜ Not started | |
 | **P9 — Planning & insights** | ⬜ Not started | |
 

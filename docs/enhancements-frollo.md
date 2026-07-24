@@ -13,9 +13,10 @@
 > categorisation, attachment matching). **Open Banking via CDR** remains
 > **P8**; savings challenges, the financial wellbeing score, and the
 > Financial Passport remain **P9**. (The Jul 2026 EOFY **Financial Year
-> Pack** — one-PDF P&L / balance sheet / capital gains / dividends &
-> franking — is a first step toward the passport idea; see
-> [implemented.md](implemented.md).)
+> Pack** — one PDF of the annual-report statements, capital gains, and
+> dividends & franking — and the **Financial Review deck**'s landscape-PDF
+> export ([report-redesign.md](report-redesign.md)) are first steps toward
+> the passport idea; see [implemented.md](implemented.md).)
 | **Upstream** | [frollo.com.au/frollo-app](https://frollo.com.au/frollo-app/) |
 
 ## Why look at Frollo

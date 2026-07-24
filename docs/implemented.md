@@ -3,11 +3,11 @@
 The record of what has been **built and verified**. Phases P0–P7 are complete:
 the engine, native document + NAS locking, GnuCash import/export, core UX,
 everyday finance, investments + multi-currency + quotes, sync/dashboard/alerts,
-Apple Intelligence, and small-business features — plus the **July 2026
-usability & performance redesign** (first section below). Only **P8** (extended
-import / bank sync) and **P9** (planning & insights) remain — tracked in
-[deferred.md](deferred.md), which also lists the smaller open tails within
-P0–P7.
+Apple Intelligence, and small-business features — plus two **July 2026
+redesigns**: usability & performance, and report quality (first sections
+below). Only **P8** (extended import / bank sync) and **P9** (planning &
+insights) remain — tracked in [deferred.md](deferred.md), which also lists the
+smaller open tails within P0–P7.
 
 This file is the narrative: what each audit found, what was fixed, and how it
 was verified (mostly against a real GnuCash book — 46,553 transactions, 559
@@ -19,6 +19,98 @@ Companions: [PRD](prd.md) · [Architecture](architecture.md) · [Plan](plan.md) 
 [Deferred](deferred.md).
 
 ---
+
+## Report redesign — annual-report statements & review decks (24 Jul 2026)
+
+The statement reports moved from working-paper presentation to
+**annual-report standard**, and the results gained two **presentation
+decks**. Research, judgement rules, and status live in
+[report-redesign.md](report-redesign.md); the design decision is
+[architecture.md §5.6a](architecture.md) (ADR-6a: presentation arranges,
+never computes). The brief's example — `Income:Distributions:VGAD:
+Distribution` on the face of a statement — now reads as **VGAD** under a
+**Distributions** caption, with fund detail in a note that ties back.
+
+**The statement layer** (`Statements.swift`). `StatementBuilder` projects
+the engine's verified flat lines onto the user's own account tree and
+applies researched judgement rules (IAS 1 face-vs-notes; AICPA/ASC 274
+personal-statement presentation): top-level groups become face captions;
+single-child chains collapse (never a colon path — a generic leaf like
+"Distribution" loses its name to the specific parent); captions with ≤ 3
+postings-bearing accounts inline their children on the face; captions
+under 2% of their section fold into "Other" with a note — but cash and
+equivalents (IAS 1 minimum line item) and Uncategorised (an integrity
+signal) never fold; assets order by liquidity with positives leading and
+integrity balances last, liabilities by maturity, income/expenses by
+magnitude; every note's total ties to its face line. Statement titles use
+the personal-statements vocabulary: **Statement of Financial Position**
+(assets − liabilities = net worth on the face; the equity view moves to a
+Composition-of-net-worth note), **Income Statement**, **Statement of
+Changes in Net Worth** (opening + surplus + valuation movement = closing,
+the valuation term derived and footnoted). Prior-year comparative columns
+appear when the book reaches back.
+
+A finding on the reference book: the face's net worth ($3,825,458.71) and
+the equity view ($3,394,053.11) differ by ~$431k — real multi-currency
+translation (income converted at posting-date rates, assets at current
+rates; GnuCash behaves identically). The composition note now reconciles
+it with a **"Currency translation and valuation differences"** line, as an
+annual report's translation reserve would — explained on the page instead
+of silently disagreeing.
+
+**Rendering** (`StatementView.swift`). Centred masthead (entity, serif
+title, period, units line), a Note reference column, right-aligned tabular
+figures with **negatives in parentheses** and the currency symbol on first
+figures and totals only, a single rule above subtotals, a **double rule**
+under closing figures, then *Notes to the financial statements* (Note 1 is
+always Basis of preparation). One `StatementSheet` serves screen and PDF.
+The **Trial Balance** joined the same treatment: Debit/Credit columns, one
+section per category in class order, caption rows with note detail, the
+unrealised valuation adjustment on its own Adjustments line (credit side,
+as the engine defines it), and a double-ruled grand total stating the
+report's point — the books balance. The **Financial Year Pack** now opens
+with the three statements (Changes in Net Worth joined it) ahead of
+capital gains and dividends & franking; statement kinds dropped the
+Compare stepper (they carry their own prior-year column).
+
+**The review decks.** Two 16:9 slide decks in the Reports gallery's
+*Present* section (and Reports menu), sharing one machinery (`ReviewSlide`,
+`SlideCard`, paging with arrow keys, landscape PDF via a new
+`ReportExport.pdfPage`): the **Financial Review** (highlights with a
+net-worth line; the net-worth **waterfall bridge** opening → income →
+expenses → valuation & FX → closing; income and spending analysis using
+the statement layer's own captions with prior-year markers; monthly cash
+flow; portfolio; dividends & franking; capital gains; financial position
+with debt-to-assets and months of cash cover) and the **Investment
+Review**, built from web research into fund factsheets and brokerage
+performance summaries (overview with total return on money in; allocation
+with the concentration read — holdings count, largest, top-five share;
+mark-to-market winners and losers; income with franking and yield on
+value; realised gains split at the one-year CGT-discount boundary; and a
+return decomposition — income + realised + unrealised over money in,
+GnuCash's own model). Slides are content-gated (the dashboard's
+has-content rule); every slide carries a deterministic action title; no
+new arithmetic anywhere — every figure comes from the existing verified,
+memoised computations.
+
+**The guardrail earned its keep immediately.** On the first live run the
+on-device narrator's insight claimed "a 2.3% increase in income and a 1.4%
+decrease in expenses" — numbers it invented. The response: every slide's
+facts pack gained grounded deltas (opening/closing/change/percent, prior
+totals, savings rate), the prompt now forbids deriving numbers, and a new
+deterministic **`ReviewStoryValidator`** disposes — every numeric token in
+a story must round-match a listed figure (raw or k/m-scaled), a listed
+delta percent, a label numeral, or a calendar year, or the story is
+rejected and the deterministic title stands. The exact live failure is
+pinned as a test's reject case. Stories cache per (slide, book revision).
+
+Verified: 399 tests / 83 suites (statement identities incl. trial-balance
+column conservation; deck gating on cash-only vs dividend vs securities
+books; bridge and decomposition reconciliation against engine totals; the
+validator's accept/reject cases), both platform builds, and screenshots on
+the reference book — the Statement of Financial Position face and notes,
+the Trial Balance, and deck slides ("Portfolio of $2.86m returning 63.2%
+on money in"; "33 holdings; the top five are 28.6% of the portfolio").
 
 ## Usability & performance redesign (24 Jul 2026)
 

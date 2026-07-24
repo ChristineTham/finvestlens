@@ -87,6 +87,13 @@ Not open work — recorded so they aren't re-raised as bugs. Detail in
   micro-optimizations to do only if a profile shows they matter. The Jul 2026
   `Perf` signpost harness now watches exactly these paths, so the trigger is
   a measured number, not a hunch.
+- **Investment Review: no benchmark or volatility statistics** (Jul 2026
+  report redesign) — fund factsheets carry benchmark-relative performance and
+  risk measures (standard deviation, Sharpe); the book holds no benchmark
+  series and no return time-series to compute them honestly from, so the
+  deck's risk read is **concentration** (largest holding, top-five share) and
+  its performance read is return-on-money-in. Revisit only if benchmark data
+  ever enters scope.
 - **Report computation stays on the main actor** (Jul 2026 redesign) — heavy
   reports are memoised per (parameters, revision) and build behind a
   placeholder after first paint, but the build runs on the main actor: the

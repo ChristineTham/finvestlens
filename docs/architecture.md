@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Document status** | Design baseline v1.1 (Jul 2026 — derived-state and UI-shell decisions from the usability/performance redesign) |
-| **Companions** | [PRD](prd.md) · [Porting Strategy](porting.md) |
+| **Document status** | Design baseline v1.2 (Jul 2026 — adds the report presentation layer and review decks) |
+| **Companions** | [PRD](prd.md) · [Porting Strategy](porting.md) · [Report redesign](report-redesign.md) |
 | **Scope** | Target architecture, technology choices, native file format, and how the hard problems are solved |
 
 This document evaluates implementation alternatives, recommends specific technologies and Swift packages, and defines the module layout and the **native document format**. Decisions are recorded ADR-style: **context → options → decision → rationale**. It describes the intended design; the record of what has been built, and the measurements behind the performance choices, live in [implemented.md](implemented.md).
@@ -152,6 +152,18 @@ QOF's guarantees are provided natively rather than ported: identity → Swift ty
 Port each GnuCash report's **computation** (account/date selection, roll-ups, multi-currency) into Swift services over the engine; **discard** the Scheme/HTML/eguile/WebKit presentation and render with **SwiftUI + Apple Swift Charts** (`FR-RPT-03`), PDF via the platform. Core reports (Balance Sheet, Income Statement, Net Worth, Transaction Report, Cash Flow) in P4; investment reports in P5.
 
 > ADR-6: Report logic → Swift services; rendering → Swift Charts/SwiftUI.
+
+### 5.6a Statement presentation layer & review decks (Jul 2026)
+
+**Context.** The report arithmetic is verified to the cent, but flat per-account lines (`Income:Distributions:VGAD:Distribution`) are working-paper presentation, not statement presentation (PRD FR-RPT-01/07; research and judgement rules in [report-redesign.md](report-redesign.md)).
+
+**Decision.** A **presentation layer that only arranges** sits above the verified engine reports:
+
+- `StatementBuilder` (FeatureUI) projects engine lines onto the user's account tree and applies the judgement rules — top-level groups as face captions, trivial-chain collapse, ≤3-leaf captions inlined, 2% materiality folding into "Other" (cash-and-equivalents and Uncategorised protected), ASC 274 liquidity/maturity ordering, numbered notes whose totals tie to the face. One `StatementSheet` view renders screen and PDF so they cannot drift. The Trial Balance reuses the same machinery with Debit/Credit columns and per-category sections. **Identity tests are the contract:** face totals ≡ engine totals, notes tie, folding conserves, no path-like captions.
+- The **review decks** (`ReviewSlide` + slide builders for the Financial and Investment Reviews) arrange the same verified computations into content-gated 16:9 slides with deterministic action titles; the shared sheet handles paging and landscape PDF (`ReportExport.pdfPage`).
+- On-device narration (`ReviewNarrator`, §11) may rewrite a slide's title/insight but its output is **disposed by `ReviewStoryValidator`**: every numeric token must round-match a listed figure (raw or k/m-scaled), a listed delta percent, a label numeral, or a calendar year — anything else discards the story. This exists because the live model invented YoY percentages on first run.
+
+> ADR-6a: Presentation arranges, never computes — statements via a face-and-notes builder with identity tests; decks via grounded facts packs; model narration survives only if a deterministic validator finds every quoted number in the slide's facts.
 
 ### 5.7 Quotes and exchange rates
 
@@ -328,7 +340,7 @@ The four-audit usability/performance review ([usability-review.md](usability-rev
 
 All Intelligence features run on the **on-device** Foundation Models framework (macOS 26 / iOS 26) — no financial data ever leaves the device — and follow one contract:
 
-1. **The model proposes; deterministic code disposes.** Model output is typed (`@Generable` guided generation, greedy sampling for extraction), parsed tolerantly (`IntelligenceParsing`), resolved against the real chart of accounts (`AccountNameMatcher`), and cross-checked arithmetically (statement signs re-derived from the running balance column; invoice line sums reconciled against the printed total). Only reviewed results mutate the book.
+1. **The model proposes; deterministic code disposes.** Model output is typed (`@Generable` guided generation, greedy sampling for extraction), parsed tolerantly (`IntelligenceParsing`), resolved against the real chart of accounts (`AccountNameMatcher`), and cross-checked arithmetically (statement signs re-derived from the running balance column; invoice line sums reconciled against the printed total; review-deck stories rejected by `ReviewStoryValidator` if they quote any number not in the slide's facts pack). Only reviewed results mutate the book.
 2. **Availability-gated.** `IntelligenceAvailability` probes `SystemLanguageModel.default`; menus disable (with the reason as a tooltip) when Apple Intelligence is off, and every entry point degrades gracefully. Guardrail refusals surface a friendly message; the budget advisor retries with simplified phrasing and finally falls back to a deterministic average-based plan.
 3. **Small context, chunked work.** PDF pages are extracted via PDFKit with a geometric reflow (rows rebuilt from per-character bounds — content-stream order scrambles tables) and a Vision-OCR fallback for scans; each page or batch is one fresh session.
 
@@ -342,6 +354,7 @@ All Intelligence features run on the **on-device** Foundation Models framework (
 | Forecast outlook | FR-AI-06 | Computed `cashFlowForecast` facts → `ForecastNarrator` headline + insights in the Cash Flow report |
 | Smart Import (multi-PDF) | FR-AI-07 | `DocumentClassifier` triages each PDF, then routes: statements → FR-AI-01 review; dividend statements → verified against the register; invoices → matched to their transaction, split by line items, and re-dated to the invoice date |
 | Document links | FR-AI-08 | Applied dividend statements and invoices are copied into the document folder and linked to their transaction via the `assoc_uri` KVP slot as a relative path |
+| Slide narration | FR-AI-09 | `ReviewNarrator` writes each review-deck slide's action title + insight from that slide's deterministic facts pack; `ReviewStoryValidator` rejects any story quoting an unlisted number — the deterministic title always stands as the fallback |
 
 **Dual dates (FR-AI-07).** When Smart Import adopts a document's true economic date, the bank's posted date moves to a preserved KVP slot (`Transaction.statementDate`, `finvestlens/statement-date`) — matching considers *both* dates, so re-importing the same bank statement never duplicates a re-dated transaction. The slot lives in the native document; GnuCash XML export carries the adjusted `datePosted` (no schema breakage — GnuCash sees the economic date).
 
