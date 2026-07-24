@@ -300,6 +300,25 @@ customisation.
 
 ## 7. Implementation plan
 
+> **Status (24 Jul 2026): all phases implemented** — commits `Phase 0:
+> consolidation` → `Phase 3: EOFY pack…`; 386 tests green, macOS + iOS build.
+> Deviations from the letter of the plan, with reasons:
+> - **F8** — the hard bottom-edge clip could not be reproduced after the
+>   restructure (scroll reaches the end with margin, verified by driven
+>   scroll + screenshot); shipped the soft bottom scroll-edge fade so a card
+>   at the fold reads as "more below" instead of sliced.
+> - **P3 async reports** — reports are memoised per (parameters, revision)
+>   and build behind a placeholder after first paint, but still *on* the main
+>   actor: the engine `Book` is a non-Sendable object graph, and a genuinely
+>   background read would race main-actor edits. True off-main needs a book
+>   read-gate (writers wait on readers) — deliberately out of Phase 2 scope;
+>   revisit only if the memoised first-build still feels slow in use.
+> - **Register toolbar** — the 6.2 mock's `[Basic | Auto-Split | Journal]`
+>   segment predates RD1 and was dropped with it, as RD1 specifies.
+> - **Phase 3 item 18** (incremental tree/journal rebuilds) — not done by
+>   design: the signpost harness is in place and no measured number has
+>   demanded it yet.
+
 ### Phase 0 — consolidation first (the audit's cleanups)
 *Rationale: later phases touch every one of these surfaces; unify before moving.*
 1. **One account-chooser family**: absorb `AccountMatchPicker` search into

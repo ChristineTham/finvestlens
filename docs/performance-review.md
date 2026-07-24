@@ -1,5 +1,15 @@
 # Performance Review
 
+> **Status (24 Jul 2026):** P1, P2, P4, P5.2, P9 (scoped price/kvp undo
+> snapshots + all hot call sites), P6 (spinner + yield), P10 (status-routed
+> save) and the signpost/DEBUG harness are implemented. P3 is memoise + build-
+> after-first-paint on the main actor — see the deviation note in
+> `usability-review.md` §7 (a background read of the non-Sendable `Book`
+> would race edits; a read-gate is the price of going further). P5.4/P7
+> (incremental rebuilds) remain unimplemented pending harness numbers that
+> demand them.
+
+
 *Audited at HEAD (July 2026) against the reference book (559 accounts, ~46k
 transactions / ~140k splits, ~35 securities, 100k+ prices). Method: traced the
 render/refresh paths of the register, sidebar, dashboard and reports; swept
