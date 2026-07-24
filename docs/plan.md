@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Document status** | **Phases P0–P7 complete** (v1.0 was P0–P6, 13 July 2026; P7 business features since), **plus the Jul 2026 usability/performance and report-quality redesigns**. P8–P9 remain. |
+| **Document status** | **Phases P0–P7 complete** (v1.0 was P0–P6, 13 July 2026; P7 business features since), **plus the Jul 2026 usability/performance and report-quality redesigns**. P8 (statement-file import) and P9 remain; online bank sync skipped to [deferred.md](deferred.md). |
 | **Last updated** | 2026-07-24 |
 | **Scope** | The build plan: phases, workstreams, tasks, dependencies, and exit criteria |
 | **Companions** | [PRD](prd.md) · [Architecture](architecture.md) · [Porting Strategy](porting.md) · [Implemented](implemented.md) · [Deferred backlog](deferred.md) · [Money study](enhancements-msmoney.md) · [Firefly study](enhancements-firefly.md) · [Frollo study](enhancements-frollo.md) |
@@ -23,7 +23,7 @@ This is the authoritative **delivery schedule and status record**. It sequences 
 | **P7 — Business features** | ✅ Complete | Engine + persistence + XML round-trip + UI. |
 | **Usability & performance redesign** | ✅ Complete (24 Jul 2026) | A post-P7 pass over the P2/P4/P6 surfaces, driven by four audits ([usability-review.md](usability-review.md), [performance-review.md](performance-review.md)): one expandable register, plain language, the non-scrolling tile-board dashboard, auto-clear-first reconcile, one-click prices (⌘⇧U), a single status overlay, session restoration, memoised async reports, and the EOFY Financial Year Pack. Narrative in [implemented.md](implemented.md). |
 | **Report-quality redesign** | ✅ Complete (24 Jul 2026) | Statements at annual-report standard — face-and-notes presentation from the user's own tree, ASC 274 ordering, accounting typography, comparatives, incl. the Trial Balance — plus the Financial Review and Investment Review slide decks with validator-grounded on-device insights. Plan/research: [report-redesign.md](report-redesign.md); design: [architecture.md §5.6a](architecture.md); narrative in [implemented.md](implemented.md). |
-| **P8 — Extended import & bank sync** | ⬜ Not started | |
+| **P8 — Extended import** | ⬜ Not started | Online bank sync (FR-XIO-07) **skipped by decision (24 Jul 2026)** — moved to [deferred.md](deferred.md) §5. |
 | **P9 — Planning & insights** | ⬜ Not started | |
 
 Phases **P0–P7 are delivered**; a set of low-priority tails deferred *within* those phases is tracked, ranked, in [deferred.md](deferred.md). **P8** and **P9** are planned but not started (detailed below). The narrative of what was built, with the audits and measurements behind it, is in [implemented.md](implemented.md).
@@ -245,21 +245,19 @@ Dependencies point downward only; `Engine` builds/tests with nothing above it (`
 
 ---
 
-## 12. Phase P8 — Extended import & bank sync
+## 12. Phase P8 — Extended import
 
-**Status.** ⬜ Not started. (Report PDF export, listed below as a P4 fallback, was delivered in P4.)
+**Status.** ⬜ Not started. (Report PDF export, once listed here as a P4 fallback, was delivered in P4. **Online bank sync was skipped by decision on 24 Jul 2026** — cloud-mediated connectors sit poorly with the app's local-first stance, and the AU CDR path carries a regulatory burden out of proportion to a file-import app; moved to [deferred.md](deferred.md) §5, revisit only on strong demand.)
 
-**Objective.** Broader interoperability and modern online banking.
+**Objective.** Broader statement-file interoperability.
 
 **Workstreams & tasks**
 - **MT940/MT942 + CAMT.053 (ISO 20022)** statement import → matcher. *(FR-XIO-04)*
-- **Online bank sync** via **SimpleFIN / GoCardless (Nordigen)**, and for **Australia** the **Consumer Data Right (CDR / Open Banking)** via an **accredited intermediary** (e.g. Basiq) → matcher. Optional, explicitly consented, cloud-mediated; app stays functional offline. *(FR-XIO-07, Frollo-inspired)*
-- **PDF export** of reports (if not completed in P4). *(FR-RPT-05)*
 
 **Dependencies.** P4 (Import Matcher).
-**Deliverables.** Bank-statement importers; bank-sync connectors (incl. AU CDR path).
-**Exit criteria.** Import a CAMT.053 file and pull transactions from a SimpleFIN/GoCardless (and, where feasible, a CDR-intermediary) connection through the matcher.
-**Risks.** Aggregator auth/onboarding; **CDR requires regulatory diligence** (accreditation vs intermediary model, consent handling); credentials handled per safety rules (user-entered, Keychain).
+**Deliverables.** Bank-statement importers (SWIFT MT + ISO 20022) feeding the existing Import Matcher.
+**Exit criteria.** Import a CAMT.053 and an MT940 file through the matcher with correct dedupe and account assignment.
+**Risks.** Format variance across banks — parse against published samples from several institutions, as the QIF/OFX parsers were.
 
 ---
 
@@ -313,7 +311,7 @@ P0 Engine ─▶ P1 Document+Import ─▶ P2 Core UX ─▶ P3 Export/round-tri
                     P6 Sync/dashboard/alerts   │
                              │                 │
                              ▼                 ▼
-                    P9 Planning & insights   P8 Extended import/bank sync
+                    P9 Planning & insights   P8 Extended import
 ```
 
 - **Critical path to a daily-driver release:** P0 → P1 → P2 → P3 → P4.

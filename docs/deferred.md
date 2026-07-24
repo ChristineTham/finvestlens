@@ -4,9 +4,10 @@ Work that was **in scope for the delivered phases (P0–P7)** but is still open:
 deferred, partial, or not yet built. It is **ranked** — highest priority /
 readiest to pick up first.
 
-Out of scope for this list: the future phases **P8** (extended import / bank
-sync) and **P9** (planning & insights), which are planned, not deferred — see
-[plan.md](plan.md). Anything already built is in [implemented.md](implemented.md);
+Out of scope for this list: the future phases **P8** (extended statement-file
+import) and **P9** (planning & insights), which are planned, not deferred — see
+[plan.md](plan.md). (One exception: **online bank sync**, removed from P8 by
+decision — §5 below.) Anything already built is in [implemented.md](implemented.md);
 intentional non-goals (e.g. bit-for-bit arithmetic parity with GnuCash) are not
 tracked anywhere.
 
@@ -63,6 +64,15 @@ Quality limits of the on-device import layer (PRD §5.18), caught by the review 
 | App Sandbox | Disabled by decision: sibling `.lock` files at user-selected locations are denied by the sandbox; related-item declaration + coordinated I/O are in place but macOS still refused. Direct (notarized) distribution doesn't need it. Revisit before any Mac App Store submission. |
 | iOS move/rename flow for new books | New books land in the app's Documents directory with safe naming; an in-app move/rename flow is todo. |
 | Esc inside a focused text field | AppKit's field editor consumes the raw Escape (completion); ⌘. always cancels, Esc works otherwise. SwiftUI offers no clean override (accepted). *The Jul 2026 F19 sweep put `onEscapeCommand` on every sheet — this field-editor caveat is the one remaining Esc limit.* |
+
+## 5 — Skipped from the phase plan (revisit only on demand)
+
+Work removed from a planned phase by decision — neither scheduled nor
+won't-fix. It stays recorded here so the reasoning survives.
+
+| Item | FR | Notes |
+|---|---|---|
+| **Online bank sync** (SimpleFIN / GoCardless (Nordigen); AU **CDR / Open Banking** via an accredited intermediary such as Basiq) | FR-XIO-07 | **Skipped from P8, 24 Jul 2026.** A cloud-mediated, consent-managed connector sits poorly with the app's offline, local-first core (NFR-03/07); the CDR path in particular carries accreditation/intermediary diligence and ongoing API-maintenance burden out of proportion to a document app whose import story (CSV/QIF/OFX files + AI PDF import + the Import Matcher) already covers the data. Revisit only on strong user demand — the design sketch (aggregator → `StagedTransaction` → Import Matcher, credentials user-entered into Keychain) remains valid in [PRD §5.14](prd.md) and the [Frollo study](enhancements-frollo.md). |
 
 ---
 

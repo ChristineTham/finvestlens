@@ -16,7 +16,7 @@
 > search field rather than a toolbar menu (Jul 2026 redesign). The remaining
 > rule-action tail (convert-type, link-to-bill) is in
 > [deferred.md](deferred.md); modern **bank sync** (SimpleFIN / GoCardless)
-> remains **P8**.
+> was **skipped from the phase plan** (24 Jul 2026 — [deferred.md](deferred.md) §5).
 | **Upstream** | [docs.firefly-iii.org](https://docs.firefly-iii.org) · [github.com/firefly-iii/firefly-iii](https://github.com/firefly-iii/firefly-iii) |
 
 ## Why look at Firefly III

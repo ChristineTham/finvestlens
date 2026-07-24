@@ -10,8 +10,8 @@
 > **Delivery status (24 Jul 2026).** The default category taxonomy +
 > heuristic auto-categorisation shipped in P4 and is exceeded by the
 > on-device Apple Intelligence layer (PDF import, per-line invoice
-> categorisation, attachment matching). **Open Banking via CDR** remains
-> **P8**; savings challenges, the financial wellbeing score, and the
+> categorisation, attachment matching). **Open Banking via CDR** was
+> **skipped from the phase plan** (24 Jul 2026 — [deferred.md](deferred.md) §5); savings challenges, the financial wellbeing score, and the
 > Financial Passport remain **P9**. (The Jul 2026 EOFY **Financial Year
 > Pack** — one PDF of the annual-report statements, capital gains, and
 > dividends & franking — and the **Financial Review deck**'s landscape-PDF
