@@ -417,9 +417,8 @@ struct CreateLoanPaymentSheet: View {
     }
 
     private func accountPicker(_ label: String, _ selection: Binding<GncGUID?>) -> some View {
-        Picker(label, selection: selection) {
-            Text("—").tag(GncGUID?.none)
-            ForEach(model.postableAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+        LabeledContent(label) {
+            AccountField(nodes: model.postableAccounts, selection: selection)
         }
     }
 }

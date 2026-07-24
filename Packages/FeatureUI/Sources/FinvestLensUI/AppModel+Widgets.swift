@@ -25,6 +25,11 @@ extension AppModel {
     /// *not* wired into `refreshAll()` (every edit), because the widget only
     /// needs the persisted picture.
     public func publishWidgetData() {
+        // Test processes have no app bundle: WidgetKit/UNUserNotificationCenter
+        // throw NSExceptions there ("bundleProxyForCurrentProcess is nil") and
+        // kill the whole suite mid-run. A missing bundle identifier is the
+        // reliable tell across XCTest and swift-testing runners.
+        guard Bundle.main.bundleIdentifier != nil else { return }
         guard let book else {
             WidgetSnapshot.placeholder.write()
             #if canImport(WidgetKit)

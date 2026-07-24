@@ -261,26 +261,6 @@ extension AppModel {
             .min()
     }
 
-    /// Backfills daily history for `commodity` over `[from, to]`, adding a price
-    /// per observation (`FR-INV-03e`).
-    public func backfillHistory(for commodity: Commodity, from: Date, to: Date,
-                                using kind: QuoteProviderKind) async {
-        quoteStatus = .fetching("history for \(commodity.mnemonic)")
-        do {
-            let prices = try await service().historicalPrices(
-                for: commodity, in: reportCurrency, from: from, to: to, using: kind,
-                symbolOverride: quoteSymbol(for: commodity))
-            if !prices.isEmpty {
-                editingWholeBook(named: "Backfill Price History") {
-                    for price in prices { book?.addPrice(price) }
-                }
-            }
-            quoteStatus = .success(prices.count)
-        } catch {
-            quoteStatus = .failure(Self.describe(error))
-        }
-    }
-
     private static func describe(_ error: Error) -> String {
         if let quoteError = error as? QuoteError {
             switch quoteError {

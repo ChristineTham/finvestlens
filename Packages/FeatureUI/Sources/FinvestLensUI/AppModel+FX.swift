@@ -114,10 +114,8 @@ extension AppModel {
     /// Records a user-confirmed rate (e.g. the implied rate of a purchase whose
     /// foreign and local amounts are both known) into the price DB.
     public func recordFxRate(code: String, rate: Decimal, date: Date) {
-        guard rate > 0 else { return }
-        editingWholeBook(named: "Record Exchange Rate") {
-            book?.setExchangeRate(from: currencyCommodity(code), to: reportCurrency,
-                                  rate: rate, date: date, source: "user:fx-editor")
-        }
+        // One rate-recording implementation app-wide.
+        addExchangeRate(from: currencyCommodity(code), to: reportCurrency,
+                        rate: rate, date: date)
     }
 }

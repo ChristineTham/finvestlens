@@ -88,8 +88,8 @@ struct AppModelTests {
 
         model.addTransfer(from: salary, to: bank, amount: 100, date: Date(), description: "Pay")
 
-        #expect(!model.canDeleteAccount(bank))     // has postings
-        #expect(model.canDeleteAccount(spare))     // empty
+        #expect(model.deletionPlan(for: bank)?.isUnencumbered == false)  // has postings
+        #expect(model.deletionPlan(for: spare)?.isUnencumbered == true)  // empty
         try model.deleteAccount(spare)
         #expect(model.accountTree.first { $0.name == "Spare" } == nil)
     }

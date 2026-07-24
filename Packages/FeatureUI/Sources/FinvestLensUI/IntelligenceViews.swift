@@ -369,9 +369,8 @@ struct DividendImportSheet: View {
                     }
                 }
                 Section("Booking") {
-                    Picker("Deposit into", selection: $cashAccountID) {
-                        Text("—").tag(GncGUID?.none)
-                        ForEach(cashAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+                    LabeledContent("Deposit into") {
+                        AccountField(nodes: cashAccounts, selection: $cashAccountID)
                     }
                     Toggle("Record franking credits (gross-up)", isOn: $recordCredits)
                         .help("Adds balancing Income:Dividends:Franking Credits and Assets:Franking Credits Receivable splits — the cash amount is unchanged")

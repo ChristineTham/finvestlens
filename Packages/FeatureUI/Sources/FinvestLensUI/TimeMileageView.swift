@@ -158,9 +158,9 @@ private struct BillableEntrySheet: View {
                 TextField("Description", text: $detail)
                 TextField(kind.quantityLabel, text: $quantity)
                 TextField("Rate", text: $rate)
-                Picker("Income account", selection: $incomeID) {
-                    Text("Choose at billing").tag(GncGUID?.none)
-                    ForEach(incomeAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+                LabeledContent("Income account") {
+                    AccountField(prompt: "Choose at billing", nodes: incomeAccounts,
+                                 selection: $incomeID)
                 }
                 if dec(quantity) > 0 {
                     LabeledContent("Amount", value: AmountFormat.string(
@@ -235,9 +235,8 @@ private struct BillCustomerSheet: View {
                 }
                 TextField("Invoice number", text: $invoiceNumber)
                 if needsFallback {
-                    Picker("Income account for un-assigned entries", selection: $fallbackIncomeID) {
-                        Text("Choose…").tag(GncGUID?.none)
-                        ForEach(incomeAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+                    LabeledContent("Income account for un-assigned entries") {
+                        AccountField(nodes: incomeAccounts, selection: $fallbackIncomeID)
                     }
                 }
                 if let error {

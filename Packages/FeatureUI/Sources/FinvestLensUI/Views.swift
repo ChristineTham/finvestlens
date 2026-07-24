@@ -1091,15 +1091,7 @@ struct InlineTextCell: View {
 
 /// An account chooser that reads as text until clicked. A Menu, not a Picker:
 /// menu content is built lazily on open, so every visible row can afford one.
-struct AccountMenuCell: View {
-    @Bindable var model: AppModel
-    let label: String
-    let choose: (GncGUID) -> Void
 
-    var body: some View {
-        AccountPickerButton(label: label, nodes: model.postableAccounts, onPick: choose)
-    }
-}
 
 /// The reconcile state as a glanceable symbol, shared by the Basic register and
 /// the journal styles so the column reads identically everywhere. Activating it
@@ -1536,7 +1528,7 @@ struct RegisterView: View {
                     // same way the journal styles compose their leg detail. The
                     // selected leg edits in place: its account and memo.
                     VStack(alignment: .leading, spacing: 1) {
-                        AccountMenuCell(model: model, label: row.legAccount) {
+                        AccountPickerButton(label: row.legAccount, nodes: model.postableAccounts) {
                             model.inlineSetLegAccount(splitID: row.id, to: $0)
                         }
                         InlineTextCell(value: row.legMemo, placeholder: "Memo",
@@ -1563,7 +1555,7 @@ struct RegisterView: View {
                     if let main = row.main {
                         if model.isSimpleTransfer(splitID: row.id) {
                             // Re-categorise in place: move the counter leg.
-                            AccountMenuCell(model: model, label: main.transfer) {
+                            AccountPickerButton(label: main.transfer, nodes: model.postableAccounts) {
                                 model.inlineSetTransfer(splitID: row.id, to: $0)
                             }
                         } else {
@@ -1850,7 +1842,7 @@ struct JournalView: View {
                             }
                         }
                     } else {
-                        AccountMenuCell(model: model, label: row.text) {
+                        AccountPickerButton(label: row.text, nodes: model.postableAccounts) {
                             model.inlineSetLegAccount(splitID: row.id, to: $0)
                         }
                         if doubleLine {

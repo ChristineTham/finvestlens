@@ -18,11 +18,6 @@ import FinvestLensEngine
 @MainActor
 extension AppModel {
 
-    /// The account a split posts to (for the leg account picker).
-    public func accountID(ofSplit splitID: GncGUID) -> GncGUID? {
-        book?.split(with: splitID)?.account?.guid
-    }
-
     /// Whether a row's transaction is simple enough for inline edits that touch
     /// money: exactly two legs, both in the transaction currency.
     public func isSimpleTransfer(splitID: GncGUID) -> Bool {

@@ -70,10 +70,7 @@ struct ImportView: View {
         NavigationStack {
             Form {
                 Section("Import into") {
-                    Picker("Account", selection: $targetID) {
-                        Text("—").tag(GncGUID?.none)
-                        ForEach(accounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
-                    }
+                    AccountField(nodes: accounts, selection: $targetID)
                 }
 
                 if payload.format == .csv {
@@ -270,13 +267,11 @@ struct ImportView: View {
     @ViewBuilder
     private var investmentSection: some View {
         Section("\(investments.count) investment transactions") {
-            Picker("Settlement account", selection: $invSettlement) {
-                Text("—").tag(GncGUID?.none)
-                ForEach(model.settlementAccountNodes) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+            LabeledContent("Settlement account") {
+                AccountField(nodes: model.settlementAccountNodes, selection: $invSettlement)
             }
-            Picker("Dividend income account", selection: $invIncome) {
-                Text("—").tag(GncGUID?.none)
-                ForEach(incomeAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+            LabeledContent("Dividend income account") {
+                AccountField(nodes: incomeAccounts, selection: $invIncome)
             }
             ForEach(investments) { row in
                 investmentRow(row)

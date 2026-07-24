@@ -88,20 +88,20 @@ struct JournalTests {
         // No windowing: every transaction is present, oldest first.
         let rows = model.journalRows(forAccountID: nil)
         #expect(rows.filter(\.isHeading).count == 10)
-        #expect(model.journalEntryCount(forAccountID: nil) == 10)
+        #expect(model.journalRows(forAccountID: nil).filter(\.isHeading).count == 10)
         #expect(rows.first?.text == "Txn 0")
         #expect(rows.filter(\.isHeading).last?.text == "Txn 9")
 
         // ⌘↑ reaches the oldest posting in the book, ⌘↓ the newest — the same
         // meaning as in the basic register, not "the oldest currently loaded".
-        let oldest = try #require(model.journalEdgeRowID(forAccountID: nil, newest: false))
-        let newest = try #require(model.journalEdgeRowID(forAccountID: nil, newest: true))
+        let oldest = try #require(model.journalRows(forAccountID: nil).first?.id)
+        let newest = try #require(model.journalRows(forAccountID: nil).last?.id)
         #expect(oldest == rows.first?.id)
         #expect(newest == rows.last?.id)
 
         // An empty journal has no edge rather than a crash.
         let unused = try #require(model.addAccount(name: "Unused", type: .expense))
-        #expect(model.journalEdgeRowID(forAccountID: unused, newest: true) == nil)
+        #expect(model.journalRows(forAccountID: unused).isEmpty)
         #expect(model.journalRows(forAccountID: unused).isEmpty)
     }
 
@@ -112,8 +112,8 @@ struct JournalTests {
         defer { model.close(); try? FileManager.default.removeItem(at: url) }
         let bank = try #require(model.accountTree.first { $0.name == "Bank" }?.id)
 
-        #expect(model.journalEntryCount(forAccountID: nil) == 3)      // populates the cache
-        #expect(model.journalEntryCount(forAccountID: bank) == 3)
+        #expect(model.journalRows(forAccountID: nil).filter(\.isHeading).count == 3)      // populates the cache
+        #expect(model.journalRows(forAccountID: bank).filter(\.isHeading).count == 3)
 
         let food = try #require(model.accountTree.first { $0.name == "Food" }?.id)
         try model.addTransaction(date: Date(timeIntervalSince1970: 99), description: "Later",
@@ -122,19 +122,19 @@ struct JournalTests {
             SplitInput(accountID: bank, value: dec("-2")),
         ])
         // A stale cache here would hide the new transaction from the journal.
-        #expect(model.journalEntryCount(forAccountID: nil) == 4)
-        #expect(model.journalEntryCount(forAccountID: bank) == 4)
+        #expect(model.journalRows(forAccountID: nil).filter(\.isHeading).count == 4)
+        #expect(model.journalRows(forAccountID: bank).filter(\.isHeading).count == 4)
         #expect(model.journalRows(forAccountID: nil).filter(\.isHeading).last?.text == "Later")
 
         // Deletions invalidate too.
         let latest = try #require(model.journalRows(forAccountID: nil).filter(\.isHeading).last?.id)
         model.deleteTransaction(latest)
-        #expect(model.journalEntryCount(forAccountID: nil) == 3)
+        #expect(model.journalRows(forAccountID: nil).filter(\.isHeading).count == 3)
         #expect(model.journalRows(forAccountID: nil).filter(\.isHeading).last?.text == "Txn 2")
 
         // Closing drops the cache rather than serving another book's entries.
         model.close()
-        #expect(model.journalEntryCount(forAccountID: nil) == 0)
+        #expect(model.journalRows(forAccountID: nil).filter(\.isHeading).count == 0)
         #expect(model.journalRows(forAccountID: nil).isEmpty)
     }
 }

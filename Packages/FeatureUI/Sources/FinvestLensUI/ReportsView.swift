@@ -275,9 +275,8 @@ struct ReconcileReportView: View {
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                Picker("Account", selection: $accountID) {
-                    Text("—").tag(GncGUID?.none)
-                    ForEach(accounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+                LabeledContent("Account") {
+                    AccountField(nodes: accounts, selection: $accountID)
                 }
                 DatePicker("As of", selection: $asOf, displayedComponents: .date)
             }
@@ -379,9 +378,8 @@ struct TransactionReportView: View {
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                Picker("Account", selection: $accountID) {
-                    Text("—").tag(GncGUID?.none)
-                    ForEach(accounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+                LabeledContent("Account") {
+                    AccountField(nodes: accounts, selection: $accountID)
                 }
                 DatePicker("From", selection: $from, displayedComponents: .date)
                 DatePicker("To", selection: $to, displayedComponents: .date)

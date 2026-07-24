@@ -47,16 +47,13 @@ struct AccountMatchPicker: View {
     /// real destination, since selecting one opens its register.
     static func matching(_ tree: [AccountNode], filter: String,
                          includingPlaceholders: Bool = false) -> [AccountNode] {
+        // One search algorithm app-wide (multi-term, full-name) — this used to
+        // be a second, subtly different substring matcher.
         func flatten(_ nodes: [AccountNode]) -> [AccountNode] {
             nodes.flatMap { [$0] + flatten($0.children ?? []) }
         }
-        let needle = filter.lowercased()
-        return flatten(tree).filter { node in
-            guard includingPlaceholders || !node.isPlaceholder else { return false }
-            // `"abc".contains("")` is false in Swift, so an empty needle has to
-            // be handled rather than left to fall through as "matches nothing".
-            return needle.isEmpty || node.fullName.lowercased().contains(needle)
-        }
+        let candidates = flatten(tree).filter { includingPlaceholders || !$0.isPlaceholder }
+        return AccountSearch.matches(filter, in: candidates)
     }
 
     var body: some View {

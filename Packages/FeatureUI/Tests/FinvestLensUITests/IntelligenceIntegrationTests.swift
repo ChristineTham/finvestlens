@@ -52,7 +52,7 @@ struct IntelligenceIntegrationTests {
         #expect(item.transactionDescription == "WOOLWORTHS")
         #expect(item.amount == 50)
 
-        #expect(model.applyCategoryAssignments([item.splitID: groceries]) == 1)
+        #expect(model.applyCategorization(plans: [], assignments: [item.splitID: groceries]) == 1)
         #expect(model.uncategorizedItems().isEmpty)
         let book = try #require(model.book)
         let account = try #require(book.account(with: groceries))

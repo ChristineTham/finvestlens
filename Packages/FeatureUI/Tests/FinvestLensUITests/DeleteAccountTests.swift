@@ -55,7 +55,7 @@ struct DeleteAccountTests {
         let f = try makeFixture()
         defer { f.model.close(); try? FileManager.default.removeItem(at: f.url) }
         let id = try #require(f.model.addAccount(name: "Unused", type: .expense))
-        #expect(f.model.canDeleteAccount(id))
+        #expect(f.model.deletionPlan(for: id)?.isUnencumbered == true)
         try f.model.deleteAccount(id)
         #expect(f.book.account(with: id) == nil)
     }
@@ -71,7 +71,7 @@ struct DeleteAccountTests {
         try post(f, bank, old, 30)
         try post(f, bank, old, 12)
 
-        #expect(!f.model.canDeleteAccount(old))
+        #expect(f.model.deletionPlan(for: old)?.isUnencumbered == false)
         #expect(f.model.deletionPlan(for: old)?.splitCount == 2)
 
         try f.model.deleteAccount(old, movingTransactionsTo: new)

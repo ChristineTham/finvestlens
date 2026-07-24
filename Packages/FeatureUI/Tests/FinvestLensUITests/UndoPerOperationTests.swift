@@ -321,7 +321,7 @@ struct UndoStructuralOperationTests {
         let f = try Fixture()
         defer { f.tearDown() }
 
-        f.model.renameAccount(f.bank, to: "Everyday")
+        rename(f.model, f.bank, to: "Everyday")
         #expect(f.model.book?.account(with: f.bank)?.name == "Everyday")
 
         f.undo.undo()
@@ -422,7 +422,7 @@ struct UndoStructuralOperationTests {
 
         // A whole-book undo swaps in a fresh object graph; the older
         // transaction snapshot must re-resolve its accounts against it.
-        f.model.renameAccount(f.bank, to: "Everyday")
+        rename(f.model, f.bank, to: "Everyday")
         f.undo.undo()
         #expect(f.model.book?.account(with: f.bank)?.name == "Bank")
 
@@ -478,4 +478,14 @@ struct UndoActionNameTests {
         #expect(f.model.book?.transactions.count == 3)
         #expect(!f.undo.canUndo)
     }
+}
+
+@MainActor
+private func rename(_ model: AppModel, _ id: GncGUID, to name: String) {
+    guard let account = model.book?.account(with: id) else { return }
+    model.updateAccount(id: id, name: name, code: account.code,
+                        description: account.accountDescription,
+                        notes: account.notes,
+                        isPlaceholder: account.isPlaceholder,
+                        isHidden: account.isHidden)
 }

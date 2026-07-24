@@ -134,9 +134,9 @@ struct StockTransactionSheet: View {
 
     private func accountPicker(_ label: String, selection: Binding<GncGUID?>,
                                nodes: [AccountNode], allowNone: Bool = false) -> some View {
-        Picker(label, selection: selection) {
-            if allowNone { Text("None").tag(GncGUID?.none) }
-            ForEach(nodes) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
+        LabeledContent(label) {
+            AccountField(prompt: allowNone ? "None" : "Account",
+                         nodes: nodes, selection: selection)
         }
     }
 

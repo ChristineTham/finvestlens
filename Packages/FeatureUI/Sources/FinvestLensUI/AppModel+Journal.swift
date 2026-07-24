@@ -313,15 +313,4 @@ extension AppModel {
         return transactions
     }
 
-    /// How many transactions the journal for `accountID` holds.
-    public func journalEntryCount(forAccountID accountID: GncGUID?) -> Int {
-        journalTransactions(forAccountID: accountID).count
-    }
-
-    /// The journal row a jump lands on: the oldest heading, or the newest
-    /// transaction's last leg. Read off the cached rows, so asking is free.
-    public func journalEdgeRowID(forAccountID accountID: GncGUID?, newest: Bool) -> GncGUID? {
-        let rows = journalRows(forAccountID: accountID)
-        return newest ? rows.last?.id : rows.first?.id
-    }
 }

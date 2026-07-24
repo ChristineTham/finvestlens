@@ -11,6 +11,14 @@
 //
 
 import SwiftUI
+
+/// Business sheets hold engine `Account` lists; the shared `AccountField`
+/// speaks `AccountNode`. Map by GUID through the model's flattened tree.
+@MainActor
+private func nodes(of accounts: [Account], in model: AppModel) -> [AccountNode] {
+    let ids = Set(accounts.map(\.guid))
+    return model.postableAccounts.filter { ids.contains($0.id) }
+}
 import UniformTypeIdentifiers
 import FinvestLensEngine
 
@@ -326,10 +334,8 @@ struct InvoiceEditorSheet: View {
                 Section("Lines") {
                     ForEach($lines) { $line in
                         VStack(spacing: 6) {
-                            Picker("Account", selection: $line.accountID) {
-                                Text("Choose…").tag(GncGUID?.none)
-                                ForEach(lineAccounts) { Text($0.name).tag(GncGUID?.some($0.guid)) }
-                            }
+                            AccountField(nodes: nodes(of: lineAccounts, in: model),
+                                         selection: $line.accountID)
                             TextField("Description", text: $line.description)
                             HStack {
                                 TextField("Qty", text: $line.quantity).frame(width: 60)
@@ -665,9 +671,8 @@ struct ProcessPaymentSheet: View {
                     }
                 }
                 TextField("Amount", text: $amount)
-                Picker(isCustomer ? "Deposit to" : "Pay from", selection: $fromAccountID) {
-                    Text("Choose…").tag(GncGUID?.none)
-                    ForEach(bankAccounts) { Text($0.name).tag(GncGUID?.some($0.guid)) }
+                LabeledContent(isCustomer ? "Deposit to" : "Pay from") {
+                    AccountField(nodes: nodes(of: bankAccounts, in: model), selection: $fromAccountID)
                 }
             }
             .navigationTitle("Process Payment")
@@ -896,9 +901,8 @@ struct TaxTablesSheet: View {
                 }
                 Section("New tax table") {
                     TextField("Name (e.g. GST)", text: $name).focused($nameFocused)
-                    Picker("Tax account", selection: $accountID) {
-                        Text("Choose…").tag(GncGUID?.none)
-                        ForEach(taxAccounts) { Text($0.name).tag(GncGUID?.some($0.guid)) }
+                    LabeledContent("Tax account") {
+                        AccountField(nodes: nodes(of: taxAccounts, in: model), selection: $accountID)
                     }
                     TextField("Percentage", text: $percentage)
                 }

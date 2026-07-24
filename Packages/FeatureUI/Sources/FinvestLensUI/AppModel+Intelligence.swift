@@ -167,27 +167,6 @@ extension AppModel {
                                                         candidates: categoryCandidates())
     }
 
-    /// Moves uncategorised splits onto their chosen accounts (one undoable
-    /// change). Keys are split GUIDs; values the destination account.
-    @discardableResult
-    public func applyCategoryAssignments(_ assignments: [GncGUID: GncGUID]) -> Int {
-        guard let book else { return 0 }
-        let moves = assignments.compactMap { splitID, accountID -> (split: Split, account: Account)? in
-            guard let split = book.split(with: splitID),
-                  let account = book.account(with: accountID)
-            else { return nil }
-            return (split, account)
-        }
-        let applied = moves.count
-        if applied > 0 {
-            let touched = Set(moves.compactMap { $0.split.transaction?.guid })
-            editing(Array(touched), named: "Categorise Transactions") {
-                for (split, account) in moves { split.account = account }
-            }
-        }
-        return applied
-    }
-
     // MARK: Categorise from attachment
 
     /// What an attachment read proposes for its transaction: a category, and —

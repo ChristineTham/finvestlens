@@ -1340,11 +1340,6 @@ public final class AppModel {
         )
     }
 
-    /// Whether an account can be deleted with no questions asked.
-    public func canDeleteAccount(_ id: GncGUID) -> Bool {
-        deletionPlan(for: id)?.isUnencumbered ?? false
-    }
-
     /// The accounts that could take `id`'s postings: same commodity, and not
     /// inside the subtree about to be removed.
     public func transactionTargets(forDeleting id: GncGUID) -> [AccountNode] {
@@ -1430,13 +1425,6 @@ public final class AppModel {
             }
             account.parent?.removeChild(account)
             if selectedAccountID == id { selectedAccountID = nil }
-        }
-    }
-
-    public func renameAccount(_ id: GncGUID, to newName: String) {
-        guard let book, let account = book.account(with: id) else { return }
-        editingWholeBook(named: "Rename Account") {
-            account.name = newName
         }
     }
 

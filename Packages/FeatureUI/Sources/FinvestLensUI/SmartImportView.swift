@@ -420,11 +420,7 @@ private struct CreateFromInvoiceSheet: View {
                     }
                 }
                 Section("Pay from") {
-                    Picker("Account", selection: $fundingID) {
-                        Text("Choose…").tag(GncGUID?.none)
-                        ForEach(fundingAccounts) { Text($0.fullName).tag(GncGUID?.some($0.id)) }
-                    }
-                    .labelsHidden()
+                    AccountField(nodes: fundingAccounts, selection: $fundingID)
                 }
                 Text("A transaction is created with the funding account paying the total, split across each line item's category.")
                     .scaledFont(.caption).foregroundStyle(.secondary)
