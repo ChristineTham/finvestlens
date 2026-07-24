@@ -9,6 +9,7 @@
 import Foundation
 import FinvestLensEngine
 import FinvestLensRules
+import FinvestLensReports
 
 @MainActor
 extension AppModel {
@@ -121,7 +122,7 @@ extension AppModel {
                 accountNames: txn.splits.compactMap { $0.account?.name }))
             guard outcome.accountID != nil || outcome.notes != nil
                     || !outcome.tags.isEmpty || outcome.descriptionText != nil
-                    || outcome.goalID != nil else { continue }
+                    || outcome.goalID != nil || outcome.billID != nil else { continue }
 
             let categoryLeg = txn.splits.first { isCategory($0.account?.type) }
             var proposedID: GncGUID?
@@ -138,8 +139,21 @@ extension AppModel {
             // Allocate the transaction's magnitude to the goal, when the goal
             // still exists.
             let goal = outcome.goalID.flatMap { id in savingsGoals.first { $0.id == id } }
+            // Link this payment to its bill (schedule), when it exists and the
+            // transaction isn't already linked to it.
+            let bill = outcome.billID.flatMap { id in scheduledTransactions.first { $0.id == id } }
+            var proposedBillID: GncGUID?
+            if let bill {
+                if case let .guid(existing)? = txn.kvp[FinancialReports.billLinkKey],
+                   existing == bill.id {
+                    proposedBillID = nil
+                } else {
+                    proposedBillID = bill.id
+                }
+            }
             guard proposedID != nil || proposedNotes != nil || !newTags.isEmpty
-                    || proposedDescription != nil || goal != nil else { continue }
+                    || proposedDescription != nil || goal != nil
+                    || proposedBillID != nil else { continue }
 
             items.append(RuleApplication(
                 id: txn.guid, description: txn.transactionDescription,
@@ -148,7 +162,8 @@ extension AppModel {
                 proposedNotes: proposedNotes,
                 proposedTags: newTags, proposedDescription: proposedDescription,
                 proposedGoalID: goal?.id, proposedGoalName: goal?.name,
-                allocateAmount: goal != nil ? abs(amount) : 0))
+                allocateAmount: goal != nil ? abs(amount) : 0,
+                proposedBillID: proposedBillID, proposedBillName: proposedBillID != nil ? bill?.name : nil))
         }
         return items
     }
@@ -169,6 +184,9 @@ extension AppModel {
                     txn.tags = (txn.tags + item.proposedTags.filter { !txn.tags.contains($0) })
                 }
                 if let description = item.proposedDescription { txn.transactionDescription = description }
+                if let billID = item.proposedBillID {
+                    txn.kvp[FinancialReports.billLinkKey] = .guid(billID)
+                }
             }
         }
         // Goal allocations aren't transaction edits — they adjust the KVP-backed
@@ -209,4 +227,7 @@ public struct RuleApplication: Identifiable, Hashable, Sendable {
     public var proposedGoalName: String?
     /// The amount to earmark to ``proposedGoalID`` (the transaction's magnitude).
     public var allocateAmount: Decimal = 0
+    /// The bill (scheduled transaction) this payment would be linked to.
+    public var proposedBillID: GncGUID?
+    public var proposedBillName: String?
 }

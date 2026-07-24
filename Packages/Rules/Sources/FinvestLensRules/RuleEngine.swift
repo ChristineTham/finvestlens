@@ -38,16 +38,20 @@ public struct RuleOutcome: Equatable, Sendable {
     public var descriptionText: String?
     /// Savings goal to earmark the matched amount to, if a rule set one.
     public var goalID: GncGUID?
+    /// Scheduled transaction (bill) this payment settles, if a rule linked one.
+    public var billID: GncGUID?
     /// `true` if a matched rule requested stop-processing.
     public var stopped: Bool
 
     public init(accountID: GncGUID? = nil, notes: String? = nil, tags: [String] = [],
-                descriptionText: String? = nil, goalID: GncGUID? = nil, stopped: Bool = false) {
+                descriptionText: String? = nil, goalID: GncGUID? = nil,
+                billID: GncGUID? = nil, stopped: Bool = false) {
         self.accountID = accountID
         self.notes = notes
         self.tags = tags
         self.descriptionText = descriptionText
         self.goalID = goalID
+        self.billID = billID
         self.stopped = stopped
     }
 }
@@ -126,6 +130,7 @@ public enum RuleEngine {
                 for tag in tags where !outcome.tags.contains(tag) { outcome.tags.append(tag) }
             case .setDescription(let text): outcome.descriptionText = text
             case .allocateToGoal(let guid): outcome.goalID = guid
+            case .linkToBill(let guid): outcome.billID = guid
             }
         }
     }

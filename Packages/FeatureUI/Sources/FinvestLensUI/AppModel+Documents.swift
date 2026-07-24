@@ -309,3 +309,69 @@ extension AppModel {
         }
     }
 }
+
+
+/// A user-facing book-file operation failure (rename/move).
+public struct BookFileError: LocalizedError {
+    public let errorDescription: String?
+    init(_ message: String) { errorDescription = message }
+}
+
+@MainActor
+extension AppModel {
+
+    /// Renames a **closed** book file in place — the iOS flow for books that
+    /// land in Documents as "Untitled" (deferred.md §4); harmless on macOS
+    /// too. Moves the audit-log sidecar along and updates Recents. Throws on
+    /// collision or I/O failure.
+    public func renameBook(at url: URL, to name: String) throws {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        guard documentURL != url else {
+            throw BookFileError("Close the book before renaming it.")
+        }
+        let destination = url.deletingLastPathComponent()
+            .appendingPathComponent(trimmed)
+            .appendingPathExtension(url.pathExtension)
+        guard destination != url else { return }
+        let manager = FileManager.default
+        guard !manager.fileExists(atPath: destination.path) else {
+            throw BookFileError("A book named “\(trimmed)” already exists there.")
+        }
+        try manager.moveItem(at: url, to: destination)
+        let sidecar = URL(fileURLWithPath: url.path + ".audit.log")
+        if manager.fileExists(atPath: sidecar.path) {
+            try? manager.moveItem(at: sidecar,
+                                  to: URL(fileURLWithPath: destination.path + ".audit.log"))
+        }
+        replaceRecent(url, with: destination)
+    }
+
+    /// After a Files-app move (`fileMover`), point Recents at the new home and
+    /// bring the audit sidecar along.
+    public func bookMoved(from oldURL: URL, to newURL: URL) {
+        let manager = FileManager.default
+        let sidecar = URL(fileURLWithPath: oldURL.path + ".audit.log")
+        if manager.fileExists(atPath: sidecar.path) {
+            try? manager.moveItem(at: sidecar,
+                                  to: URL(fileURLWithPath: newURL.path + ".audit.log"))
+        }
+        replaceRecent(oldURL, with: newURL)
+    }
+
+    private func replaceRecent(_ oldURL: URL, with newURL: URL) {
+        var paths = UserDefaults.standard.stringArray(forKey: "finvestlens.recentBookPaths") ?? []
+        if let index = paths.firstIndex(of: oldURL.path) {
+            paths[index] = newURL.path
+        } else {
+            paths.insert(newURL.path, at: 0)
+        }
+        UserDefaults.standard.set(Array(paths.prefix(5)), forKey: "finvestlens.recentBookPaths")
+        var bookmarks = UserDefaults.standard
+            .dictionary(forKey: Self.recentBookmarksKey) as? [String: Data] ?? [:]
+        bookmarks.removeValue(forKey: oldURL.path)
+        if let bookmark = try? newURL.bookmarkData() { bookmarks[newURL.path] = bookmark }
+        UserDefaults.standard.set(bookmarks, forKey: Self.recentBookmarksKey)
+        recentBooks = Self.loadRecents()
+    }
+}

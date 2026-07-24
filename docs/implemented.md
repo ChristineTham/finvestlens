@@ -19,6 +19,44 @@ Companions: [PRD](prd.md) · [Architecture](architecture.md) · [Plan](plan.md) 
 
 ---
 
+## Deferred-backlog pass (24 Jul 2026)
+
+A sweep of [deferred.md](deferred.md) implementing everything buildable
+without external dependencies (runners, NAS hardware, translators stay
+blocked; TXF and bank sync stay skipped by decision). Five items closed:
+
+- **GnuCash credit notes (FR-BUS-01).** `Invoice.isCreditNote`, faithful to
+  the GnuCash source: the `credit-note` int64 in `<invoice:slots>` is lifted
+  on import and always written on export; posting flips every leg's sign
+  (`is_cust_doc != is_cn` — the A/R leg carries action "Credit Note"); a book
+  holding credit notes exports the **"Credit Notes" book feature** so pre-2.5
+  GnuCash refuses rather than misreads. Persistence migration, editor toggle,
+  list/detail badges, printable title (AU "ADJUSTMENT NOTE" in the
+  tax-invoice layout). The production review's sign-inversion defect is gone.
+- **Round-trip fidelity tail (FR-XIO-01).** `InvoiceEntry.entered` is now a
+  real field (imported, exported, persisted — no longer re-derived from
+  `entry:date`), and `KvpValue` distinguishes `.timespec` from `.date`, so a
+  timespec slot at exactly midnight re-exports as a timespec. Both pinned by
+  round-trip tests.
+- **Load-time warnings (NFR-05).** The SQLite load path still opens
+  what it can, but counts every silent default (`LoadWarnings`, task-local,
+  threaded through `parseDecimal`/`parseKvp`/`decodeAddress`/GUID fallbacks)
+  and the app surfaces a toast on open: "Opened with 2 amounts, 1 identifier
+  unreadable and defaulted…". Exercised by a corruption test.
+- **iOS book rename/move.** The welcome screen's recents now carry a context
+  menu — Rename (in place, audit-log sidecar moved along, Recents and
+  bookmarks updated), Move (the system `fileMover`), Remove from Recents.
+  Works on macOS too.
+- **Rule link-to-bill (FR-RULE-01).** A new `linkToBill` rule action stamps
+  matched payments with the schedule's GUID (`finvestlens/bill-id`, an
+  ordinary exportable slot); bill reminders check the link **before** the
+  description heuristic, so a bill whose payment descriptions vary still
+  clears exactly. Editor picker, summary text, and apply-to-history support
+  included. (convert-type remains skipped — fuzzy in a double-entry model.)
+
+835 tests green across the six packages (Engine 183, Interchange 81,
+Persistence 33, Rules 10, Reports 116, FeatureUI 412); both platforms build.
+
 ## Report consistency pass (24 Jul 2026)
 
 A full review of every report surface against the annual-report standard the

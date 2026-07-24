@@ -131,7 +131,8 @@ struct RulesView: View {
                 set: { model.setRuleActive(rule.id, $0) })) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(rule.name).fontWeight(.medium)
-                    Text(Self.summary(rule, accountName: accountName, goalName: goalName))
+                    Text(Self.summary(rule, accountName: accountName, goalName: goalName,
+                                      billName: billName))
                         .scaledFont(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -153,7 +154,8 @@ struct RulesView: View {
     /// The rule in words. Every part the engine honours has to show up here, or
     /// the list would say two different rules are the same one.
     static func summary(_ rule: Rule, accountName: (GncGUID) -> String,
-                        goalName: (GncGUID) -> String = { _ in "goal" }) -> String {
+                        goalName: (GncGUID) -> String = { _ in "goal" },
+                        billName: (GncGUID) -> String = { _ in "bill" }) -> String {
         let conditions = rule.triggers
             .map { "\($0.field.rawValue) \($0.op.rawValue) “\($0.value)”" }
             .joined(separator: rule.matchAll ? " and " : " or ")
@@ -164,6 +166,7 @@ struct RulesView: View {
             case .setTags(let tags): "tag \(tags.joined(separator: ", "))"
             case .setDescription(let text): "rename “\(text)”"
             case .allocateToGoal(let id): "→ goal “\(goalName(id))”"
+            case .linkToBill(let id): "→ bill “\(billName(id))”"
             }
         }.joined(separator: ", ")
         let tail = rule.stopProcessing ? ", then stop" : ""
@@ -176,6 +179,10 @@ struct RulesView: View {
 
     private func goalName(_ id: GncGUID) -> String {
         model.savingsGoals.first { $0.id == id }?.name ?? "?"
+    }
+
+    private func billName(_ id: GncGUID) -> String {
+        model.scheduledTransactions.first { $0.id == id }?.name ?? "?"
     }
 }
 
@@ -273,6 +280,7 @@ struct RuleEditorSheet: View {
     @State private var setsDescription = false
     @State private var descriptionText = ""
     @State private var goalID: GncGUID?
+    @State private var billID: GncGUID?
     @State private var stopProcessing = false
 
     private var isEditing: Bool { if case .existing = target { true } else { false } }
@@ -359,6 +367,13 @@ struct RuleEditorSheet: View {
                             ForEach(model.savingsGoals) { Text($0.name).tag(GncGUID?.some($0.id)) }
                         }
                     }
+                    if !model.scheduledTransactions.isEmpty {
+                        Picker("Link payment to bill", selection: $billID) {
+                            Text("Don’t link").tag(GncGUID?.none)
+                            ForEach(model.scheduledTransactions) { Text($0.name).tag(GncGUID?.some($0.id)) }
+                        }
+                        .help("Marks matching transactions as paying this scheduled bill, so reminders clear exactly")
+                    }
                     Toggle("Stop processing further rules", isOn: $stopProcessing)
                 }
 
@@ -399,6 +414,7 @@ struct RuleEditorSheet: View {
             case .setTags(let tags): setsTags = true; tagsText = tags.joined(separator: ", ")
             case .setDescription(let text): setsDescription = true; descriptionText = text
             case .allocateToGoal(let id): goalID = id
+            case .linkToBill(let id): billID = id
             }
         }
     }
@@ -414,6 +430,7 @@ struct RuleEditorSheet: View {
         }
         if setsDescription, !descriptionText.isEmpty { actions.append(.setDescription(descriptionText)) }
         if let goalID { actions.append(.allocateToGoal(goalID)) }
+        if let billID { actions.append(.linkToBill(billID)) }
 
         let fallback = validTriggers
             .map { "\($0.field.rawValue) \($0.op.rawValue) “\($0.value)”" }

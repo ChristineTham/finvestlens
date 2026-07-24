@@ -65,7 +65,21 @@ public enum GnuCashXMLExporter {
 
         """
 
-        out += slotsBlock(book.kvp.slots.sorted { $0.key < $1.key },
+        // A book holding credit notes must carry GnuCash's feature flag, so
+        // pre-2.5 GnuCash refuses the file rather than misreading the notes
+        // (gnc_features_set_used in gncInvoiceSetIsCreditNote).
+        var bookSlots = book.kvp
+        if book.invoices.contains(where: \.isCreditNote) {
+            var features: KvpFrame
+            if case let .frame(existing)? = bookSlots["features"] { features = existing }
+            else { features = KvpFrame() }
+            if features["Credit Notes"] == nil {
+                features["Credit Notes"] =
+                    .string("Customer and vendor credit notes (requires at least GnuCash 2.5.0)")
+            }
+            bookSlots["features"] = .frame(features)
+        }
+        out += slotsBlock(bookSlots.slots.sorted { $0.key < $1.key },
                           container: "book:slots", indent: "")
 
         let accounts = [book.rootAccount] + book.rootAccount.descendants
@@ -299,6 +313,9 @@ public enum GnuCashXMLExporter {
             if GnuCashDate.isDayOnly(date) {
                 return "\(indent)<slot:value type=\"gdate\"><gdate>\(GnuCashDate.formatDayOnly(date))</gdate></slot:value>\n"
             }
+            return "\(indent)<slot:value type=\"timespec\"><ts:date>\(GnuCashDate.format(date))</ts:date></slot:value>\n"
+        case .timespec(let date):
+            // Imported as a timespec — stays one, even at midnight.
             return "\(indent)<slot:value type=\"timespec\"><ts:date>\(GnuCashDate.format(date))</ts:date></slot:value>\n"
         case .frame(let frame):
             var block = "\(indent)<slot:value type=\"frame\">\n"

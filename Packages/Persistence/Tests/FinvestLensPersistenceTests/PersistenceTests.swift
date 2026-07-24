@@ -297,3 +297,42 @@ struct DocumentLifecycleTests {
         }
     }
 }
+
+@Suite("Load warnings")
+struct LoadWarningsTests {
+
+    @Test("Silently-defaulted values are counted and summarised (NFR-05)")
+    func countsDefaults() throws {
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("warn-\(UUID().uuidString).finvestlens").path
+        defer { try? FileManager.default.removeItem(atPath: path) }
+
+        // A healthy book: one transaction between two accounts.
+        let book = Book(baseCurrency: .aud)
+        let bank = book.addAccount(Account(name: "Bank", type: .bank, commodity: .aud))
+        let food = book.addAccount(Account(name: "Food", type: .expense, commodity: .aud))
+        let txn = Transaction(currency: .aud, datePosted: Date(timeIntervalSince1970: 1_700_000_000),
+                              description: "Lunch")
+        txn.addSplit(account: food, value: 42)
+        txn.addSplit(account: bank, value: -42)
+        book.addTransaction(txn)
+        let store = try SQLiteDocumentStore(path: path)
+        try store.write(book)
+
+        // Clean read: nothing defaulted, no summary.
+        _ = try store.read()
+        #expect(store.lastLoadWarnings?.total == 0)
+        #expect(store.lastLoadWarnings?.summary == nil)
+
+        // Corrupt one split's value and GUID outside the app's own writer.
+        let corrupted = try SQLiteDocumentStore(path: path)
+        try corrupted.corruptForTesting()
+        _ = try corrupted.read()
+        let warnings = try #require(corrupted.lastLoadWarnings)
+        #expect(warnings.decimals == 1)
+        #expect(warnings.guids == 1)
+        let summary = try #require(warnings.summary)
+        #expect(summary.contains("1 amount"))
+        #expect(summary.contains("1 identifier"))
+    }
+}

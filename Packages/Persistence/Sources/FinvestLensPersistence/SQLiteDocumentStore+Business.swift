@@ -94,11 +94,12 @@ extension SQLiteDocumentStore {
         }
         for invoice in book.invoices {
             try db.execute(sql: """
-                INSERT INTO invoice (guid, id, kind, ownerType, ownerGuid, dateOpened,
+                INSERT INTO invoice (guid, id, kind, isCreditNote, ownerType, ownerGuid, dateOpened,
                     datePosted, dueDate, termsGuid, billingID, notes, currencyNamespace,
                     currencyMnemonic, postedAccountGuid, postedTxnGuid, postedLotGuid, active)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, arguments: [invoice.guid.hexString, invoice.id, invoice.kind.rawValue,
+                    invoice.isCreditNote,
                     invoice.owner.type.rawValue, invoice.owner.guid.hexString, invoice.dateOpened,
                     invoice.datePosted, invoice.dueDate, invoice.terms?.guid.hexString,
                     invoice.billingID, invoice.notes,
@@ -107,11 +108,12 @@ extension SQLiteDocumentStore {
                     invoice.postedLot?.guid.hexString, invoice.active])
             for (position, entry) in invoice.entries.enumerated() {
                 try db.execute(sql: """
-                    INSERT INTO invoice_entry (guid, invoiceGuid, date, entryDescription,
+                    INSERT INTO invoice_entry (guid, invoiceGuid, date, entered, entryDescription,
                         action, accountGuid, quantity, price, discount, discountType,
                         discountHow, taxable, taxIncluded, taxTableGuid, position)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """, arguments: [entry.guid.hexString, invoice.guid.hexString, entry.date,
+                        entry.entered,
                         entry.entryDescription, entry.action, entry.account?.guid.hexString,
                         Serialize.decimal(entry.quantity), Serialize.decimal(entry.price),
                         Serialize.decimal(entry.discount), entry.discountType.rawValue,
@@ -239,13 +241,15 @@ extension SQLiteDocumentStore {
                                     customersByGUID, vendorsByGUID, employeesByGUID, jobsByGUID)
             else { continue }
             let invoice = Invoice(guid: guid, id: row["id"],
-                kind: InvoiceKind(rawValue: row["kind"]) ?? .invoice, owner: owner,
+                kind: InvoiceKind(rawValue: row["kind"]) ?? .invoice,
+                isCreditNote: (row["isCreditNote"] as Bool?) ?? false, owner: owner,
                 dateOpened: row["dateOpened"], datePosted: row["datePosted"], dueDate: row["dueDate"],
                 terms: term(row["termsGuid"]), billingID: row["billingID"], notes: row["notes"],
                 currency: commodity(row["currencyNamespace"], row["currencyMnemonic"]),
                 active: row["active"])
             invoice.entries = (invEntryRows[row["guid"]] ?? []).map { e in
-                InvoiceEntry(guid: GncGUID(hex: e["guid"]) ?? .random(), date: e["date"],
+                InvoiceEntry(guid: Serialize.parseGUID(e["guid"]), date: e["date"],
+                    entered: e["entered"],
                     entryDescription: e["entryDescription"], action: e["action"],
                     account: acct(e["accountGuid"]), quantity: Serialize.parseDecimal(e["quantity"]),
                     price: Serialize.parseDecimal(e["price"]),
@@ -286,6 +290,7 @@ extension SQLiteDocumentStore {
               let address = try? JSONDecoder().decode(BusinessAddress.self, from: data)
         else {
             persistenceLog.warning("Unparseable business address discarded")
+            LoadWarnings.current?.note(\.addresses)
             return BusinessAddress()
         }
         return address

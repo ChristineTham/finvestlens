@@ -56,6 +56,10 @@ public enum RuleAction: Codable, Hashable, Sendable {
     /// Earmark the matched transaction's amount to a savings goal
     /// (`FR-RULE-01` allocate-to-goal / `FR-GOAL-01`).
     case allocateToGoal(GncGUID)
+    /// Mark the matched transaction as the payment of a bill (a scheduled
+    /// transaction) — bill reminders then treat that period exactly, without
+    /// the description heuristic (`FR-RULE-01` link-to-bill).
+    case linkToBill(GncGUID)
 }
 
 /// A rule: match some triggers (all or any), then apply actions.

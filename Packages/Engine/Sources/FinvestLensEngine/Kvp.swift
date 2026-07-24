@@ -20,7 +20,12 @@ public indirect enum KvpValue: Hashable, Codable, Sendable {
     case numeric(Decimal)
     case string(String)
     case guid(GncGUID)
+    /// A day-only date (GnuCash `gdate`), or a date-time that happens to be
+    /// representable either way — exports as `gdate` when at midnight.
     case date(Date)
+    /// A date-time that must stay a GnuCash `timespec` on export even at
+    /// exactly midnight — the round-trip distinction `date` cannot carry.
+    case timespec(Date)
     case frame(KvpFrame)
     case list([KvpValue])
 }

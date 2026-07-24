@@ -241,6 +241,14 @@ public final class SQLiteDocumentStore {
                 t.add(column: "discountHow", .text).notNull().defaults(to: "pretax")
             }
         }
+        migrator.registerMigration("v4_credit_note_entered") { db in
+            try db.alter(table: "invoice") { t in
+                t.add(column: "isCreditNote", .boolean).notNull().defaults(to: false)
+            }
+            try db.alter(table: "invoice_entry") { t in
+                t.add(column: "entered", .datetime)
+            }
+        }
         return migrator
     }
 
@@ -353,7 +361,13 @@ public final class SQLiteDocumentStore {
     /// Reporting is throttled to whole percents. Calling out per row would mean
     /// ~250,000 hops for a bar with 100 visible states, and the reporting would
     /// cost more than the work it reports on.
+    /// What the last `read` had to default — nil before any read.
+    public private(set) var lastLoadWarnings: LoadWarnings?
+
     public func read(progress: (@Sendable (BookLoadProgress) -> Void)? = nil) throws -> Book {
+        let warnings = LoadWarnings()
+        defer { lastLoadWarnings = warnings }
+        return try LoadWarnings.$current.withValue(warnings) {
         try dbQueue.read { db in
             // Sizing the bar needs the row counts up front, which costs ~0.19s
             // on this book — 3% of a debug load. Skipped entirely when nobody is
@@ -421,7 +435,10 @@ public final class SQLiteDocumentStore {
 
             let rootAccount = root ?? Account(name: "Root Account", type: .root, commodity: .aud)
             let bookGuid = try String.fetchOne(db, sql: "SELECT value FROM meta WHERE key = 'bookGuid'")
-                .flatMap { $0 }.flatMap { GncGUID(hex: $0) } ?? .random()
+                .flatMap { $0 }.flatMap { GncGUID(hex: $0) } ?? {
+                    LoadWarnings.current?.note(\.guids)
+                    return .random()
+                }()
             let book = Book(guid: bookGuid, rootAccount: rootAccount)
             for commodity in commodities { book.registerCommodity(commodity) }
             if let bookKvp = try String.fetchOne(db, sql: "SELECT value FROM meta WHERE key = 'bookKvp'")
@@ -464,7 +481,7 @@ public final class SQLiteDocumentStore {
                 )
                 for splitRow in splitsByTxn[row["guid"]] ?? [] {
                     let split = Split(
-                        guid: GncGUID(hex: splitRow["guid"]) ?? .random(),
+                        guid: Serialize.parseGUID(splitRow["guid"]),
                         account: (splitRow["accountGuid"] as String?).flatMap { GncGUID(hex: $0) }
                             .flatMap { accountsByGUID[$0] },
                         value: Serialize.parseDecimal(splitRow["value"]),
@@ -506,6 +523,18 @@ public final class SQLiteDocumentStore {
 
             reporter?.finished()
             return book
+        }
+        }
+    }
+}
+
+extension SQLiteDocumentStore {
+    /// Test-only: damage one split's value and GUID the way external tools
+    /// might, so the load-warning counters can be exercised.
+    public func corruptForTesting() throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE split SET value = 'garbage', guid = 'nothex' "
+                + "WHERE rowid = (SELECT MIN(rowid) FROM split)")
         }
     }
 }

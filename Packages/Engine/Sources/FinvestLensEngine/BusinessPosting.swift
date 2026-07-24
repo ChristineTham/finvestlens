@@ -68,19 +68,24 @@ public extension Book {
 
         let total = invoice.total
         // The receivable/payable leg: +total on an A/R (asset up), −total on an
-        // A/P (liability up). Everything else is the mirror.
-        let arValue = receivable ? total : -total
+        // A/P (liability up). Everything else is the mirror — and a credit
+        // note flips every leg (GnuCash: `is_cust_doc != is_cn` negates).
+        let sign: Decimal = invoice.isCreditNote ? -1 : 1
+        let arValue = (receivable ? total : -total) * sign
         let arSplit = Split(account: account, value: arValue, memo: invoice.id)
-        arSplit.action = receivable ? "Invoice" : "Bill"
+        arSplit.action = invoice.isCreditNote ? "Credit Note"
+                                              : (receivable ? "Invoice" : "Bill")
         arSplit.reconcileDate = resolvedDue        // due date rides on the A/R split
         txn.addSplit(arSplit)
 
         for (incomeAccount, subtotal) in invoice.subtotalsByAccount() {
-            txn.addSplit(account: incomeAccount, value: receivable ? -subtotal : subtotal,
+            txn.addSplit(account: incomeAccount,
+                         value: (receivable ? -subtotal : subtotal) * sign,
                          memo: invoice.id)
         }
         for (taxAccount, tax) in invoice.taxByAccount() where tax != 0 {
-            txn.addSplit(account: taxAccount, value: receivable ? -tax : tax, memo: invoice.id)
+            txn.addSplit(account: taxAccount, value: (receivable ? -tax : tax) * sign,
+                         memo: invoice.id)
         }
 
         addTransaction(txn)

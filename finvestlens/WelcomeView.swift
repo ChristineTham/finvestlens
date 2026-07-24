@@ -209,6 +209,16 @@ struct WelcomeView: View {
         }
     }
 
+    /// A recents row a context-menu action is operating on.
+    private struct RecentTarget: Identifiable {
+        let url: URL
+        var id: URL { url }
+    }
+    @State private var renaming: RecentTarget?
+    @State private var moving: RecentTarget?
+    @State private var renameText = ""
+    @State private var fileError: String?
+
     /// Up to three recently opened books, one click away.
     @ViewBuilder
     private var recents: some View {
@@ -229,9 +239,47 @@ struct WelcomeView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(Brand.mauve)
                     .help(url.path)
+                    .contextMenu {
+                        Button("Rename…") { renaming = RecentTarget(url: url) }
+                        Button("Move…") { moving = RecentTarget(url: url) }
+                        Button("Remove from Recents") { model.removeRecent(url) }
+                    }
                 }
             }
             .padding(.top, 16)
+            .alert("Rename Book", isPresented: Binding(
+                get: { renaming != nil },
+                set: { if !$0 { renaming = nil } })) {
+                TextField("Name", text: $renameText)
+                Button("Rename") {
+                    guard let target = renaming else { return }
+                    do { try model.renameBook(at: target.url, to: renameText) }
+                    catch { fileError = error.localizedDescription }
+                    renaming = nil
+                }
+                Button("Cancel", role: .cancel) { renaming = nil }
+            } message: {
+                Text("Renames the book file where it is. The book must be closed.")
+            }
+            .onChange(of: renaming?.url) { _, url in
+                if let url { renameText = url.deletingPathExtension().lastPathComponent }
+            }
+            .fileMover(isPresented: Binding(
+                get: { moving != nil },
+                set: { if !$0 { moving = nil } }),
+                       file: moving?.url) { result in
+                if case .success(let newURL) = result, let old = moving?.url {
+                    model.bookMoved(from: old, to: newURL)
+                }
+                moving = nil
+            }
+            .alert("Couldn't Change the Book File", isPresented: Binding(
+                get: { fileError != nil },
+                set: { if !$0 { fileError = nil } })) {
+                Button("OK") { fileError = nil }
+            } message: {
+                Text(fileError ?? "")
+            }
         }
     }
 

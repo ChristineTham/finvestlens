@@ -177,3 +177,35 @@ struct BusinessPostingTests {
         #expect(book.balance(of: ar).amount == 0)
     }
 }
+
+@Suite("Credit notes")
+struct CreditNoteTests {
+
+    private func fixture() -> (Book, ar: Account, sales: Account) {
+        let book = Book(baseCurrency: .aud)
+        let ar = Account(name: "Accounts Receivable", type: .receivable, commodity: .aud)
+        let sales = Account(name: "Sales", type: .income, commodity: .aud)
+        for a in [ar, sales] { book.addAccount(a) }
+        return (book, ar, sales)
+    }
+
+    @Test("A customer credit note posts with every leg's sign flipped")
+    func creditNoteFlipsSigns() throws {
+        let (book, ar, sales) = fixture()
+        let customer = book.addCustomer(Customer(id: "C1", name: "Acme", currency: .aud))
+        let note = Invoice(id: "CN-1", kind: .invoice, isCreditNote: true,
+                           owner: .customer(customer), currency: .aud, entries: [
+            InvoiceEntry(account: sales, quantity: dec("1"), price: dec("100")),
+        ])
+        book.addInvoice(note)
+
+        let txn = try book.postInvoice(note, to: ar, postDate: day(0))
+
+        // GnuCash: is_cust_doc XOR is_cn negates — A/R falls, income reverses.
+        #expect(txn.splits.first { $0.account === ar }?.value == dec("-100"))
+        #expect(txn.splits.first { $0.account === sales }?.value == dec("100"))
+        #expect(txn.splits.first { $0.account === ar }?.action == "Credit Note")
+        #expect(book.balance(of: ar).amount == dec("-100"))
+        #expect(txn.splits.reduce(Decimal(0)) { $0 + $1.value } == 0)
+    }
+}

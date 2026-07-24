@@ -180,13 +180,19 @@ struct BusinessHub: View {
         }
     }
 
+    private func kindLabel(_ invoice: Invoice) -> String {
+        let base = invoice.kind == .invoice ? "Invoice"
+            : invoice.kind == .bill ? "Bill" : "Voucher"
+        return invoice.isCreditNote ? "Credit Note (\(base.lowercased()))" : base
+    }
+
     private func invoiceRow(_ invoice: Invoice) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(invoice.id) · \(invoice.owner.displayName)").fontWeight(.medium)
-                Text(invoice.kind == .invoice ? "Invoice"
-                     : invoice.kind == .bill ? "Bill" : "Voucher")
-                    .scaledFont(.caption).foregroundStyle(.secondary)
+                Text(kindLabel(invoice))
+                    .scaledFont(.caption)
+                    .foregroundStyle(invoice.isCreditNote ? Color.purple : Color.secondary)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -297,6 +303,7 @@ struct InvoiceEditorSheet: View {
     @State private var ownerID: GncGUID?
     @State private var lines: [LineDraft] = [LineDraft()]
     @State private var postNow = true
+    @State private var isCreditNote = false
 
     private var isInvoice: Bool { kind == .invoice }
     private var owners: [(GncGUID, String)] {
@@ -331,6 +338,10 @@ struct InvoiceEditorSheet: View {
                     Text("Choose…").tag(GncGUID?.none)
                     ForEach(owners, id: \.0) { Text($0.1).tag(GncGUID?.some($0.0)) }
                 }
+                Toggle("Credit note", isOn: $isCreditNote)
+                    .help(isInvoice
+                          ? "Reduces what the customer owes instead of increasing it"
+                          : "Reduces what you owe the vendor instead of increasing it")
                 Section("Lines") {
                     ForEach($lines) { $line in
                         VStack(spacing: 6) {
@@ -389,8 +400,9 @@ struct InvoiceEditorSheet: View {
                          taxable: line.taxable, taxTableID: line.taxTableID)
         }
         guard let invoiceID = model.createInvoice(
-            id: docID.isEmpty ? "\(isInvoice ? "INV" : "BILL")-\(model.businessInvoices.count + 1)" : docID,
-            kind: kind, ownerType: ownerType, ownerID: ownerID, lines: inputs) else { return }
+            id: docID.isEmpty ? "\(isInvoice ? (isCreditNote ? "CN" : "INV") : "BILL")-\(model.businessInvoices.count + 1)" : docID,
+            kind: kind, isCreditNote: isCreditNote,
+            ownerType: ownerType, ownerID: ownerID, lines: inputs) else { return }
         if postNow { model.postInvoice(invoiceID) }
         dismiss()
     }
@@ -415,6 +427,11 @@ struct InvoiceDetailSheet: View {
             if let invoice {
                 Form {
                     LabeledContent("Document", value: invoice.id)
+                    if invoice.isCreditNote {
+                        LabeledContent("Type") {
+                            Text("Credit Note").foregroundStyle(.purple).fontWeight(.medium)
+                        }
+                    }
                     LabeledContent(invoice.kind == .invoice ? "Customer" : "Vendor",
                                    value: invoice.owner.displayName)
                     LabeledContent("Opened", value: dateFormat.long(invoice.dateOpened))
@@ -505,6 +522,7 @@ struct PrintableInvoice: View {
     private var isTax: Bool { layout == .taxInvoice }
     private func money(_ d: Decimal) -> String { AmountFormat.string(d, code: code) }
     private var title: String {
+        if invoice.isCreditNote { return isTax ? "ADJUSTMENT NOTE" : "CREDIT NOTE" }
         if isTax { return "TAX INVOICE" }
         return invoice.kind == .invoice ? "INVOICE" : invoice.kind == .bill ? "BILL" : "VOUCHER"
     }

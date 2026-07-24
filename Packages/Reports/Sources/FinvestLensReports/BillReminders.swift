@@ -49,7 +49,7 @@ public extension FinancialReports {
             for date in dates {
                 let status: BillStatus
                 if isPaid(name: schedule.name, description: schedule.transactionDescription,
-                          near: date, grace: grace, book: book) {
+                          billID: schedule.id, near: date, grace: grace, book: book) {
                     status = .paid
                 } else if date < asOf {
                     status = .overdue
@@ -80,12 +80,23 @@ public extension FinancialReports {
         return schedule.splits.map(\.value).map(abs).max() ?? 0
     }
 
-    private static func isPaid(name: String, description: String, near date: Date,
+    /// The KVP slot a rule's link-to-bill action stamps on a payment
+    /// transaction: the settled schedule's GUID. An exact link outranks the
+    /// description heuristic below.
+    public static let billLinkKey = "finvestlens/bill-id"
+
+    private static func isPaid(name: String, description: String, billID: GncGUID,
+                               near date: Date,
                                grace: TimeInterval, book: Book) -> Bool {
         let lower = date.addingTimeInterval(-grace)
         let upper = date.addingTimeInterval(grace)
         return book.transactions.contains { txn in
             guard txn.datePosted >= lower, txn.datePosted <= upper else { return false }
+            // Exact: a rule linked this payment to the bill (FR-RULE-01
+            // link-to-bill) — no name matching required.
+            if case let .guid(linked)? = txn.kvp[billLinkKey], linked == billID {
+                return true
+            }
             let d = txn.transactionDescription
             return d.caseInsensitiveCompare(name) == .orderedSame
                 || d.caseInsensitiveCompare(description) == .orderedSame

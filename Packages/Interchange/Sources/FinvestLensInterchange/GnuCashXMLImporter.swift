@@ -180,6 +180,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
              "split:slots" where split != nil,
              "cmdty:slots" where commodity != nil,
              "lot:slots" where lot != nil,
+             "invoice:slots" where invoice != nil,
              "book:slots":
             slotContainer = name
         case "slot":
@@ -292,7 +293,8 @@ private final class Delegate: NSObject, XMLParserDelegate {
             }
         case "slot":
             if slotContainer != nil, !slotStack.isEmpty { slotStack.removeLast() }
-        case "act:slots", "trn:slots", "split:slots", "cmdty:slots", "book:slots", "lot:slots":
+        case "act:slots", "trn:slots", "split:slots", "cmdty:slots", "book:slots",
+             "lot:slots", "invoice:slots":
             finishSlotContainer(name)
 
         // MARK: Business fields
@@ -450,6 +452,7 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "invoice:opened": invoice?.opened = date
         case "invoice:posted": invoice?.posted = date
         case "entry:date": entry?.date = date
+        case "entry:entered": entry?.entered = date
         default: break
         }
     }
@@ -486,6 +489,12 @@ private final class Delegate: NSObject, XMLParserDelegate {
             transaction?.kvp = frame
         case "split:slots":
             split?.kvp = frame
+        case "invoice:slots":
+            // The one invoice slot GnuCash writes: the credit-note marker
+            // (deferred.md FR-BUS-01) — lifted onto the model.
+            if case let .int64(flag)? = frame["credit-note"] {
+                invoice?.isCreditNote = (flag != 0)
+            }
         case "cmdty:slots":
             commodity?.kvp = frame
         case "lot:slots":
@@ -506,7 +515,10 @@ private final class Delegate: NSObject, XMLParserDelegate {
         case "double": return Double(node.scalar).map(KvpValue.double)
         case "numeric": return GnuCashNumeric.parse(node.scalar).map(KvpValue.numeric)
         case "guid": return GncGUID(hex: node.scalar).map(KvpValue.guid)
-        case "gdate", "timespec": return GnuCashDate.parse(node.scalar).map(KvpValue.date)
+        case "gdate": return GnuCashDate.parse(node.scalar).map(KvpValue.date)
+        // A distinct case so a timespec at exactly midnight still re-exports
+        // as a timespec (round-trip fidelity, deferred.md §2b).
+        case "timespec": return GnuCashDate.parse(node.scalar).map(KvpValue.timespec)
         case "frame":
             var frame = KvpFrame()
             for child in node.children where !child.key.isEmpty {
@@ -791,7 +803,8 @@ private final class Delegate: NSObject, XMLParserDelegate {
         for b in entryBuilders {
             guard let invGUID = b.invoiceGUID else { continue }
             entriesByInvoice[invGUID, default: []].append(InvoiceEntry(
-                guid: b.guid ?? .random(), date: b.date ?? Date(), entryDescription: b.desc,
+                guid: b.guid ?? .random(), date: b.date ?? Date(), entered: b.entered,
+                entryDescription: b.desc,
                 action: b.action, account: account(b.accountGUID), quantity: b.qty, price: b.price,
                 discount: b.discount, discountType: b.discType == "VALUE" ? .value : .percentage,
                 discountHow: DiscountHow(gnuCashName: b.discHow),
@@ -807,7 +820,8 @@ private final class Delegate: NSObject, XMLParserDelegate {
             case .employee: kind = .voucher
             case .job(let j): kind = j.owner.type == .customer ? .invoice : .bill
             }
-            let invoice = Invoice(guid: guid, id: b.id, kind: kind, owner: ownr,
+            let invoice = Invoice(guid: guid, id: b.id, kind: kind,
+                                  isCreditNote: b.isCreditNote, owner: ownr,
                                   dateOpened: b.opened ?? Date(), datePosted: b.posted,
                                   terms: b.termsGUID.flatMap { terms[$0] }, billingID: b.billingID,
                                   notes: b.notes, currency: currency(b.currencySpace, b.currencyID),
@@ -931,13 +945,15 @@ struct JobBuilder {
     var owner = OwnerRef()
 }
 struct InvoiceBuilder {
-    var guid: GncGUID?; var id = ""; var owner = OwnerRef(); var opened: Date?; var posted: Date?
+    var guid: GncGUID?; var id = ""; var isCreditNote = false
+    var owner = OwnerRef(); var opened: Date?; var posted: Date?
     var termsGUID: GncGUID?; var billingID = ""; var notes = ""; var active = true
     var currencySpace: String?; var currencyID: String?
     var postAccountGUID: GncGUID?; var postTxnGUID: GncGUID?; var postLotGUID: GncGUID?
 }
 struct EntryBuilder {
-    var guid: GncGUID?; var date: Date?; var desc = ""; var action = ""; var qty: Decimal = 1
+    var guid: GncGUID?; var date: Date?; var entered: Date?
+    var desc = ""; var action = ""; var qty: Decimal = 1
     var accountGUID: GncGUID?; var price: Decimal = 0; var discount: Decimal = 0
     var discType = "PERCENT"; var discHow = "PRETAX"; var taxable = false; var taxIncluded = false
     var taxTableGUID: GncGUID?; var invoiceGUID: GncGUID?

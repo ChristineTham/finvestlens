@@ -5,9 +5,11 @@ still open: deferred, partial, or not yet built. It is **ranked** — highest
 priority / readiest to pick up first.
 
 Two items were **skipped from the plan by decision** (online bank sync from
-P8, TXF export from P9) — §5 below. Anything already built is in
-[implemented.md](implemented.md); intentional non-goals (e.g. bit-for-bit
-arithmetic parity with GnuCash) are not tracked anywhere.
+P8, TXF export from P9) — §5 below. The 24 Jul 2026 backlog pass built
+everything else that was buildable without external dependencies (credit
+notes, the round-trip fidelity tail, load-time warnings, the iOS rename/move
+flow, rule link-to-bill — see [implemented.md](implemented.md)); what remains
+below needs hardware, runners, translators, or a judgement call.
 
 Each row cites its PRD `FR-*`/`NFR-*` and the phase it belonged to.
 
@@ -31,19 +33,7 @@ Common workflows partly built; each is a bounded piece of work.
 
 | Item | FR / Phase | Notes |
 |---|---|---|
-| Rule actions tail | FR-RULE-01 / P4 | The engine now has an `account` trigger and set-tags / set-description / **allocate-to-goal** (`FR-GOAL-01`) actions. Remaining: **convert-type** (fuzzy in a double-entry model) and **link-to-bill** (needs bill-link infrastructure not yet built). |
-| GnuCash **credit-note** import | FR-BUS-01 / P7 | GnuCash stores a credit note as an invoice with a `credit-note` int64 in `<invoice:slots>`; we don't model credit notes, so such a document imports as an ordinary invoice with the **posting sign inverted** (A/R increased instead of reduced). A real fix is a feature — a credit-note flag on the invoice model, the posting-sign inversion, and UI — not just a parser change. Surfaced by the production review (2026-07-19). |
-
-## 2b — Production-readiness review tail (2026-07-19)
-
-Bounded items surfaced by the full-codebase review (commits `9021a2c`, `be63e62`).
-The review fixed every genuine correctness/data-loss bug; these were deferred as
-larger-than-a-fix or needing infrastructure that isn't built yet.
-
-| Item | FR / Phase | Notes |
-|---|---|---|
-| Load-time warning for non-canonical persisted data | NFR-05 / P1 | The SQLite load path defaults silently on unparseable data it never itself writes (`parseDecimal`→0, `parseKvp`→empty frame, `decodeAddress`→empty, GUID parse→random). Kept as resilience (open-what-you-can) — throwing would turn recoverable corruption into "can't open your book". The **warning channel now exists** — the Jul 2026 redesign's status overlay / toast layer (`AppModel.showToast`); what remains is wiring the load path's silent defaults into it. |
-| GnuCash-XML round-trip fidelity tail | FR-XIO-01 / P7 | Two minor slots don't round-trip: an invoice entry's `entry:entered` timestamp is re-derived from `entry:date` (needs a separate `entered` field on `InvoiceEntry`), and a KVP `timespec` slot at exactly midnight re-exports as `gdate` (the `KvpValue` model maps both date types to one case). Negligible data impact; each needs a model change. |
+| Rule actions tail | FR-RULE-01 / P4 | **link-to-bill shipped 24 Jul 2026** (a rule stamps the payment with the schedule's GUID; bill reminders match it exactly before falling back to the name heuristic). Remaining: **convert-type** only — fuzzy in a double-entry model, left by judgement. |
 
 ## 3 — Apple Intelligence import caveats (monitor)
 
@@ -60,7 +50,6 @@ Quality limits of the on-device import layer (PRD §5.18), caught by the review 
 | Item | Notes |
 |---|---|
 | App Sandbox | Disabled by decision: sibling `.lock` files at user-selected locations are denied by the sandbox; related-item declaration + coordinated I/O are in place but macOS still refused. Direct (notarized) distribution doesn't need it. Revisit before any Mac App Store submission. |
-| iOS move/rename flow for new books | New books land in the app's Documents directory with safe naming; an in-app move/rename flow is todo. |
 | Esc inside a focused text field | AppKit's field editor consumes the raw Escape (completion); ⌘. always cancels, Esc works otherwise. SwiftUI offers no clean override (accepted). *The Jul 2026 F19 sweep put `onEscapeCommand` on every sheet — this field-editor caveat is the one remaining Esc limit.* |
 
 ## 5 — Skipped from the phase plan (revisit only on demand)

@@ -714,7 +714,7 @@ public final class AppModel {
     public var hasSelectedTransaction: Bool { selectedTransactionID != nil }
 
     /// Books opened recently (most recent first), for Open Recent / welcome.
-    public private(set) var recentBooks: [URL] = AppModel.loadRecents()
+    public internal(set) var recentBooks: [URL] = AppModel.loadRecents()
 
     /// Set by menu commands to trigger the bank-file importer in the root view.
     public var bankImportRequested = false
@@ -988,6 +988,11 @@ public final class AppModel {
             endBookAccess()
             throw error
         }
+        // Open-what-you-can (NFR-05): the load never refuses a book over
+        // unreadable stored values, but it must not stay silent about them.
+        if let summary = document?.loadWarnings?.summary {
+            showToast(.info, summary)
+        }
         // The read is done; everything below is main-actor work — balances, the
         // account tree, the dashboard — and the window cannot repaint while it
         // runs. Say so, and give the run loop one frame to actually paint it
@@ -1040,7 +1045,7 @@ public final class AppModel {
     // MARK: Security-scoped access (iOS document-provider locations)
 
     private var scopedBookURL: URL?
-    private static let recentBookmarksKey = "finvestlens.recentBookBookmarks"
+    static let recentBookmarksKey = "finvestlens.recentBookBookmarks"
 
     /// Starts security-scoped access to a book and keeps it for the session.
     /// Picker URLs carry their own scope; recents resolve through the stored

@@ -49,6 +49,9 @@ public final class FinvestLensDocument {
     public let fileURL: URL
     /// The in-memory book (source of truth while open).
     public private(set) var book: Book
+    /// What the load had to default (open-what-you-can, NFR-05) — surfaced
+    /// as a warning toast by the app layer.
+    public var loadWarnings: LoadWarnings? { store.lastLoadWarnings }
     /// Whether there are unsaved changes.
     public var hasUnsavedChanges: Bool
 

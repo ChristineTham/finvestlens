@@ -148,7 +148,8 @@ extension AppModel {
 
     /// Creates an unposted invoice/bill/voucher for an owner and returns its id.
     @discardableResult
-    public func createInvoice(id: String, kind: InvoiceKind, ownerType: OwnerType,
+    public func createInvoice(id: String, kind: InvoiceKind, isCreditNote: Bool = false,
+                              ownerType: OwnerType,
                               ownerID: GncGUID, dateOpened: Date = Date(),
                               lines: [InvoiceLineInput]) -> GncGUID? {
         guard let book, let owner = businessOwner(type: ownerType, id: ownerID) else { return nil }
@@ -159,9 +160,12 @@ extension AppModel {
                                 quantity: line.quantity, price: line.price,
                                 taxable: line.taxable, taxTable: table)
         }
-        let invoice = Invoice(id: id, kind: kind, owner: owner, dateOpened: dateOpened,
+        let invoice = Invoice(id: id, kind: kind, isCreditNote: isCreditNote, owner: owner,
+                              dateOpened: dateOpened,
                               terms: owner.terms, currency: reportCurrency, entries: entries)
-        editingWholeBook(named: "Create Invoice") { book.addInvoice(invoice) }
+        editingWholeBook(named: isCreditNote ? "Create Credit Note" : "Create Invoice") {
+            book.addInvoice(invoice)
+        }
         return invoice.guid
     }
 

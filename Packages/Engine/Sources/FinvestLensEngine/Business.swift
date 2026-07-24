@@ -385,6 +385,9 @@ public enum DiscountHow: String, Codable, Sendable, CaseIterable {
 public final class InvoiceEntry: Identifiable, @unchecked Sendable {
     public let guid: GncGUID
     public var date: Date
+    /// When the entry was typed in, as distinct from its document date —
+    /// GnuCash's `entry:entered`, kept for round-trip fidelity.
+    public var entered: Date?
     public var entryDescription: String
     public var action: String
     /// The income (invoice) or expense (bill) account this line books to.
@@ -398,14 +401,15 @@ public final class InvoiceEntry: Identifiable, @unchecked Sendable {
     public var taxIncluded: Bool
     public var taxTable: TaxTable?
 
-    public init(guid: GncGUID = .random(), date: Date = Date(),
+    public init(guid: GncGUID = .random(), date: Date = Date(), entered: Date? = nil,
                 entryDescription: String = "", action: String = "",
                 account: Account? = nil, quantity: Decimal = 1, price: Decimal = 0,
                 discount: Decimal = 0, discountType: DiscountType = .percentage,
                 discountHow: DiscountHow = .pretax,
                 taxable: Bool = false, taxIncluded: Bool = false,
                 taxTable: TaxTable? = nil) {
-        self.guid = guid; self.date = date; self.entryDescription = entryDescription
+        self.guid = guid; self.date = date; self.entered = entered
+        self.entryDescription = entryDescription
         self.action = action; self.account = account; self.quantity = quantity
         self.price = price; self.discount = discount; self.discountType = discountType
         self.discountHow = discountHow
@@ -486,6 +490,10 @@ public final class Invoice: Identifiable, @unchecked Sendable {
     public let guid: GncGUID
     public var id: String
     public var kind: InvoiceKind
+    /// A credit note reduces what the owner owes (or is owed) instead of
+    /// increasing it — GnuCash's `credit-note` invoice slot. Posting flips
+    /// every leg's sign relative to the ordinary document of the same kind.
+    public var isCreditNote: Bool
     public var owner: BusinessOwner
     public var dateOpened: Date
     public var datePosted: Date?
@@ -504,11 +512,13 @@ public final class Invoice: Identifiable, @unchecked Sendable {
     public var active: Bool
 
     public init(guid: GncGUID = .random(), id: String, kind: InvoiceKind,
+                isCreditNote: Bool = false,
                 owner: BusinessOwner, dateOpened: Date = Date(),
                 datePosted: Date? = nil, dueDate: Date? = nil, terms: BillTerm? = nil,
                 billingID: String = "", notes: String = "", currency: Commodity,
                 entries: [InvoiceEntry] = [], active: Bool = true) {
-        self.guid = guid; self.id = id; self.kind = kind; self.owner = owner
+        self.guid = guid; self.id = id; self.kind = kind; self.isCreditNote = isCreditNote
+        self.owner = owner
         self.dateOpened = dateOpened; self.datePosted = datePosted; self.dueDate = dueDate
         self.terms = terms; self.billingID = billingID; self.notes = notes
         self.currency = currency; self.entries = entries; self.active = active

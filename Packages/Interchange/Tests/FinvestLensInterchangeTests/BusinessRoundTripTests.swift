@@ -97,3 +97,75 @@ struct BusinessRoundTripTests {
         #expect(reimported.outstanding(reBill) == dec("200"))
     }
 }
+
+@Suite("Credit-note & fidelity round-trip")
+struct CreditNoteRoundTripTests {
+
+    @Test("A credit note survives export → re-import with flag, slot, and feature")
+    func creditNoteRoundTrip() throws {
+        let book = Book(baseCurrency: .aud)
+        let ar = book.addAccount(Account(name: "A/R", type: .receivable, commodity: .aud))
+        let sales = book.addAccount(Account(name: "Sales", type: .income, commodity: .aud))
+        let customer = book.addCustomer(Customer(id: "C1", name: "Acme", currency: .aud))
+        let entered = Date(timeIntervalSince1970: 1_700_000_123)
+        let note = Invoice(id: "CN-1", kind: .invoice, isCreditNote: true,
+                           owner: .customer(customer), currency: .aud, entries: [
+            InvoiceEntry(date: Date(timeIntervalSince1970: 1_700_000_000), entered: entered,
+                         entryDescription: "Refund", account: sales,
+                         quantity: dec("1"), price: dec("100"))])
+        book.addInvoice(note)
+        try book.postInvoice(note, to: ar, postDate: Date(timeIntervalSince1970: 1_700_000_000))
+
+        let xml = GnuCashXMLExporter.export(book)
+        let text = String(decoding: xml, as: UTF8.self)
+        // The invoice slot and the book feature flag are both on the wire.
+        #expect(text.contains("credit-note"))
+        #expect(text.contains("<slot:value type=\"integer\">1</slot:value>"))
+        #expect(text.contains("Credit Notes"))
+
+        let reimported = try GnuCashXMLImporter.importBook(from: xml).book
+        let back = try #require(reimported.invoices.first)
+        #expect(back.isCreditNote)
+        // The A/R leg carries the flipped sign through the round trip.
+        let arBack = try #require(reimported.accounts.first { $0.name == "A/R" })
+        #expect(reimported.balance(of: arBack).amount == dec("-100"))
+        // entry:entered survives as its own timestamp, not re-derived.
+        #expect(back.entries.first?.entered == entered)
+
+        // An ordinary invoice still round-trips with the slot at 0.
+        let plain = GnuCashXMLExporter.export(makeOrdinaryBook())
+        let plainText = String(decoding: plain, as: UTF8.self)
+        #expect(plainText.contains("<slot:key>credit-note</slot:key>"))
+        #expect(!plainText.contains("Credit Notes"))
+        let plainBack = try GnuCashXMLImporter.importBook(from: plain).book
+        #expect(plainBack.invoices.first?.isCreditNote == false)
+    }
+
+    private func makeOrdinaryBook() -> Book {
+        let book = Book(baseCurrency: .aud)
+        _ = book.addAccount(Account(name: "Sales", type: .income, commodity: .aud))
+        let customer = book.addCustomer(Customer(id: "C2", name: "Beta", currency: .aud))
+        book.addInvoice(Invoice(id: "INV-9", kind: .invoice, owner: .customer(customer),
+                                currency: .aud))
+        return book
+    }
+
+    @Test("A midnight timespec slot stays a timespec through the round trip")
+    func midnightTimespec() throws {
+        let midnight = Date(timeIntervalSince1970: 1_700_006_400)  // 00:00:00 UTC
+        #expect(midnight.timeIntervalSince1970.truncatingRemainder(dividingBy: 86_400) == 0)
+        let book = Book(baseCurrency: .aud)
+        book.kvp["stamp"] = .timespec(midnight)
+        book.kvp["day"] = .date(midnight)
+
+        let xml = GnuCashXMLExporter.export(book)
+        let back = try GnuCashXMLImporter.importBook(from: xml).book
+        // The timespec stayed a timespec; the day-only date stayed a gdate.
+        #expect(back.kvp["stamp"] == .timespec(midnight))
+        #expect(back.kvp["day"] == .date(midnight))
+
+        let again = String(decoding: GnuCashXMLExporter.export(back), as: UTF8.self)
+        #expect(again.contains("<slot:value type=\"timespec\">"))
+        #expect(again.contains("<slot:value type=\"gdate\">"))
+    }
+}

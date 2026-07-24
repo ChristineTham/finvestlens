@@ -219,6 +219,11 @@ extension GnuCashXMLExporter {
         if let account = i.postedAccount { b += "  <invoice:postacc type=\"guid\">\(account.guid.hexString)</invoice:postacc>\n" }
         if let txn = i.postedTransaction { b += "  <invoice:posttxn type=\"guid\">\(txn.guid.hexString)</invoice:posttxn>\n" }
         if let lot = i.postedLot { b += "  <invoice:postlot type=\"guid\">\(lot.guid.hexString)</invoice:postlot>\n" }
+        // GnuCash writes the credit-note marker on every invoice (0 or 1).
+        b += "  <invoice:slots>\n"
+        b += "    <slot>\n      <slot:key>credit-note</slot:key>\n"
+        b += "      <slot:value type=\"integer\">\(i.isCreditNote ? 1 : 0)</slot:value>\n    </slot>\n"
+        b += "  </invoice:slots>\n"
         b += "</gnc:GncInvoice>\n"
         return b
     }
@@ -231,7 +236,7 @@ extension GnuCashXMLExporter {
         var b = "<gnc:GncEntry version=\"2.0.0\">\n"
         b += "  <entry:guid type=\"guid\">\(e.guid.hexString)</entry:guid>\n"
         b += "  <entry:date><ts:date>\(GnuCashDate.format(e.date))</ts:date></entry:date>\n"
-        b += "  <entry:entered><ts:date>\(GnuCashDate.format(e.date))</ts:date></entry:entered>\n"
+        b += "  <entry:entered><ts:date>\(GnuCashDate.format(e.entered ?? e.date))</ts:date></entry:entered>\n"
         b += "  <entry:description>\(escape(e.entryDescription))</entry:description>\n"
         if !e.action.isEmpty { b += "  <entry:action>\(escape(e.action))</entry:action>\n" }
         b += "  <entry:qty>\(rational(e.quantity, fallbackFraction: 1000))</entry:qty>\n"
