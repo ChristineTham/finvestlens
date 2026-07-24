@@ -56,6 +56,10 @@ extension AppModel {
 
         let groups = ruleGroups
         for index in results.indices {
+            // A detected transfer counterpart outranks rules and heuristics:
+            // the amount + date + wash-leg evidence is stronger than any payee
+            // text, and re-categorising it would duplicate the transaction.
+            guard results[index].transferSplitID == nil else { continue }
             let staged = results[index].staged
             let name = staged.payee.isEmpty ? staged.memo : staged.payee
             // Rules take precedence.
@@ -144,21 +148,54 @@ extension AppModel {
 
     /// Posts accepted rows into the book as balanced transactions: the target
     /// account gets the signed amount, the assigned (or suggested) account the
-    /// opposite. Duplicates and rows without a destination are skipped.
+    /// opposite. Duplicates are skipped (stamping their statement reference on
+    /// the matched split for exact re-import matching); a row that completes a
+    /// cross-account transfer re-points the existing wash leg here instead of
+    /// posting a mirror duplicate; rows without a destination go to the book's
+    /// imbalance account when `fallbackToImbalance` (so the Uncategorised
+    /// review can sweep them), else are skipped.
     ///
-    /// - Returns: the number of transactions created.
+    /// - Returns: the number of rows imported (created + transfer-completed).
     @discardableResult
     public func importMatched(_ results: [MatchResult], intoAccountID id: GncGUID,
                               assignments: [UUID: GncGUID] = [:],
-                              skipDuplicates: Bool = true) -> Int {
+                              skipDuplicates: Bool = true,
+                              fallbackToImbalance: Bool = false) -> Int {
         guard let book, let target = book.account(with: id) else { return 0 }
+        let imbalance = fallbackToImbalance ? imbalanceFallback(for: target) : nil
         var created: [Transaction] = []
+        // Existing wash legs to re-point at the target (the other half of a
+        // transfer the counterpart statement already created), and existing
+        // matched splits to stamp with the incoming statement reference.
+        var healed: [(split: Split, staged: StagedTransaction)] = []
+        var referenced: [(split: Split, reference: String)] = []
         for result in results {
-            if skipDuplicates && result.isDuplicate { continue }
+            if skipDuplicates && result.isDuplicate {
+                if !result.staged.reference.isEmpty, let matchID = result.matchedSplitID,
+                   let split = book.split(with: matchID), split.kvp["online_id"] == nil {
+                    referenced.append((split, result.staged.reference))
+                }
+                continue
+            }
             let staged = result.staged
+
+            // Transfer completion: re-point the counterpart transaction's wash
+            // leg at this account — unless the user overrode the destination,
+            // which turns the row back into an ordinary new transaction.
+            if let washID = result.transferSplitID,
+               assignments[staged.id] == nil || assignments[staged.id] == result.suggestedAccountID,
+               let wash = book.split(with: washID), wash.transaction != nil,
+               let washAccount = wash.account, ImportMatcher.isWash(washAccount) {
+                healed.append((wash, staged))
+                continue
+            }
             let rawName = staged.payee.isEmpty ? staged.memo : staged.payee
-            // Tidy the statement line for the transaction description.
+            // Tidy the statement line for the transaction description. The raw
+            // narrative goes into the money leg's memo (the smart categoriser's
+            // convention) so cleaning never loses it — history matching and
+            // future re-imports rely on the raw text surviving somewhere.
             let name = MerchantHeuristics.cleanMerchant(rawName)
+            let narrative = staged.memo.isEmpty ? rawName : staged.memo
 
             // A split record (QIF `S`/`E`/`$`) posts one leg per category, when
             // every category resolves to an account; otherwise it falls back to
@@ -169,7 +206,9 @@ extension AppModel {
                     let transaction = Transaction(currency: target.commodity, datePosted: staged.date,
                                                   number: staged.reference,
                                                   description: name.isEmpty ? rawName : name)
-                    let targetSplit = transaction.addSplit(account: target, value: staged.amount, memo: staged.memo)
+                    let targetSplit = transaction.addSplit(
+                        account: target, value: staged.amount,
+                        memo: name == rawName ? staged.memo : narrative)
                     if !staged.reference.isEmpty {
                         targetSplit.kvp["online_id"] = .string(staged.reference)
                     }
@@ -187,12 +226,15 @@ extension AppModel {
             }
 
             let destinationID = assignments[staged.id] ?? result.suggestedAccountID
-            guard let destinationID, let destination = book.account(with: destinationID) else { continue }
+            guard let destination = destinationID.flatMap({ book.account(with: $0) }) ?? imbalance
+            else { continue }
 
             let transaction = Transaction(currency: target.commodity, datePosted: staged.date,
                                           number: staged.reference,
                                           description: name.isEmpty ? rawName : name)
-            let targetSplit = transaction.addSplit(account: target, value: staged.amount, memo: staged.memo)
+            let targetSplit = transaction.addSplit(
+                account: target, value: staged.amount,
+                memo: name == rawName ? staged.memo : narrative)
             // Record the bank's FITID in the split's `online_id` slot, GnuCash's
             // convention, so a re-import (here or in GnuCash) recognises it.
             if !staged.reference.isEmpty {
@@ -201,12 +243,38 @@ extension AppModel {
             transaction.addSplit(account: destination, value: -staged.amount)
             created.append(transaction)
         }
-        let imported = created.count
-        if imported > 0 {
-            editing(created.map(\.guid), named: "Import Transactions") {
+        let imported = created.count + healed.count
+        let touched = created.map(\.guid)
+            + healed.compactMap { $0.split.transaction?.guid }
+            + referenced.compactMap { $0.split.transaction?.guid }
+        if !touched.isEmpty {
+            editing(touched, named: "Import Transactions") {
                 for transaction in created { book.addTransaction(transaction) }
+                for (split, staged) in healed {
+                    split.account = target
+                    if split.memo.trimmingCharacters(in: .whitespaces).isEmpty {
+                        split.memo = staged.memo.isEmpty
+                            ? (staged.payee.isEmpty ? staged.memo : staged.payee)
+                            : staged.memo
+                    }
+                    if !staged.reference.isEmpty {
+                        split.kvp["online_id"] = .string(staged.reference)
+                    }
+                }
+                for (split, reference) in referenced {
+                    split.kvp["online_id"] = .string(reference)
+                }
             }
         }
         return imported
+    }
+
+    /// The book's existing `Imbalance-<CUR>` account matching the target's
+    /// currency, for parking rows nothing categorised. Lookup only — import
+    /// never creates accounts.
+    func imbalanceFallback(for target: Account) -> Account? {
+        book?.accounts.first {
+            $0.isImbalanceOrOrphan && !$0.isPlaceholder && $0.commodity == target.commodity
+        }
     }
 }

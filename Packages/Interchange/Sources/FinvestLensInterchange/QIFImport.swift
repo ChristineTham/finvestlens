@@ -16,8 +16,12 @@ import Foundation
 public enum QIFImporter {
 
     /// Common QIF date encodings, tried in order. `''` is a literal apostrophe.
+    /// Two-digit-year forms (`30/06/26`, as AU banks export) come after their
+    /// four-digit twins; `parseDate` rejects the implausible year the four-digit
+    /// pattern reads from them ("year 26"), falling through to the `yy` form.
     static let dateFormats = [
         "MM/dd/yyyy", "M/d/yyyy", "dd/MM/yyyy", "d/M/yyyy",
+        "MM/dd/yy", "M/d/yy", "dd/MM/yy", "d/M/yy",
         "MM/dd''yy", "M/d''yy", "yyyy-MM-dd",
     ]
 
@@ -130,9 +134,17 @@ public enum QIFImporter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = formatter.timeZone
         for format in formats {
             formatter.dateFormat = format
-            if let date = formatter.date(from: text) { return date }
+            if let date = formatter.date(from: text) {
+                // A `yyyy` pattern happily reads a two-digit year as year 26 AD;
+                // reject it so the matching `yy` pattern (which maps 26 → 2026)
+                // gets its turn.
+                if calendar.component(.year, from: date) < 1500 { continue }
+                return date
+            }
         }
         return nil
     }
@@ -153,6 +165,7 @@ public enum QIFImporter {
         }
         if dayFirst && !monthFirst {
             return ["dd/MM/yyyy", "d/M/yyyy", "MM/dd/yyyy", "M/d/yyyy",
+                    "dd/MM/yy", "d/M/yy", "MM/dd/yy", "M/d/yy",
                     "dd/MM''yy", "d/M''yy", "yyyy-MM-dd"]
         }
         return dateFormats

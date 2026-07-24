@@ -41,6 +41,7 @@ struct ImportView: View {
     @State private var assignments: [UUID: GncGUID] = [:]
     @State private var skipDuplicates = true
     @State private var markMatchedCleared = true
+    @State private var fallbackToImbalance = true
     @State private var suggesting = false
     @State private var suggestError: String?
 
@@ -62,8 +63,17 @@ struct ImportView: View {
     @State private var invCreated = 0
 
     private var accounts: [AccountNode] { model.postableAccounts }
+    /// Whether the book has an imbalance account rows without a destination
+    /// can fall back to.
+    private var hasImbalanceFallback: Bool {
+        guard let targetID, let account = model.book?.account(with: targetID) else { return false }
+        return model.imbalanceFallback(for: account) != nil
+    }
     private var importCount: Int {
-        results.filter { !(skipDuplicates && $0.isDuplicate) && destination(for: $0) != nil }.count
+        results.filter {
+            !(skipDuplicates && $0.isDuplicate)
+                && (destination(for: $0) != nil || (fallbackToImbalance && hasImbalanceFallback))
+        }.count
     }
 
     var body: some View {
@@ -108,6 +118,10 @@ struct ImportView: View {
                         Toggle("Mark matched transactions as cleared", isOn: $markMatchedCleared)
                             .help("Reconcile register entries that this statement confirms")
                     }
+                    if hasImbalanceFallback, results.contains(where: { destination(for: $0) == nil }) {
+                        Toggle("Post unmatched rows to the imbalance account", isOn: $fallbackToImbalance)
+                            .help("Rows nothing categorised still import, parked in Imbalance for the Uncategorised review to sweep")
+                    }
                     if model.isIntelligenceAvailable {
                         Section {
                             Button {
@@ -145,7 +159,8 @@ struct ImportView: View {
                         if let targetID {
                             _ = model.importMatched(results, intoAccountID: targetID,
                                                     assignments: assignments,
-                                                    skipDuplicates: skipDuplicates)
+                                                    skipDuplicates: skipDuplicates,
+                                                    fallbackToImbalance: fallbackToImbalance)
                             if markMatchedCleared {
                                 model.reconcileMatchedDuplicates(results)
                             }
@@ -194,6 +209,11 @@ struct ImportView: View {
                 if result.isDuplicate {
                     Text("duplicate").scaledFont(.caption2).padding(.horizontal, 6).padding(.vertical, 1)
                         .background(.yellow.opacity(0.3), in: Capsule())
+                }
+                if result.transferSplitID != nil {
+                    Text("transfer").scaledFont(.caption2).padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(.blue.opacity(0.2), in: Capsule())
+                        .help("Completes a transfer already recorded by the other account's statement")
                 }
                 Spacer()
                 Text(AmountFormat.string(staged.amount, code: targetCode))

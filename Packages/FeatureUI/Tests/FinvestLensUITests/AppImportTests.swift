@@ -9,6 +9,7 @@
 import Foundation
 import Testing
 import FinvestLensEngine
+import FinvestLensInterchange
 @testable import FinvestLensUI
 
 private func tempURL() -> URL {
@@ -179,5 +180,88 @@ struct AppImportTests {
         #expect(BankFileFormat.forExtension("qfx") == .ofx)
         #expect(BankFileFormat.forExtension("pdf") == .pdf)  // via Apple Intelligence (FR-AI-01)
         #expect(BankFileFormat.forExtension("docx") == nil)
+    }
+
+    @Test("Importing the other side of a transfer heals the wash leg (FR-XIO-05)")
+    func transferHeal() throws {
+        let url = tempURL()
+        let model = AppModel()
+        try model.newDocument(at: url)
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        let cma = try #require(model.addAccount(name: "CMA", type: .bank))
+        let cmaa = try #require(model.addAccount(name: "CMAA", type: .bank))
+        let wash = try #require(model.addAccount(name: "Unspecified", type: .income))
+        // The CMAA statement went first: its side of the transfer is in, the
+        // other leg parked in the wash account.
+        model.addTransfer(from: cmaa, to: wash, amount: Decimal(5000),
+                          date: Date(timeIntervalSince1970: 1_770_000_000),
+                          description: "To Smsf Pty Ltd Atf Internal transfer")
+
+        // Now the CMA statement reports the same $5,000 arriving.
+        let staged = [StagedTransaction(date: Date(timeIntervalSince1970: 1_770_000_000),
+                                        amount: Decimal(5000), payee: "From Smsf Pty Ltd Atf",
+                                        reference: "RCPT-72063013")]
+        let results = model.matchStaged(staged, intoAccountID: cma)
+        let row = try #require(results.first)
+        #expect(row.transferSplitID != nil)
+        #expect(row.suggestedAccountID == cmaa)
+
+        #expect(model.importMatched(results, intoAccountID: cma) == 1)
+
+        // One transaction, legs CMA/CMAA, wash account emptied — not a mirror pair.
+        let book = try #require(model.book)
+        #expect(book.transactions.count == 1)
+        #expect(book.splits(for: book.account(with: wash)!).isEmpty)
+        let healed = try #require(book.splits(for: book.account(with: cma)!).first)
+        #expect(healed.value == Decimal(5000))
+        #expect(healed.kvp["online_id"] == .string("RCPT-72063013"))
+        #expect(book.splits(for: book.account(with: cmaa)!).first?.value == Decimal(-5000))
+    }
+
+    @Test("Skipped duplicates get the statement reference stamped for exact re-imports")
+    func duplicateReferenceStamp() throws {
+        let url = tempURL()
+        let model = AppModel()
+        try model.newDocument(at: url)
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        let bank = try #require(model.addAccount(name: "Bank", type: .bank))
+        let groceries = try #require(model.addAccount(name: "Groceries", type: .expense))
+        model.addTransfer(from: bank, to: groceries, amount: Decimal(string: "52.30")!,
+                          date: Date(timeIntervalSince1970: 1_600_000_000), description: "Woolworths")
+
+        let staged = [StagedTransaction(date: Date(timeIntervalSince1970: 1_600_000_000),
+                                        amount: Decimal(string: "-52.30")!, payee: "Woolworths",
+                                        reference: "FIT-777")]
+        let results = model.matchStaged(staged, intoAccountID: bank)
+        #expect(results.first?.isDuplicate == true)
+        #expect(model.importMatched(results, intoAccountID: bank) == 0)
+
+        let book = try #require(model.book)
+        let bankSplit = try #require(book.splits(for: book.account(with: bank)!).first)
+        #expect(bankSplit.kvp["online_id"] == .string("FIT-777"))
+    }
+
+    @Test("Rows without a destination fall back to the imbalance account when asked")
+    func imbalanceFallback() throws {
+        let url = tempURL()
+        let model = AppModel()
+        try model.newDocument(at: url)
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        let bank = try #require(model.addAccount(name: "Bank", type: .bank))
+        let imbalance = try #require(model.addAccount(name: "Imbalance-AUD", type: .bank))
+
+        let staged = [StagedTransaction(date: Date(timeIntervalSince1970: 1_700_000_000),
+                                        amount: Decimal(string: "-42.00")!, payee: "Mystery Shop")]
+        let results = model.matchStaged(staged, intoAccountID: bank)
+        #expect(results.first?.suggestedAccountID == nil)
+
+        // Without the fallback the row is skipped; with it, it posts to Imbalance.
+        #expect(model.importMatched(results, intoAccountID: bank) == 0)
+        #expect(model.importMatched(results, intoAccountID: bank, fallbackToImbalance: true) == 1)
+        let book = try #require(model.book)
+        #expect(book.splits(for: book.account(with: imbalance)!).first?.value == Decimal(42))
     }
 }

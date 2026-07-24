@@ -20,6 +20,67 @@ Companions: [PRD](prd.md) · [Architecture](architecture.md) · [Plan](plan.md) 
 
 ---
 
+## Import matcher — transfer completion & real-statement validation (24 Jul 2026)
+
+The QIF/OFX import pipeline was exercised end-to-end against **four real bank
+exports** (an ANZ credit-card OFX v2, a CBA CDIA OFX v1/SGML, and two Macquarie
+QIFs) on a copy of the reference book, with the requirement that transfers
+between the user's own accounts come out as **one transaction with a leg in
+each account** — in whatever order the statements are imported. What that
+surfaced, and what was built:
+
+- **Two-digit QIF years** — `D30/06/26` parsed as year 26 AD (the `yyyy`
+  pattern happily reads "26"). `QIFImporter` now carries `yy` twins for every
+  slash format and rejects implausible years so the right pattern gets its
+  turn, preserving the file-wide day-first/month-first orientation choice.
+- **Cross-account transfer completion ("healing")** — when the counterpart
+  statement was imported first and its unmatched side sits in a wash account
+  (`Imbalance-*`/`Orphan-*`/`Unspecified`/`Uncategorised`), the matcher
+  detects the opposite-amount leg in the other real account (same currency,
+  ±4 days) and the import **re-points the wash leg** at the target account
+  instead of posting a mirror-image duplicate. A **narrative-agreement gate**
+  (shared significant tokens — AU banks put the entity name in both sides'
+  narratives) stops coincidental equal amounts from pairing. Rules and
+  heuristics never override a detected transfer.
+- **FITID-mismatch veto** — an amount+date match against a split whose
+  `online_id` differs from the row's FITID is refused: a bank never re-issues
+  an event under a new id. This killed every false boundary flag on the OFX
+  side (last statement's entries vs this statement's new rows).
+- **One-to-one claiming** — each existing split (and each pending wash leg)
+  absorbs at most one row per batch, so four identical recurring transfers
+  against two book entries import the two genuinely new ones (GnuCash's
+  matcher claims matches the same way).
+- **Wash-half demotion** — a "duplicate" whose counter-legs all sit in wash
+  accounts is itself just an unfinished half; completing a pending transfer
+  outranks matching it.
+- **Reference stamping** — skipped duplicates get the incoming FITID written
+  to the matched split's `online_id` (GnuCash's convention), so the next
+  re-import matches definitively; healed legs are stamped the same way.
+- **Payee history from memos** — destination suggestion now also learns from
+  money-leg memos (where renames park the raw narrative), raw-to-raw like the
+  smart categoriser; the substring fallback is deterministic (was
+  dictionary-order). Cleaned descriptions preserve the raw narrative in the
+  money leg's memo so self-learning survives `cleanMerchant`.
+- **Credit-card funding fallback** — a positive "PAYMENT - THANK YOU" row on a
+  credit account suggests the bank account most often behind recent deposits
+  (2-year window), so the first-imported side of a card payment posts as a
+  proper transfer.
+- **Imbalance fallback** — rows nothing categorised can post to the book's
+  existing `Imbalance-<CUR>` account (toggle, default on) instead of silently
+  not importing, feeding the Uncategorised sweep; the review list shows a
+  **transfer** badge alongside the duplicate badge.
+
+Verified by `LiveBankImportTests` (env-gated on `FL_PERF_FILE` +
+`FL_IMPORT_DIR`): both import orders on copies of the real book — parse counts
+(220/58/39/3), all dates in-window, the two card payments (8 Jun, 11 May) and
+the SMSF internal transfer (20 May) each land exactly once with clean legs,
+re-importing all four files is a no-op, and the run reports per-file coverage
+(e.g. VISA: 142/220 auto-categorised, 78 to Imbalance for review). A bonus:
+the heal pass also paired the book's own pre-existing late-April wash-halves.
+The remaining human calls are two truly ambiguous QIF boundary rows (identical
+recurring $20k transfers, no references to discriminate) — flagged as
+duplicates for the user to untick, which is the honest floor without bank ids.
+
 ## Report redesign — annual-report statements & review decks (24 Jul 2026)
 
 The statement reports moved from working-paper presentation to
