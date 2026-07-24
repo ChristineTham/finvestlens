@@ -127,6 +127,34 @@ incremental option if GL becomes a daily surface.
 - Sidebar filter runs `AccountMatchPicker.matching` per keystroke over the
   tree — fine at 559, unify with `AccountSearch` anyway (usability Phase 0).
 
+### P9 — Whole-book undo snapshots serialize the entire book  *(critical)*
+
+`editingWholeBook` (AppModel.swift ~1630) captures its undo state via
+`gnuCashExportData()` — a **full GnuCash-XML export of 46k transactions and
+100k+ prices** — before the edit. It has ~29 call sites: every quote fetch,
+every price add/delete, every FX-rate record, quote-symbol change, business
+edit, even settings toggles (`autoRefreshQuotes`). Each pays seconds of CPU
+and a large transient allocation; `recordFxRate` inside the editor pays it on
+Apply.
+
+**Fix.** Scoped snapshots per domain: price operations snapshot only the
+`prices` array (value types — a cheap copy); kvp/settings ops snapshot the kvp
+frame; business ops snapshot the business tables. Reserve the whole-book
+export for genuinely structural operations (GnuCash import, period-end close),
+and run even those off the main actor with progress.
+
+### P10 — Save is a synchronous full-file rewrite on the main thread  *(major)*
+
+`FinvestLensDocument.save()` fingerprints the file, rewrites the **entire**
+SQLite store (65 MB on the reference book), and atomically replaces the
+document — all synchronously. ⌘S and every autosave tick can beachball the UI
+for the duration.
+
+**Fix.** Move the write off the main actor (snapshot value state or serialize
+against edits), show a subtle "Saving…" indicator in the toast layer, keep the
+atomic replace. Incremental/dirty-row persistence is the deeper option if the
+numbers still demand it (Phase 3).
+
 ## 3. Progress-feedback inventory
 
 | Operation | Today | Required |
@@ -158,8 +186,12 @@ Merged into `usability-review.md` §7 as:
 
 - **Phase 0.5 — performance quick wins** (before UI restructuring):
   P1 registerSummary snapshot · P2 suggestions cache · P4 postableAccounts
-  cache · P5.2 dead-work skips · signposts/timing harness.
+  cache · P5.2 dead-work skips · **P9 scoped undo snapshots** (biggest single
+  win — kills the full-XML export on every price/rate/settings edit) ·
+  signposts/timing harness.
 - **Phase 2 additions**: P3 async reports + progress placeholders (rides with
-  the toast layer and Update-Prices progress work) · P6 corpus off main.
-- **Phase 3 additions**: P5.4 incremental tree balances and P7 incremental
-  journal — *only if* the Phase 0.5 numbers say they're still needed.
+  the toast layer and Update-Prices progress work) · P6 corpus off main ·
+  **P10 async save with "Saving…" indicator**.
+- **Phase 3 additions**: P5.4 incremental tree balances, P7 incremental
+  journal, incremental persistence — *only if* the measured numbers say
+  they're still needed.

@@ -6,7 +6,10 @@ unsurfaced / hard to reach) and a redundancy register (duplicates, dead code)
 — audited by sweeping every public `AppModel` function for UI callers, every
 `RootPanel` for entry points, and every account-picking site. Third pass:
 `performance-review.md` (hot paths, progress-feedback inventory) — its fixes
-are merged into the phases below as Phase 0.5 and Phase 2 items.*
+are merged into the phases below as Phase 0.5 and Phase 2 items. Fourth pass
+(§6A): with the constraint of GnuCash familiarity **explicitly dropped** — the
+user actively dislikes the GnuCash UI — the register unifies into one view,
+GnuCash jargon leaves the interface, and reconcile is reimagined.*
 
 ---
 
@@ -172,6 +175,43 @@ Severity: **P0** blocks/derails the journey · **P1** real friction each visit �
 
 **Principle: the window shows the journey; one component per job.**
 
+### 6A. Bold moves (GnuCash-familiarity constraint dropped)
+
+**RD1 — One register, not three.** Basic/Auto-Split/Journal is GnuCash's
+taxonomy, not a user need. Ship **one register**: today's Basic table where
+selecting a transaction *expands its splits inline* (the Auto-Split behaviour
+— already pixel-identical when collapsed). "Journal" becomes a **Show All
+Splits** toggle in View options for the rare audit read. The style switcher —
+segmented control, persistence question, layout-shift class of bugs — is
+deleted outright. The whole-book journal stays as the sidebar's **All
+Transactions** (né General Ledger).
+
+**RD2 — De-GnuCash the language** (UI strings only; engine names and file
+round-trip untouched). 11 jargon strings today:
+
+| GnuCash-ism | Say instead |
+|---|---|
+| Imbalance-AUD / Orphan | **Uncategorised** |
+| Scrub / Check & Repair | **Repair Book** |
+| Placeholder (account) | **Group** |
+| Double Line | **Show Details** |
+| General Ledger | **All Transactions** |
+| Auto-Split Ledger | *(gone with RD1)* |
+| Num | **No.** |
+| Period-End Close | **Close Financial Year** |
+
+**RD3 — Reconcile, reimagined.** Statement-first (date + closing balance up
+front — kept), then: **auto-clear runs immediately** as the opening move (its
+result presented as "we matched 41 of 43 — review the 2 left"), a live
+"difference remaining" figure as the headline, unmatched rows sorted to the
+top, and Finish disabled-with-reason until zero. The magic-wand icon button
+becomes the default path instead of an easter egg.
+
+**RD4 — Entry without ceremony.** The register's entry bar gets a visible
+prompt ("Add a transaction — press ⌘N"), ⌘N focuses it (⇧⌘N opens the full
+split editor), and QuickFill's suggestion appears as inline ghost text rather
+than a menu.
+
 ### 6.1 Window toolbar (F1–F4)
 
 ```
@@ -253,11 +293,16 @@ customisation.
 
 ### Phase 1 — the visible pain (P0/P1 structural)
 5. Toolbar restructure (6.1); Saved Searches → search suggestions.
-6. Register toolbar (6.2); strip deleted; style persisted.
+6. **RD1: unify the register** — expandable-splits table as the only
+   register; Show All Splits view option; delete the style switcher; register
+   toolbar per 6.2 (View ▾ / Sort ▾ / Filter / Reconcile / Edit).
+6a. **RD2: terminology sweep** (strings only) + RD4 entry-bar prompt & ⌘N.
 7. Dashboard Up-next card (6.3) with live counts.
 8. Dashboard bottom clipping fix (F8).
 
 ### Phase 2 — journey accelerators (P1)
+8a. **RD3: reconcile reimagined** (auto-clear as the opening move, difference
+    headline, review-the-remainder flow).
 9. One-click Update Prices + **determinate progress** + last-updated + toast
    (6.4; perf §3).
 10. Securities surfaced as a destination/tab; Alerts card links there (6.5).
