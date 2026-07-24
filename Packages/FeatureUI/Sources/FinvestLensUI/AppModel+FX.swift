@@ -61,7 +61,7 @@ extension AppModel {
         guard price.value > 0 else {
             throw QuoteError.noData
         }
-        editingWholeBook(named: "Fetch Exchange Rate") {
+        editingPrices(named: "Fetch Exchange Rate") {
             book?.addPrice(price)
         }
         return price.value

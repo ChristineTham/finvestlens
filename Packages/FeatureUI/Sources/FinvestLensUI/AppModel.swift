@@ -189,7 +189,25 @@ public final class AppModel {
         loadProgress = progress
     }
 
-    public private(set) var accountTree: [AccountNode] = []
+    public private(set) var accountTree: [AccountNode] = [] {
+        didSet { postableAccountsCache = nil }
+    }
+
+    /// Flattened, non-placeholder accounts usable as transfer endpoints —
+    /// every picker in the app reads this list. Flattening the tree on each
+    /// of the register's many body passes was measurable; the tree only
+    /// changes when it is rebuilt, so the flattening follows it.
+    @ObservationIgnored private var postableAccountsCache: [AccountNode]?
+
+    public var postableAccounts: [AccountNode] {
+        if let cached = postableAccountsCache { return cached }
+        func flatten(_ nodes: [AccountNode]) -> [AccountNode] {
+            nodes.flatMap { [$0] + flatten($0.children ?? []) }
+        }
+        let flat = flatten(accountTree).filter { !$0.isPlaceholder }
+        postableAccountsCache = flat
+        return flat
+    }
     public private(set) var registerRows: [RegisterRow] = []
 
     /// Bumped by ``refreshAll()`` whenever derived state is invalidated. The
@@ -242,7 +260,7 @@ public final class AppModel {
             reportCacheRevision = derivedRevision
         }
         if let hit = reportCache[key] as? T { return hit }
-        let value = compute()
+        let value = Perf.measureReport(key, compute)
         if let value { reportCache[key] = value }
         return value
     }
@@ -261,6 +279,28 @@ public final class AppModel {
             .filter { $0.commodity.namespace == .currency }
             .map { RateRow(id: $0.guid, from: $0.commodity.mnemonic,
                            to: $0.currency.mnemonic, date: $0.date, value: $0.value) }
+    }
+
+    /// Distinct transaction descriptions, most-recent first, each with its
+    /// case-folded form. QuickFill used to sort all 46k transactions on every
+    /// keystroke; now the sort happens once per book revision and a keystroke
+    /// is a prefix scan over ~thousands of short strings.
+    @ObservationIgnored private var descriptionRecencyCache: [(text: String, folded: String)] = []
+    @ObservationIgnored private var descriptionRecencyRevision = -1
+
+    var recentDistinctDescriptions: [(text: String, folded: String)] {
+        if descriptionRecencyRevision != derivedRevision {
+            var seen = Set<String>()
+            var entries: [(text: String, folded: String)] = []
+            for txn in (book?.transactions ?? []).sorted(by: { $0.datePosted > $1.datePosted }) {
+                let description = txn.transactionDescription
+                guard !description.isEmpty, seen.insert(description).inserted else { continue }
+                entries.append((description, description.lowercased()))
+            }
+            descriptionRecencyCache = entries
+            descriptionRecencyRevision = derivedRevision
+        }
+        return descriptionRecencyCache
     }
 
     /// The sidebar's current destination (an app area or an account). The
@@ -749,9 +789,43 @@ public final class AppModel {
     /// change. The collections live in the book's KVP slots rather than in any
     /// transaction, so undoing one means restoring the book.
     func commitKvpCollections(named: String = "Change") {
-        editingWholeBook(named: named) {
+        editingBookKvp(named: named) {
             persistKvpCollections()
         }
+    }
+
+    /// Scoped undo for edits that touch only the **price database**. The
+    /// whole-book variant snapshots via a full GnuCash-XML export — seconds on
+    /// a large book — where copying the `prices` value array is milliseconds.
+    func editingPrices(named: String, _ body: () -> Void) {
+        if isReadOnly { return }
+        let before = book?.prices ?? []
+        body()
+        refreshAfterChange()
+        guard isOpen else { return }
+        undoManager?.registerUndo(withTarget: self) { model in
+            model.editingPrices(named: named) { model.book?.replaceAllPrices(before) }
+        }
+        undoManager?.setActionName(named)
+    }
+
+    /// Scoped undo for edits that touch only the **book's kvp frame**
+    /// (settings, serialized collections). Same rationale as ``editingPrices``.
+    func editingBookKvp(named: String, _ body: () -> Void) {
+        if isReadOnly { return }
+        let before = book?.kvp
+        body()
+        refreshAfterChange()
+        guard isOpen, let before else { return }
+        undoManager?.registerUndo(withTarget: self) { model in
+            model.editingBookKvp(named: named) {
+                model.book?.kvp = before
+                // The published collections mirror kvp slots; without a reload
+                // the next persist would re-write the undone values.
+                model.reloadKvpCollections()
+            }
+        }
+        undoManager?.setActionName(named)
     }
 
     private static func decodeSlot<T: Decodable>(_ type: T.Type, _ value: KvpValue?) -> T? {
@@ -1243,6 +1317,7 @@ public final class AppModel {
         derivedRevision &+= 1
         accountTree = []
         registerRows = []
+        registerSummary = nil
         selectedAccountID = nil
         resetRegisterView()
         ruleGroups = []
@@ -1483,7 +1558,9 @@ public final class AppModel {
         // from the results table must leave the other results on screen. The
         // find replays its whole pipeline — results are live, and refinements
         // stay in force; see `recomputeFindResults()`.
-        if findQuery != nil { recomputeFindResults() } else { runSearch() }
+        Perf.measure("searchReplay") {
+            if findQuery != nil { recomputeFindResults() } else { runSearch() }
+        }
     }
 
     /// Marks the document dirty and rebuilds derived state. Records nothing on
@@ -1617,7 +1694,7 @@ public final class AppModel {
     /// ``editingAccounts(_:named:)``) whenever the touched objects can be named.
     func editingWholeBook(named: String, _ body: () -> Void) {
         if isReadOnly { return }   // read-only session: edits are refused (FR-DAT-06)
-        let before = gnuCashExportData()
+        let before = Perf.measure("wholeBookSnapshot") { gnuCashExportData() }
         body()
         refreshAfterChange()
         guard isOpen, let before else { return }
@@ -1677,6 +1754,10 @@ public final class AppModel {
     }
 
     private func rebuildAccountTree() {
+        Perf.measure("rebuildAccountTree") { rebuildAccountTreeBody() }
+    }
+
+    private func rebuildAccountTreeBody() {
         guard let book else { accountTree = []; return }
         // Native balances for every account in a single pass, then one
         // conversion per account, rolled up the tree. Asking the book for each
@@ -1773,6 +1854,10 @@ public final class AppModel {
     }
 
     private func refreshRegister() {
+        Perf.measure("refreshRegister") { refreshRegisterBody() }
+    }
+
+    private func refreshRegisterBody() {
         // The journal styles honour the same sort/filter/subaccounts settings,
         // and their caches were built under the old ones.
         journalTransactionCache = [:]
@@ -1780,6 +1865,7 @@ public final class AppModel {
         autoSplitRowsCache = nil
         guard let book, let id = selectedAccountID, let account = book.account(with: id) else {
             registerRows = []
+            registerSummary = nil
             return
         }
         // GnuCash's Open Subaccounts shows the subtree's postings in one
@@ -1812,13 +1898,32 @@ public final class AppModel {
         // subtree rather than filled with a figure that would be wrong.
         let balancesAreMeaningful = Set(focus.map(\.commodity)).count == 1
 
+        // The status strip's four totals accumulate in this same pass. They
+        // used to be a computed property calling `book.balance` three times —
+        // three full-book scans on every SwiftUI body pass of the register.
+        let now = Date()
+        var future = Decimal(0), present = Decimal(0)
+        var cleared = Decimal(0), reconciled = Decimal(0)
+
         var running = Decimal(0)
         let rows = splits.map { split in
             // A voided split still shows, with its amount, but must not move the
             // balance — `Book.balance` excludes it, so counting it here made the
             // register's last running balance disagree with the figure the
             // sidebar and every report show for the same account.
-            if split.reconcileState != .voided { running += split.quantity }
+            if split.reconcileState != .voided {
+                running += split.quantity
+                future += split.quantity
+                if (split.transaction?.datePosted ?? .distantPast) <= now {
+                    present += split.quantity
+                }
+                // Mirrors `Book.matches`: cleared counts everything not
+                // unreconciled; reconciled counts reconciled and frozen.
+                if split.reconcileState != .notReconciled { cleared += split.quantity }
+                if split.reconcileState == .reconciled || split.reconcileState == .frozen {
+                    reconciled += split.quantity
+                }
+            }
             return RegisterRow(
                 id: split.guid,
                 date: split.transaction?.datePosted ?? Date(timeIntervalSince1970: 0),
@@ -1840,6 +1945,22 @@ public final class AppModel {
             )
         }
         registerRows = ordered(filtered(rows))
+
+        // Same gate as the running balance: a mixed-commodity sum means
+        // nothing, so the strip is withheld rather than wrong. The filter is
+        // deliberately *not* applied — hidden rows still moved the money.
+        if balancesAreMeaningful {
+            let commodity = account.commodity
+            registerSummary = RegisterSummary(
+                present: commodity.round(present),
+                future: commodity.round(future),
+                cleared: commodity.round(cleared),
+                reconciled: commodity.round(reconciled),
+                currencyCode: commodity.mnemonic,
+                isSecurity: commodity.namespace != .currency)
+        } else {
+            registerSummary = nil
+        }
     }
 
     /// Whether the current register can show a running balance. False for a
@@ -1874,40 +1995,10 @@ public final class AppModel {
         public var hasFuture: Bool { present != future }
     }
 
-    public var registerSummary: RegisterSummary? {
-        guard let book, let id = selectedAccountID, let account = book.account(with: id) else {
-            return nil
-        }
-        let includeSubs = registerIncludesSubaccounts
-        let focus = includeSubs ? [account] + account.descendants : [account]
-        // Same gate as the running balance: a mixed-commodity sum means nothing.
-        guard Set(focus.map(\.commodity)).count == 1 else { return nil }
-
-        let commodity = account.commodity
-        let future = book.balance(of: account, filter: .all, includingDescendants: includeSubs)
-        let cleared = book.balance(of: account, filter: .cleared, includingDescendants: includeSubs)
-        let reconciled = book.balance(of: account, filter: .reconciled, includingDescendants: includeSubs)
-
-        // Present = as of today. `balance` has no date bound, so sum the
-        // dated postings directly, matching its voided-split exclusion.
-        let now = Date()
-        let focusSet = Set(focus.map { ObjectIdentifier($0) })
-        var present = Decimal(0)
-        for transaction in book.transactions where transaction.datePosted <= now {
-            for split in transaction.splits where split.reconcileState != .voided {
-                if let acct = split.account, focusSet.contains(ObjectIdentifier(acct)) {
-                    present += split.quantity
-                }
-            }
-        }
-        return RegisterSummary(
-            present: commodity.round(present),
-            future: future.rounded.amount,
-            cleared: cleared.rounded.amount,
-            reconciled: reconciled.rounded.amount,
-            currencyCode: commodity.mnemonic,
-            isSecurity: commodity.namespace != .currency)
-    }
+    /// Snapshotted by ``refreshRegister()`` in the same pass that builds the
+    /// rows. As a computed property this cost three full-book `balance` scans
+    /// per SwiftUI body pass; as a snapshot it costs nothing to read.
+    public private(set) var registerSummary: RegisterSummary?
 
     /// Hides rows the filter excludes. Balances are already fixed, so a hidden
     /// split still counts toward the rows around it — as it must: the money

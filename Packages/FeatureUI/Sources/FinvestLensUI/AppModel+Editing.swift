@@ -1190,15 +1190,11 @@ extension AppModel {
     /// Recent, distinct transaction descriptions matching `prefix`
     /// (case-insensitive), most-recent first.
     public func descriptionSuggestions(prefix: String, limit: Int = 5) -> [String] {
-        guard let book, !prefix.isEmpty else { return [] }
+        guard book != nil, !prefix.isEmpty else { return [] }
         let needle = prefix.lowercased()
-        var seen = Set<String>()
         var results: [String] = []
-        for txn in book.transactions.sorted(by: { $0.datePosted > $1.datePosted }) {
-            let description = txn.transactionDescription
-            guard description.lowercased().hasPrefix(needle), !seen.contains(description) else { continue }
-            seen.insert(description)
-            results.append(description)
+        for entry in recentDistinctDescriptions where entry.folded.hasPrefix(needle) {
+            results.append(entry.text)
             if results.count >= limit { break }
         }
         return results

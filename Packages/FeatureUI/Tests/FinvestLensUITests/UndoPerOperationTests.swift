@@ -478,6 +478,27 @@ struct UndoActionNameTests {
         #expect(f.model.book?.transactions.count == 3)
         #expect(!f.undo.canUndo)
     }
+
+    @Test("Saved-search commit round-trips (kvp-scoped undo)")
+    func kvpScopedUndo() throws {
+        let f = try Fixture()
+        defer { f.tearDown() }
+
+        f.model.searchQuery = "lunch"
+        f.model.saveCurrentSearch(name: "Lunch")
+        #expect(f.model.savedSearches.count == 1)
+        #expect(f.undo.undoActionName == "Save Search")
+
+        // Settings commits snapshot only the kvp frame now, not the whole
+        // book — undo must restore the frame *and* reload the mirrored
+        // collection, or the next persist would re-write the undone value.
+        f.undo.undo()
+        #expect(f.model.savedSearches.isEmpty)
+
+        f.undo.redo()
+        #expect(f.model.savedSearches.count == 1)
+        #expect(f.model.savedSearches.first?.name == "Lunch")
+    }
 }
 
 @MainActor

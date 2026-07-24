@@ -131,16 +131,6 @@ func focusSoon(_ apply: @escaping @MainActor () -> Void) {
     }
 }
 
-public extension AppModel {
-    /// Flattened, non-placeholder accounts usable as transfer endpoints.
-    var postableAccounts: [AccountNode] {
-        func flatten(_ nodes: [AccountNode]) -> [AccountNode] {
-            nodes.flatMap { [$0] + flatten($0.children ?? []) }
-        }
-        return flatten(accountTree).filter { !$0.isPlaceholder }
-    }
-}
-
 // MARK: - Lock screen
 
 /// Gates a locked book behind device authentication (`NFR-07`).

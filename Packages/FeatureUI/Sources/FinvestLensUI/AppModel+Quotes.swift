@@ -73,7 +73,7 @@ extension AppModel {
             return false
         }
         set {
-            editingWholeBook(named: "Change Quote Auto-Refresh Setting") {
+            editingBookKvp(named: "Change Quote Auto-Refresh Setting") {
                 book?.kvp["finvestlens/autoRefreshQuotes"] = .int64(newValue ? 1 : 0)
             }
             startQuoteAutoRefresh()
@@ -139,7 +139,7 @@ extension AppModel {
         // edit has to snapshot and mutate without suspending in between.
         let added = fetched.count
         if added > 0 {
-            editingWholeBook(named: "Fetch Quotes") {
+            editingPrices(named: "Fetch Quotes") {
                 for price in fetched { book?.addPrice(price) }
             }
         }
@@ -236,7 +236,7 @@ extension AppModel {
 
         let added = toAdd.count
         if !toReplace.isEmpty || added > 0 {
-            editingWholeBook(named: label) {
+            editingPrices(named: label) {
                 if !toReplace.isEmpty {
                     book?.removePrices { toReplace.contains($0.commodity) }
                 }

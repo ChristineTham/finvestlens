@@ -50,7 +50,7 @@ extension AppModel {
             return false
         }
         set {
-            editingWholeBook(named: "Change Authentication Setting") {
+            editingBookKvp(named: "Change Authentication Setting") {
                 book?.kvp["finvestlens/requireAuth"] = .int64(newValue ? 1 : 0)
             }
         }

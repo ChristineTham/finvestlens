@@ -38,14 +38,14 @@ extension AppModel {
     /// Adds a price to the database (`FR-INV-02`).
     public func addPrice(commodity: Commodity, currency: Commodity, date: Date, value: Decimal) {
         guard let book else { return }
-        editingWholeBook(named: "Add Price") {
+        editingPrices(named: "Add Price") {
             book.addPrice(Price(commodity: commodity, currency: currency, date: date, value: value))
         }
     }
 
     public func deletePrice(_ id: GncGUID) {
         guard let book else { return }
-        editingWholeBook(named: "Delete Price") {
+        editingPrices(named: "Delete Price") {
             book.removePrice(id)
         }
     }
@@ -92,7 +92,7 @@ extension AppModel {
         }
 
         if !toAdd.isEmpty {
-            editingWholeBook(named: "Import Prices") {
+            editingPrices(named: "Import Prices") {
                 for price in toAdd { book.addPrice(price) }
             }
         }

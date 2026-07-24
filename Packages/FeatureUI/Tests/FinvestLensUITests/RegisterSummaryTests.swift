@@ -70,6 +70,45 @@ struct RegisterSummaryTests {
         #expect(s.future == book.balance(of: acct, filter: .all).rounded.amount)
     }
 
+    /// The snapshot folds in `refreshRegister`'s row pass now — these are the
+    /// terms the parity test above doesn't reach: voided splits must not move
+    /// any figure, frozen counts as cleared *and* reconciled (GnuCash's FREC),
+    /// and the register filter hides rows without touching the strip.
+    @Test("Voided and frozen splits, and filter independence")
+    func voidedFrozenAndFilters() throws {
+        let url = tempURL()
+        let model = AppModel()
+        try model.newDocument(at: url)
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+
+        let bank = try #require(model.addAccount(name: "Bank", type: .bank))
+        let income = try #require(model.addAccount(name: "Income", type: .income))
+        let past = Date(timeIntervalSince1970: 1_600_000_000)
+
+        model.addTransfer(from: income, to: bank, amount: dec("100"), date: past, description: "Keep")
+        model.addTransfer(from: income, to: bank, amount: dec("999"), date: past, description: "Void")
+        model.addTransfer(from: income, to: bank, amount: dec("40"), date: past, description: "Frozen")
+
+        model.selectedAccountID = bank
+        let rows = model.registerRows
+        try model.setReconcileState(splitID: #require(rows.first { $0.description == "Frozen" }).id, to: .frozen)
+        let voidRow = try #require(model.registerRows.first { $0.description == "Void" })
+        let voidTxn = try #require(model.book?.split(with: voidRow.id)?.transaction)
+        model.voidTransaction(voidTxn.guid)
+
+        let s = try #require(model.registerSummary)
+        #expect(s.present == dec("140"))       // 999 gone from every figure
+        #expect(s.future == dec("140"))
+        #expect(s.cleared == dec("40"))        // frozen counts as cleared
+        #expect(s.reconciled == dec("40"))     // …and as reconciled
+
+        // Hiding rows must not move the money: filter to reconciled-only and
+        // the strip still shows the account's truth.
+        model.registerFilter.statuses = [.reconciled]
+        #expect(model.registerRows.count < 3)
+        #expect(model.registerSummary?.present == dec("140"))
+    }
+
     @Test("No summary without a selection, or across mixed commodities")
     func gating() throws {
         let url = tempURL()

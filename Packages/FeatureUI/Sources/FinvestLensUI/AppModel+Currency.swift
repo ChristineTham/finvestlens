@@ -55,7 +55,7 @@ extension AppModel {
     /// Records an exchange rate (a price between two currencies).
     public func addExchangeRate(from: Commodity, to: Commodity, rate: Decimal, date: Date) {
         guard let book, rate > 0, from != to else { return }
-        editingWholeBook(named: "Add Exchange Rate") {
+        editingPrices(named: "Add Exchange Rate") {
             book.setExchangeRate(from: from, to: to, rate: rate, date: date, source: "user:rate")
         }
     }
@@ -118,7 +118,7 @@ extension AppModel {
             return false
         }
         set {
-            editingWholeBook(named: "Change Trading Accounts Setting") {
+            editingBookKvp(named: "Change Trading Accounts Setting") {
                 book?.kvp["finvestlens/useTradingAccounts"] = .int64(newValue ? 1 : 0)
             }
         }

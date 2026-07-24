@@ -138,6 +138,12 @@ public final class Book {
         return price
     }
 
+    /// Replaces the whole price database — the undo primitive for scoped
+    /// price edits (a snapshot of `prices` is cheap: value types).
+    public func replaceAllPrices(_ newPrices: [Price]) {
+        prices = newPrices
+    }
+
     /// Removes a price by GUID.
     public func removePrice(_ guid: GncGUID) {
         prices.removeAll { $0.guid == guid }
