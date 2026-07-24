@@ -93,7 +93,9 @@ public enum ReportKind: String, CaseIterable, Identifiable, Codable {
     /// Whether the report takes an interval size (the average-balance report).
     var usesStep: Bool { self == .averageBalance }
     /// Whether the report can show prior periods as comparison columns.
-    var usesCompare: Bool { self == .balanceSheet || self == .incomeStatement }
+    /// The statement kinds carry their own prior-year comparative column
+    /// (report-redesign §3.1 rule 7), so the stepper is gone for them.
+    var usesCompare: Bool { false }
 
     var icon: String {
         switch self {
@@ -461,12 +463,19 @@ struct ReportScreen: View {
     let close: () -> Void
 
     @State private var document: ReportDocument?
+    @State private var statement: Statement?
     @State private var savePromptShown = false
     @State private var savingName = ""
     @State private var exporting = false
     @State private var pdfDocument: PDFReportDocument?
 
     private var kind: ReportKind? { ReportKind(rawValue: configuration.kind) }
+
+    /// The kinds that render as annual-report statements (report-redesign
+    /// §3.2) rather than the generic document scaffold.
+    private var isStatementKind: Bool {
+        kind == .balanceSheet || kind == .incomeStatement || kind == .equityStatement
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -486,7 +495,7 @@ struct ReportScreen: View {
                     savePromptShown = true
                 }
                 .help("Save this report and its settings as a favourite")
-                if document != nil {
+                if document != nil || statement != nil {
                     Button("PDF", systemImage: "arrow.up.doc") { exportPDF() }
                         .help("Export this report as a PDF")
                 }
@@ -545,7 +554,16 @@ struct ReportScreen: View {
 
     @ViewBuilder
     private var content: some View {
-        if let kind, kind.usesScaffold {
+        if isStatementKind {
+            if let statement {
+                StatementView(statement: statement)
+                    .task(id: configuration) { await recomputeStatement() }
+            } else {
+                ProgressView("Preparing \(configuration.kind)…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .task(id: configuration) { await recomputeStatement() }
+            }
+        } else if let kind, kind.usesScaffold {
             if let document {
                 ReportDocumentView(model: model, document: document)
                     // Recompute when parameters change — and only then. The
@@ -586,8 +604,32 @@ struct ReportScreen: View {
         document = model.reportDocument(for: configuration)
     }
 
+    private func recomputeStatement() async {
+        await Task.yield()
+        let (from, to) = model.resolve(configuration.period)
+        let label = model.label(for: configuration.period)
+        switch kind {
+        case .balanceSheet:
+            statement = model.financialPositionStatement(asOf: to)
+        case .incomeStatement:
+            statement = model.incomeStatementStatement(from: from, to: to, periodLabel: label)
+        case .equityStatement:
+            statement = model.changesInNetWorthStatement(from: from, to: to, periodLabel: label)
+        default:
+            statement = nil
+        }
+    }
+
     private func exportPDF() {
-        guard let document, let data = ReportExport.pdf(document.printable) else { return }
+        let data: Data?
+        if let statement {
+            data = ReportExport.pdf(StatementSheet(statement: statement))
+        } else if let document {
+            data = ReportExport.pdf(document.printable)
+        } else {
+            data = nil
+        }
+        guard let data else { return }
         pdfDocument = PDFReportDocument(data: data)
         exporting = true
     }
@@ -630,7 +672,7 @@ struct FinancialYearPackSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var yearIndex = 0
-    @State private var documents: [ReportDocument] = []
+    @State private var pages: [AppModel.FinancialYearPackPage] = []
     @State private var building = false
     @State private var exporting = false
     @State private var exportDocument: PDFReportDocument?
@@ -648,19 +690,20 @@ struct FinancialYearPackSheet: View {
                 Section("In this pack") {
                     if building {
                         ProgressView("Building reports…")
-                    } else if documents.isEmpty {
+                    } else if pages.isEmpty {
                         Text("Nothing to report for this year.")
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(documents.indices, id: \.self) { index in
-                            Label(documents[index].title, systemImage: "checkmark.circle.fill")
+                        ForEach(pages.indices, id: \.self) { index in
+                            Label(pages[index].title, systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(.primary)
                         }
                     }
                 }
                 Section {
-                    Text("One PDF, in reading order — profit & loss, balance sheet, "
-                         + "realised gains, and dividends with franking credits.")
+                    Text("One PDF, in reading order — the income statement, statement "
+                         + "of financial position, changes in net worth, realised "
+                         + "gains, and dividends with franking credits.")
                         .scaledFont(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -674,7 +717,7 @@ struct FinancialYearPackSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Export PDF…") { export() }
                         .keyboardShortcut(.defaultAction)
-                        .disabled(building || documents.isEmpty)
+                        .disabled(building || pages.isEmpty)
                 }
             }
             .task(id: yearIndex) { await build() }
@@ -691,16 +734,23 @@ struct FinancialYearPackSheet: View {
         defer { building = false }
         await Task.yield()   // paint the spinner before the report builds
         let year = years[yearIndex]
-        documents = model.financialYearPackDocuments(from: year.from, to: year.to,
-                                                     label: year.label)
+        pages = model.financialYearPackPages(from: year.from, to: year.to,
+                                             label: year.label)
     }
 
-    /// Renders each report to PDF and stitches the pages into one document.
+    /// Renders each page to PDF — statements through the annual-report
+    /// sheet, tabular reports through their printable — and stitches them.
     private func export() {
         let merged = PDFDocument()
-        for document in documents {
-            guard let data = ReportExport.pdf(document.printable),
-                  let pdf = PDFDocument(data: data) else { continue }
+        for page in pages {
+            let data: Data?
+            switch page {
+            case .statement(let statement):
+                data = ReportExport.pdf(StatementSheet(statement: statement))
+            case .document(let document):
+                data = ReportExport.pdf(document.printable)
+            }
+            guard let data, let pdf = PDFDocument(data: data) else { continue }
             for pageIndex in 0..<pdf.pageCount {
                 if let page = pdf.page(at: pageIndex) {
                     merged.insert(page, at: merged.pageCount)

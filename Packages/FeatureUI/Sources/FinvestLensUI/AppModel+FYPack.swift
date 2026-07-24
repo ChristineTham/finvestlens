@@ -39,26 +39,49 @@ extension AppModel {
         return years
     }
 
-    /// The four documents of the pack, in reading order. Reports with nothing
-    /// to say are skipped rather than emitted as empty pages.
-    func financialYearPackDocuments(from: Date, to: Date, label: String) -> [ReportDocument] {
-        var documents: [ReportDocument] = []
-        let period = ReportPeriod.custom(from: from, to: to)
-        if let pl = reportDocument(for: ReportConfiguration(
-            kind: ReportKind.incomeStatement.rawValue, period: period)) {
-            documents.append(pl)
+    /// One page of the pack: an annual-report statement or a tabular report.
+    enum FinancialYearPackPage {
+        case statement(Statement)
+        case document(ReportDocument)
+
+        var title: String {
+            switch self {
+            case .statement(let statement): statement.title
+            case .document(let document): document.title
+            }
         }
-        if let bs = reportDocument(for: ReportConfiguration(
-            kind: ReportKind.balanceSheet.rawValue, period: period)) {
-            documents.append(bs)
+    }
+
+    /// The pack, in reading order: the three statements (annual-report
+    /// presentation, report-redesign §3), then capital gains and the
+    /// dividend & franking summary. Reports with nothing to say are skipped
+    /// rather than emitted as empty pages.
+    func financialYearPackPages(from: Date, to: Date, label: String) -> [FinancialYearPackPage] {
+        var pages: [FinancialYearPackPage] = []
+        if let income = incomeStatementStatement(from: from, to: to, periodLabel: label) {
+            pages.append(.statement(income))
+        }
+        if let position = financialPositionStatement(asOf: to) {
+            pages.append(.statement(position))
+        }
+        if let changes = changesInNetWorthStatement(from: from, to: to, periodLabel: label) {
+            pages.append(.statement(changes))
         }
         if let cg = capitalGainsDocument(from: from, to: to) {
-            documents.append(cg)
+            pages.append(.document(cg))
         }
         if let dividends = dividendFrankingDocument(from: from, to: to, periodLabel: label) {
-            documents.append(dividends)
+            pages.append(.document(dividends))
         }
-        return documents
+        return pages
+    }
+
+    /// The pack as documents only — kept for tests that assert membership.
+    func financialYearPackDocuments(from: Date, to: Date, label: String) -> [ReportDocument] {
+        financialYearPackPages(from: from, to: to, label: label).compactMap {
+            if case .document(let document) = $0 { return document }
+            return nil
+        }
     }
 
     /// Dividend & Franking summary: income-statement lines under a Dividends

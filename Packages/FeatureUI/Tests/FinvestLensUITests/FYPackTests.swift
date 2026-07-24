@@ -80,10 +80,11 @@ struct FYPackTests {
 
         // The pack skips reports with nothing to say, and includes this one.
         let (from, to) = (date.addingTimeInterval(-86_400), date.addingTimeInterval(86_400))
-        let pack = model.financialYearPackDocuments(from: from, to: to, label: "FY test")
+        let pack = model.financialYearPackPages(from: from, to: to, label: "FY test")
         #expect(pack.contains { $0.title == "Dividends & Franking" })
         #expect(pack.contains { $0.title == "Income Statement" })
-        #expect(pack.contains { $0.title == "Balance Sheet" })
+        #expect(pack.contains { $0.title == "Statement of Financial Position" })
+        #expect(pack.contains { $0.title == "Statement of Changes in Net Worth" })
     }
 
     @Test("No dividend income → no dividend document")
