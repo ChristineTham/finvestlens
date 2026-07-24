@@ -7,14 +7,24 @@
 | **Scope** | Elevate the statement reports to annual-report presentation quality, and add a CFO-style "Financial Review" slide deck with charts and on-device insights |
 | **Companions** | [PRD](prd.md) (FR-RPT-*) · [Architecture](architecture.md) §10/§11 · [Implemented](implemented.md) |
 
-> **Status (24 Jul 2026): implemented** — S1–S4 shipped (commits
-> "Annual-report statements…" and "Financial Review deck…"); 397 tests green
-> incl. statement identities and the story validator; verified on the
-> reference book by screenshot (statement face + notes; deck slides). One
-> hardening beyond the plan: the narrator's output passes a **deterministic
-> number validator** — any story quoting a figure not in the slide's facts
-> pack is rejected (the live model invented YoY percentages on first run;
-> the validator now makes that impossible to ship).
+> **Status (24 Jul 2026): implemented, and extended** — S1–S4 shipped
+> (commits "Annual-report statements…" and "Financial Review deck…"); then
+> two follow-ups from review: the **Trial Balance** joined the statement
+> treatment (Debit/Credit columns through the same face-and-notes machinery:
+> per-category sections in class order, caption rows with note detail, the
+> unrealised valuation adjustment on its own line, double-ruled equal
+> totals), and an **Investment Review deck** joined the Financial Review —
+> factsheet/brokerage-report structure researched on the web (overview,
+> allocation + concentration, mark-to-market leaders, income with yield,
+> realised gains with the CGT-relevant over-one-year split, and a return
+> decomposition over money in), sharing the slide machinery and the story
+> contract. 399 tests green incl. statement identities, trial-balance
+> ties, deck gating/reconciliation, and the story validator; verified on
+> the reference book by screenshot. One hardening beyond the plan: the
+> narrator's output passes a **deterministic number validator** — any story
+> quoting a figure not in the slide's facts pack is rejected (the live
+> model invented YoY percentages on first run; the validator now makes
+> that impossible to ship).
 
 ## 1. The brief
 

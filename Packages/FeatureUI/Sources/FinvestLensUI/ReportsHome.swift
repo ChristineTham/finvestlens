@@ -225,6 +225,7 @@ struct ReportGallery: View {
     @State private var settingsShown = false
     @State private var packShown = false
     @State private var reviewShown = false
+    @State private var investmentReviewShown = false
 
     private let columns = [GridItem(.adaptive(minimum: 210), spacing: 12)]
 
@@ -279,6 +280,23 @@ struct ReportGallery: View {
                     .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
+                if !model.securityAccountNodes.isEmpty {
+                    Button {
+                        investmentReviewShown = true
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label("Investment Review", systemImage: "chart.pie.fill")
+                                .scaledFont(.headline)
+                            Text("The portfolio as a factsheet deck — allocation, leaders, income, realised gains, return decomposition")
+                                .scaledFont(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: 440, alignment: .leading)
+                        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                }
                 Text("Tax Time").scaledFont(.title2).fontWeight(.semibold)
                 Button {
                     packShown = true
@@ -308,7 +326,8 @@ struct ReportGallery: View {
         }
         .navigationTitle("Reports")
         .sheet(isPresented: $packShown) { FinancialYearPackSheet(model: model) }
-        .sheet(isPresented: $reviewShown) { FinancialReviewSheet(model: model) }
+        .sheet(isPresented: $reviewShown) { FinancialReviewSheet(model: model, kind: .financial) }
+        .sheet(isPresented: $investmentReviewShown) { FinancialReviewSheet(model: model, kind: .investment) }
         .onAppear {
             if model.financialYearPackRequested {
                 model.financialYearPackRequested = false
@@ -317,6 +336,16 @@ struct ReportGallery: View {
             if model.financialReviewRequested {
                 model.financialReviewRequested = false
                 reviewShown = true
+            }
+            if model.investmentReviewRequested {
+                model.investmentReviewRequested = false
+                investmentReviewShown = true
+            }
+        }
+        .onChange(of: model.investmentReviewRequested) {
+            if model.investmentReviewRequested {
+                model.investmentReviewRequested = false
+                investmentReviewShown = true
             }
         }
         .onChange(of: model.financialYearPackRequested) {
@@ -503,6 +532,7 @@ struct ReportScreen: View {
     /// §3.2) rather than the generic document scaffold.
     private var isStatementKind: Bool {
         kind == .balanceSheet || kind == .incomeStatement || kind == .equityStatement
+            || kind == .trialBalance
     }
 
     var body: some View {
@@ -643,6 +673,8 @@ struct ReportScreen: View {
             statement = model.incomeStatementStatement(from: from, to: to, periodLabel: label)
         case .equityStatement:
             statement = model.changesInNetWorthStatement(from: from, to: to, periodLabel: label)
+        case .trialBalance:
+            statement = model.trialBalanceStatement(asOf: to)
         default:
             statement = nil
         }

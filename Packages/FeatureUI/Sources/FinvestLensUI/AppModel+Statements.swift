@@ -84,6 +84,104 @@ extension AppModel {
         }
     }
 
+    /// The Trial Balance as a grouped statement: Debit/Credit columns, one
+    /// section per top-level category in class order, caption rows with note
+    /// detail, the unrealised valuation adjustment on its own line, and the
+    /// double-ruled equal totals the report exists to state.
+    func trialBalanceStatement(asOf: Date) -> Statement? {
+        guard let book else { return nil }
+        return cachedReport("stmt.tb:\(asOf.timeIntervalSinceReferenceDate)") {
+            guard let report = trialBalance(asOf: asOf) else { return nil }
+            let builder = StatementBuilder(book: book)
+
+            let debits = report.rows.compactMap { row in
+                row.debit.map { StatementBuilder.StatementLine(id: row.id, name: row.name, amount: $0) }
+            }
+            let credits = report.rows.compactMap { row in
+                row.credit.map { StatementBuilder.StatementLine(id: row.id, name: row.name, amount: $0) }
+            }
+            var groups = builder.captionForestsByCategory(lineSets: [debits, credits])
+
+            // Category order: assets, liabilities, equity, income, expenses,
+            // then everything else; integrity groups last.
+            func rank(_ group: (title: String, nodes: [StatementBuilder.Node])) -> Int {
+                if group.title == "Uncategorised" { return 9 }
+                var weights: [AccountType: Decimal] = [:]
+                for node in group.nodes { node.typeWeights(into: &weights) }
+                switch weights.max(by: { $0.value < $1.value })?.key {
+                case .asset, .bank, .cash, .stock, .mutualFund, .receivable: return 0
+                case .credit, .liability, .payable: return 1
+                case .equity: return 2
+                case .income: return 3
+                case .expense: return 4
+                default: return 5
+                }
+            }
+            groups.sort { rank($0) < rank($1) }
+
+            var builtSections: [StatementBuilder.BuiltSection] = []
+            for group in groups {
+                builtSections.append(builder.buildSection(
+                    title: group.title,
+                    totalLabel: "Total \(group.title)",
+                    forest: group.nodes,
+                    ordering: .magnitude,
+                    columnCount: 2,
+                    protected: { $0.name == "Uncategorised" }))
+            }
+
+            let format = AppDateFormat.current
+            var basis = StatementNote(number: 1, title: "Basis of preparation", body: [
+                "Balances in the raw double-entry convention: debit balances in the left column, credit balances in the right, converted to \(report.currencyCode) at \(format.long(asOf)) rates.",
+                "The unrealised valuation adjustment is what valuing holdings at market adds over cost — printed, not hidden, because it is the number that makes the columns agree.",
+            ])
+            basis.body.append("Zero balances are omitted.")
+
+            var (faces, notes) = { () -> ([StatementSection], [StatementNote]) in
+                var allNotes: [StatementNote] = [basis]
+                var sections: [StatementSection] = []
+                for built in builtSections {
+                    var face = built.section
+                    for index in face.items.indices {
+                        if let local = face.items[index].noteRef {
+                            var note = built.notes[local]
+                            note.number = allNotes.count + 1
+                            allNotes.append(note)
+                            face.items[index].noteRef = note.number
+                        }
+                    }
+                    sections.append(face)
+                }
+                return (sections, allNotes)
+            }()
+
+            // The adjustment joins the credit column, as a gain would (or the
+            // debit column when negative).
+            if report.unrealisedAdjustment != 0 {
+                let adjustment = report.unrealisedAdjustment
+                let amounts: [Decimal?] = adjustment > 0 ? [nil, adjustment] : [-adjustment, nil]
+                faces.append(StatementSection(
+                    title: "Adjustments",
+                    items: [StatementItem(caption: "Unrealised valuation adjustment (Note 1)",
+                                          amounts: amounts, role: .line)],
+                    totalLabel: "Total adjustments",
+                    totalAmounts: amounts))
+            }
+
+            return Statement(
+                title: "Trial Balance",
+                entityName: statementEntityName,
+                periodLabel: "As at \(format.long(asOf))",
+                unitsLabel: "All amounts in \(report.currencyCode) · debits left, credits right",
+                currencyCode: report.currencyCode,
+                columns: ["Debit", "Credit"],
+                sections: faces,
+                grandTotal: ("Total (the books balance)",
+                             [report.totalDebits, report.totalCredits]),
+                notes: notes)
+        }
+    }
+
     /// Statement of Changes in Net Worth over the period: opening net worth,
     /// the surplus, and the valuation/FX movement as the balancing figure.
     func changesInNetWorthStatement(from: Date, to: Date, periodLabel: String) -> Statement? {

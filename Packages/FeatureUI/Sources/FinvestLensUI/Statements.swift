@@ -152,24 +152,33 @@ struct StatementBuilder {
         }
     }
 
-    /// Builds the presentation tree for one statement section from engine
-    /// lines: amounts attach to their accounts, ancestors materialise as
-    /// containers, and the roots returned are the face-caption candidates
-    /// (the highest grouping below the top-level category account).
-    ///
-    /// `columnCount` is the number of amount columns; `lineSets` supplies one
-    /// `[ReportLine]` per column (current first, prior after).
-    func captionForest(lineSets: [[ReportLine]]) -> [Node] {
+    /// One amount attributed to an account (or, with a nil id, a synthetic
+    /// line like Unrealised FX) — the forest's raw material.
+    struct StatementLine {
+        var id: GncGUID?
+        var name: String
+        var amount: Decimal
+    }
+
+    private struct ProjectedForest {
+        /// Top-level category account → its caption nodes.
+        var groups: [(title: String, nodes: [Node])]
+        var orphans: [Node]
+    }
+
+    /// Projects the account tree onto the line sets: amounts attach to their
+    /// accounts, ancestors materialise as containers, grouped by top-level
+    /// category account. `lineSets` supplies one set per column.
+    private func projectForest(lineSets: [[StatementLine]]) -> ProjectedForest {
         let columnCount = lineSets.count
-        // GUID → per-column amount.
         var amounts: [GncGUID: [Decimal?]] = [:]
         var orphanLines: [(name: String, amounts: [Decimal?])] = []
         for (column, lines) in lineSets.enumerated() {
             for line in lines {
-                if book.account(with: line.id) != nil {
-                    var slot = amounts[line.id] ?? Array(repeating: nil, count: columnCount)
+                if let id = line.id, book.account(with: id) != nil {
+                    var slot = amounts[id] ?? Array(repeating: nil, count: columnCount)
                     slot[column] = (slot[column] ?? 0) + line.amount
-                    amounts[line.id] = slot
+                    amounts[id] = slot
                 } else {
                     // Synthetic lines (Unrealised FX) have no account — they
                     // become their own caption, merged across columns by name.
@@ -184,7 +193,6 @@ struct StatementBuilder {
             }
         }
 
-        // Recursive projection of the real account tree onto the line set.
         func project(_ account: Account) -> Node? {
             let own = amounts[account.guid]
             let kids = account.children.compactMap(project)
@@ -196,7 +204,7 @@ struct StatementBuilder {
                         children: kids)
         }
 
-        var roots: [Node] = []
+        var groups: [(String, [Node])] = []
         for topLevel in book.rootAccount.children {
             guard let node = project(topLevel) else { continue }
             // The top-level account is the category container ("Assets",
@@ -204,15 +212,36 @@ struct StatementBuilder {
             // that itself carries the amounts (flat book, or a stray
             // top-level posting account) is its own caption.
             if node.children.isEmpty || node.own.contains(where: { ($0 ?? 0) != 0 }) {
-                roots.append(node)
+                groups.append((Self.displayName(for: topLevel), [Self.collapsed(node)]))
             } else {
-                roots.append(contentsOf: node.children)
+                groups.append((Self.displayName(for: topLevel),
+                               node.children.map(Self.collapsed)))
             }
         }
-        roots.append(contentsOf: orphanLines.map {
+        let orphans = orphanLines.map {
             Node(name: $0.name, fullName: $0.name, type: nil, own: $0.amounts)
+        }
+        return ProjectedForest(groups: groups, orphans: orphans)
+    }
+
+    /// The flat caption forest for one statement section (the highest
+    /// grouping below the top-level category accounts, plus synthetics).
+    func captionForest(lineSets: [[ReportLine]]) -> [Node] {
+        let projected = projectForest(lineSets: lineSets.map { lines in
+            lines.map { StatementLine(id: $0.id, name: $0.name, amount: $0.amount) }
         })
-        return roots.map(Self.collapsed)
+        return projected.groups.flatMap(\.nodes) + projected.orphans
+    }
+
+    /// The forest grouped per top-level category — the trial balance
+    /// presents each category as its own section.
+    func captionForestsByCategory(lineSets: [[StatementLine]]) -> [(title: String, nodes: [Node])] {
+        let projected = projectForest(lineSets: lineSets)
+        var groups = projected.groups
+        if !projected.orphans.isEmpty {
+            groups.append(("Other", projected.orphans))
+        }
+        return groups
     }
 
     /// Plain-language caption for accounts whose bookkeeping names would look
@@ -280,7 +309,7 @@ struct StatementBuilder {
             return weights.max { $0.value < $1.value }?.key
         }
         func magnitude(_ node: Node) -> Decimal {
-            abs((node.total.first ?? nil) ?? 0)
+            node.total.map { abs($0 ?? 0) }.max() ?? 0
         }
         func signedValue(_ node: Node) -> Decimal {
             (node.total.first ?? nil) ?? 0

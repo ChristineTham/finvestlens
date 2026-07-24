@@ -633,6 +633,9 @@ public final class AppModel {
     /// Set by Reports ▸ Financial Review…; the gallery opens the deck.
     public var financialReviewRequested = false
 
+    /// Set by Reports ▸ Investment Review…; the gallery opens that deck.
+    public var investmentReviewRequested = false
+
     /// Menu-bar jump straight to one report: lands on the Reports destination
     /// with the report already open (6.7).
     public func openReport(_ kind: ReportKind) {

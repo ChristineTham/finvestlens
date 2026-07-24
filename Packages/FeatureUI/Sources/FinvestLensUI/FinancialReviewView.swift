@@ -22,8 +22,23 @@ import FinvestLensIntelligence
 
 // MARK: - Deck screen
 
+/// Which review the sheet presents; both share the machinery, the story
+/// contract, and the export path.
+enum ReviewDeckKind {
+    case financial
+    case investment
+
+    var title: String {
+        switch self {
+        case .financial: "Financial Review"
+        case .investment: "Investment Review"
+        }
+    }
+}
+
 struct FinancialReviewSheet: View {
     @Bindable var model: AppModel
+    var kind: ReviewDeckKind = .financial
     @Environment(\.dismiss) private var dismiss
 
     @State private var period: ReportPeriod = .previousFinancialYear
@@ -49,7 +64,7 @@ struct FinancialReviewSheet: View {
                     deck
                 }
             }
-            .navigationTitle("Financial Review")
+            .navigationTitle(kind.title)
             .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -67,7 +82,7 @@ struct FinancialReviewSheet: View {
             .task(id: period) { await rebuild() }
             .fileExporter(isPresented: $exporting, document: exportDocument,
                           contentType: .pdf,
-                          defaultFilename: "Financial Review — \(model.label(for: period))") { _ in }
+                          defaultFilename: "\(kind.title) — \(model.label(for: period))") { _ in }
         }
         .frame(minWidth: 980, minHeight: 660)
     }
@@ -130,8 +145,13 @@ struct FinancialReviewSheet: View {
         defer { building = false }
         await Task.yield()
         let (from, to) = model.resolve(period)
-        slides = model.financialReviewSlides(from: from, to: to,
-                                             label: model.label(for: period))
+        let label = model.label(for: period)
+        switch kind {
+        case .financial:
+            slides = model.financialReviewSlides(from: from, to: to, label: label)
+        case .investment:
+            slides = model.investmentReviewSlides(from: from, to: to, label: label)
+        }
         index = min(index, max(0, slides.count - 1))
         stories = [:]
     }

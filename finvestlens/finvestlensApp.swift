@@ -283,6 +283,11 @@ struct finvestlensApp: App {
                     model.financialReviewRequested = true
                 }
                     .disabled(!model.isOpen)
+                Button("Investment Review…") {
+                    model.show(.reports)
+                    model.investmentReviewRequested = true
+                }
+                    .disabled(!model.isOpen)
                 Button("Financial Year Pack…") {
                     model.show(.reports)
                     model.financialYearPackRequested = true

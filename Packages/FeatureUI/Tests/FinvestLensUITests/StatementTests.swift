@@ -220,6 +220,46 @@ struct StatementTests {
         #expect(!labels.contains { $0.hasPrefix("Imbalance") })
     }
 
+    @Test("Trial balance statement: sections tie, and the books balance")
+    func trialBalanceStatement() throws {
+        let f = try Fixture()
+        defer { f.tearDown() }
+        let statement = try #require(f.model.trialBalanceStatement(asOf: .now))
+        let engine = try #require(f.model.trialBalance(asOf: .now))
+
+        #expect(statement.columns == ["Debit", "Credit"])
+
+        // Every section's caption rows add to its totals, per column.
+        for section in statement.sections {
+            for column in 0..<2 {
+                let captionSum = section.items.filter { $0.role == .line }
+                    .reduce(Decimal(0)) { $0 + ($1.amounts[column] ?? 0) }
+                #expect(captionSum == section.totalAmounts[column] ?? 0,
+                        "section \(section.title) column \(column)")
+            }
+        }
+
+        // All sections together carry every dollar of the engine's columns.
+        var debits = Decimal(0), credits = Decimal(0)
+        for section in statement.sections {
+            debits += section.totalAmounts[0] ?? 0
+            credits += section.totalAmounts[1] ?? 0
+        }
+        #expect(debits == engine.totalDebits)
+        #expect(credits == engine.totalCredits)
+
+        // And the report's whole point: the grand total balances.
+        let grand = try #require(statement.grandTotal)
+        #expect(grand.amounts[0] == grand.amounts[1])
+        #expect(grand.amounts[0] == engine.totalDebits)
+
+        // Grouped by category, not a flat account dump: the fixture's assets
+        // and liabilities land in their own sections.
+        let titles = statement.sections.map(\.title)
+        #expect(titles.contains("Assets"))
+        #expect(titles.contains("Liabilities"))
+    }
+
     @Test("Changes in net worth: opening + surplus + valuation = closing")
     func changesInNetWorth() throws {
         let f = try Fixture()

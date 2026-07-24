@@ -143,6 +143,65 @@ struct FinancialReviewTests {
         #expect(ReviewStoryValidator.isGrounded(withYear, facts: facts))
     }
 
+    @Test("Investment deck: gated on holdings, decomposition adds up")
+    func investmentDeck() throws {
+        // The cash book has no securities → no investment deck at all.
+        let (cashModel, cashURL, cashDate) = try makeCashBook()
+        defer { cashModel.close(); try? FileManager.default.removeItem(at: cashURL) }
+        #expect(cashModel.investmentReviewSlides(
+            from: .distantPast, to: cashDate.addingTimeInterval(86_400),
+            label: "Test").isEmpty)
+
+        // A book with two priced holdings.
+        let url = tempURL()
+        let model = AppModel()
+        try model.newDocument(at: url)
+        defer { model.close(); try? FileManager.default.removeItem(at: url) }
+        let bank = try #require(model.addAccount(name: "Broker", type: .bank))
+        let acme = Commodity(namespace: .security("ASX"), mnemonic: "ACME",
+                             fullName: "Acme", smallestFraction: 10000)
+        let zorg = Commodity(namespace: .security("ASX"), mnemonic: "ZORG",
+                             fullName: "Zorg", smallestFraction: 10000)
+        let acmeAccount = try #require(model.addAccount(name: "ACME", type: .stock, commodity: acme))
+        let zorgAccount = try #require(model.addAccount(name: "ZORG", type: .stock, commodity: zorg))
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
+        _ = try model.addTransaction(date: date, description: "Buy ACME", currency: .aud,
+            splits: [SplitInput(accountID: bank, value: -1_000),
+                     SplitInput(accountID: acmeAccount, value: 1_000, quantity: 100)])
+        _ = try model.addTransaction(date: date, description: "Buy ZORG", currency: .aud,
+            splits: [SplitInput(accountID: bank, value: -2_000),
+                     SplitInput(accountID: zorgAccount, value: 2_000, quantity: 100)])
+        model.addPrice(commodity: acme, currency: .aud, date: date, value: 12)   // +200
+        model.addPrice(commodity: zorg, currency: .aud, date: date, value: 15)   // −500
+
+        let to = date.addingTimeInterval(86_400)
+        let slides = model.investmentReviewSlides(from: .distantPast, to: to, label: "Test")
+        let ids = slides.map(\.id)
+        #expect(ids.contains("inv.overview"))
+        #expect(ids.contains("inv.allocation"))
+        #expect(ids.contains("inv.leaders"))
+        #expect(ids.contains("inv.decomposition"))
+        // No dividends, no disposals.
+        #expect(!ids.contains("inv.income"))
+        #expect(!ids.contains("inv.realised"))
+
+        // Decomposition: the components in the facts sum to the stated gain.
+        let decomposition = try #require(slides.first { $0.id == "inv.decomposition" })
+        func figure(_ label: String) -> Decimal {
+            decomposition.facts.figures.first { $0.0 == label }?.1 ?? 0
+        }
+        #expect(figure("Income") + figure("Realised gain") + figure("Unrealised gain")
+                == figure("Total gain"))
+        let portfolio = try #require(model.advancedPortfolio(asOf: to))
+        #expect(figure("Total gain")
+                == portfolio.totalUnrealized + portfolio.totalRealized + portfolio.totalIncome)
+
+        // Leaders: ACME best (+200), ZORG weakest (−500).
+        let leaders = try #require(slides.first { $0.id == "inv.leaders" })
+        #expect(leaders.callouts.contains { $0.label == "Best: ACME" })
+        #expect(leaders.callouts.contains { $0.label == "Weakest: ZORG" })
+    }
+
     @Test("A dividend book gains the dividends slide with a grossed-up callout")
     func dividendSlide() throws {
         let url = tempURL()
