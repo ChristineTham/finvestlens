@@ -621,6 +621,10 @@ public final class AppModel {
     /// menu item that jumps straight to one report (e.g. the aging reports).
     var pendingReportKind: ReportKind?
 
+    /// Set by Reports ▸ Financial Year Pack…; the gallery opens the pack
+    /// sheet and clears it.
+    public var financialYearPackRequested = false
+
     /// Menu-bar jump straight to one report: lands on the Reports destination
     /// with the report already open (6.7).
     public func openReport(_ kind: ReportKind) {

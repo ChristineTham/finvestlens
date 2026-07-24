@@ -277,6 +277,12 @@ struct finvestlensApp: App {
                     .disabled(!model.isOpen)
                 Button("Transactions") { model.openReport(.transactions) }
                     .disabled(!model.isOpen)
+                Divider()
+                Button("Financial Year Pack…") {
+                    model.show(.reports)
+                    model.financialYearPackRequested = true
+                }
+                    .disabled(!model.isOpen)
             }
             CommandMenu("Business") {
                 Button("Customers, Vendors & Invoices…") { model.show(.business) }

@@ -60,6 +60,7 @@ public struct HelpView: View {
                 }
             }
             .navigationTitle("FinvestLens Help")
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

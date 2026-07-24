@@ -116,6 +116,7 @@ struct RulesView: View {
                         }
                         .menuStyle(.borderlessButton)
                         .fixedSize()
+                        .accessibilityLabel("Rule group actions")
                     }
                 }
             }
@@ -228,6 +229,7 @@ struct ApplyRulesSheet: View {
                 }
             }
             .navigationTitle("Apply Rules")
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(applied ? "Close" : "Cancel") { dismiss() }

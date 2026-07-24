@@ -37,6 +37,7 @@ struct LinkedDocumentsView: View {
                 }
             }
             .navigationTitle("Linked Documents")
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
@@ -127,6 +128,7 @@ struct TaxOptionsView: View {
                 }
             }
             .navigationTitle("Tax Report Options")
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
@@ -244,6 +246,7 @@ struct CloseBookView: View {
             }
             .formStyle(.grouped)
             .navigationTitle("Close Financial Year")
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -331,6 +334,7 @@ struct LoanCalculatorView: View {
             }
             .formStyle(.grouped)
             .navigationTitle("Loan Calculator")
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
@@ -395,6 +399,7 @@ struct CreateLoanPaymentSheet: View {
             }
             .formStyle(.grouped)
             .navigationTitle("Scheduled Loan Payment")
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)

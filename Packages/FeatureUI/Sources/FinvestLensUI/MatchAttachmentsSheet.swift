@@ -158,6 +158,7 @@ struct MatchAttachmentsSheet: View {
                     .foregroundStyle(.secondary)
                     .controlSize(.small)
                     .help("Copy this row’s details")
+                    .accessibilityLabel("Copy this row’s details")
                     if !matched {
                         Button("Manually Edit…", systemImage: "square.and.pencil") {
                             editTarget = match

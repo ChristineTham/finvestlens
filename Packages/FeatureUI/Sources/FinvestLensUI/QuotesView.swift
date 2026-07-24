@@ -30,6 +30,7 @@ struct QuotesView: View {
             }
             .formStyle(.grouped)
             .navigationTitle("Quotes")
+            .onEscapeCommand { dismiss() }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

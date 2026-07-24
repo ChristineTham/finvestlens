@@ -221,6 +221,7 @@ struct ReportGallery: View {
     @Bindable var model: AppModel
     let open: (ReportConfiguration) -> Void
     @State private var settingsShown = false
+    @State private var packShown = false
 
     private let columns = [GridItem(.adaptive(minimum: 210), spacing: 12)]
 
@@ -259,6 +260,22 @@ struct ReportGallery: View {
                         }
                     }
                 }
+                Text("Tax Time").scaledFont(.title2).fontWeight(.semibold)
+                Button {
+                    packShown = true
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Financial Year Pack", systemImage: "doc.on.doc.fill")
+                            .scaledFont(.headline)
+                        Text("P&L, balance sheet, capital gains, dividends & franking — one PDF")
+                            .scaledFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: 440, alignment: .leading)
+                    .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
                 ForEach(ReportKind.Group.allCases, id: \.self) { group in
                     Text(group.rawValue).scaledFont(.title2).fontWeight(.semibold)
                     LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
@@ -271,6 +288,19 @@ struct ReportGallery: View {
             .padding(20)
         }
         .navigationTitle("Reports")
+        .sheet(isPresented: $packShown) { FinancialYearPackSheet(model: model) }
+        .onAppear {
+            if model.financialYearPackRequested {
+                model.financialYearPackRequested = false
+                packShown = true
+            }
+        }
+        .onChange(of: model.financialYearPackRequested) {
+            if model.financialYearPackRequested {
+                model.financialYearPackRequested = false
+                packShown = true
+            }
+        }
         .toolbar {
             ToolbarItem {
                 Button("Report Settings", systemImage: "gearshape") { settingsShown = true }
@@ -586,5 +616,99 @@ struct AccountScopeButton: View {
         case 1: return model.accountName(ids.first!) ?? "1 account"
         default: return "\(ids.count) accounts"
         }
+    }
+}
+
+// MARK: - Financial Year Pack (6.6b)
+
+import PDFKit
+
+/// The EOFY bundle: pick the financial year, see what the pack will hold,
+/// export one PDF — P&L, Balance Sheet, Capital Gains, Dividends & Franking.
+struct FinancialYearPackSheet: View {
+    @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var yearIndex = 0
+    @State private var documents: [ReportDocument] = []
+    @State private var building = false
+    @State private var exporting = false
+    @State private var exportDocument: PDFReportDocument?
+
+    private var years: [(label: String, from: Date, to: Date)] { model.packFinancialYears() }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Picker("Financial year", selection: $yearIndex) {
+                    ForEach(Array(years.enumerated()), id: \.offset) { index, year in
+                        Text(year.label).tag(index)
+                    }
+                }
+                Section("In this pack") {
+                    if building {
+                        ProgressView("Building reports…")
+                    } else if documents.isEmpty {
+                        Text("Nothing to report for this year.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(documents.indices, id: \.self) { index in
+                            Label(documents[index].title, systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                }
+                Section {
+                    Text("One PDF, in reading order — profit & loss, balance sheet, "
+                         + "realised gains, and dividends with franking credits.")
+                        .scaledFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Financial Year Pack")
+            .onEscapeCommand { dismiss() }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Export PDF…") { export() }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(building || documents.isEmpty)
+                }
+            }
+            .task(id: yearIndex) { await build() }
+            .fileExporter(isPresented: $exporting, document: exportDocument,
+                          contentType: .pdf,
+                          defaultFilename: "\(years[min(yearIndex, years.count - 1)].label) Pack") { _ in }
+        }
+        .frame(minWidth: 440, minHeight: 380)
+    }
+
+    private func build() async {
+        guard yearIndex < years.count else { return }
+        building = true
+        defer { building = false }
+        await Task.yield()   // paint the spinner before the report builds
+        let year = years[yearIndex]
+        documents = model.financialYearPackDocuments(from: year.from, to: year.to,
+                                                     label: year.label)
+    }
+
+    /// Renders each report to PDF and stitches the pages into one document.
+    private func export() {
+        let merged = PDFDocument()
+        for document in documents {
+            guard let data = ReportExport.pdf(document.printable),
+                  let pdf = PDFDocument(data: data) else { continue }
+            for pageIndex in 0..<pdf.pageCount {
+                if let page = pdf.page(at: pageIndex) {
+                    merged.insert(page, at: merged.pageCount)
+                }
+            }
+        }
+        guard merged.pageCount > 0, let data = merged.dataRepresentation() else { return }
+        exportDocument = PDFReportDocument(data: data)
+        exporting = true
     }
 }

@@ -282,15 +282,19 @@ extension AppModel {
         .sorted { $0.date > $1.date }
     }
 
-    /// Opens the linked document in its default application (macOS).
+    /// Opens the linked document in its default application (macOS). On iOS
+    /// the attachments panel offers Quick Look instead — this reports that
+    /// rather than silently doing nothing (F22).
     public func openLinkedDocument(for transactionID: GncGUID) {
-        #if os(macOS)
         guard let url = linkedDocumentURL(for: transactionID) else { return }
+        #if os(macOS)
         if FileManager.default.fileExists(atPath: url.path) {
             NSWorkspace.shared.open(url)
         } else {
             infoMessage = "The linked document “\(url.lastPathComponent)” was not found in \(url.deletingLastPathComponent().path)."
         }
+        #else
+        showToast(.info, "Use Quick Look to view attachments on this device.")
         #endif
     }
 

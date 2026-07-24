@@ -122,7 +122,7 @@ struct DashboardView: View {
         Calendar.current.startOfDay(for: Date()).addingTimeInterval(24 * 3600)
     }
 
-    private enum Panel: Hashable {
+    private enum Panel: String, Hashable, CaseIterable {
         case upNext
         case netWorth, income, expenses, cashflow, savingsRate, allocation, performance
         case spendingTrend, topMovers, goals, recentActivity, composition
@@ -135,6 +135,42 @@ struct DashboardView: View {
             case .composition, .accounts: 3
             }
         }
+
+        var title: String {
+            switch self {
+            case .upNext: "Up Next"
+            case .netWorth: "Net Worth"
+            case .income: "Income"
+            case .expenses: "Expenses"
+            case .cashflow: "Cashflow"
+            case .savingsRate: "Savings Rate"
+            case .allocation: "Allocation"
+            case .performance: "Performance"
+            case .spendingTrend: "Spending Trend"
+            case .topMovers: "Top Movers"
+            case .goals: "Savings Goals"
+            case .recentActivity: "Recent Activity"
+            case .composition: "Net Worth Composition"
+            case .alerts: "Alerts"
+            case .bills: "Upcoming Bills"
+            case .accounts: "Accounts"
+            }
+        }
+    }
+
+    /// Panels the user has switched off (F10). Desk state in UserDefaults.
+    @AppStorage("dashboard.hiddenPanels") private var hiddenPanelsRaw = ""
+    private var hiddenPanels: Set<String> {
+        Set(hiddenPanelsRaw.split(separator: "|").map(String.init))
+    }
+    private func panelBinding(_ panel: Panel) -> Binding<Bool> {
+        Binding(
+            get: { !hiddenPanels.contains(panel.rawValue) },
+            set: { shown in
+                var set = hiddenPanels
+                if shown { set.remove(panel.rawValue) } else { set.insert(panel.rawValue) }
+                hiddenPanelsRaw = set.sorted().joined(separator: "|")
+            })
     }
 
     var body: some View {
@@ -153,6 +189,18 @@ struct DashboardView: View {
         }
         .navigationTitle("Dashboard")
         .toolbar {
+            ToolbarItem {
+                // Show/hide panels (F10). Width and relevance still gate —
+                // this is "never show me", not layout control.
+                Menu {
+                    ForEach(Panel.allCases, id: \.self) { panel in
+                        Toggle(panel.title, isOn: panelBinding(panel))
+                    }
+                } label: {
+                    Label("Customise", systemImage: "rectangle.badge.checkmark")
+                }
+                .help("Choose which panels the dashboard shows")
+            }
             ToolbarItem { PeriodSelector(model: model, period: $period) }
         }
         .task(id: RangeKey(from: range.from, to: range.to)) {
@@ -184,6 +232,7 @@ struct DashboardView: View {
                             .allocation, .performance, .spendingTrend, .topMovers,
                             .goals, .recentActivity, .composition, .alerts, .bills, .accounts]
         return all.filter { panel in
+            guard !hiddenPanels.contains(panel.rawValue) else { return false }
             guard panel.minColumns <= columns else { return false }
             switch panel {
             case .upNext: return !(model.upNextState?.isEmpty ?? true)
@@ -717,7 +766,11 @@ struct DashboardView: View {
     // MARK: Savings goals
 
     private var goalsCard: some View {
-        Card("Savings Goals", systemImage: "target") {
+        // The earmarking maths, surfaced (5A): how much of the account is
+        // already spoken for, and what that leaves free.
+        let totalEarmarked = model.savingsGoals.reduce(Decimal(0)) { $0 + $1.savedAmount }
+        let goalAccounts = Set(model.savingsGoals.compactMap(\.accountGUID))
+        return Card("Savings Goals", systemImage: "target") {
             ForEach(model.savingsGoals) { goal in
                 let fraction = goal.targetAmount > 0
                     ? asDouble(goal.savedAmount) / asDouble(goal.targetAmount) : 0
@@ -731,6 +784,24 @@ struct DashboardView: View {
                     ProgressView(value: min(1, max(0, fraction)))
                         .tint(fraction >= 1 ? .green : .accentColor)
                 }
+            }
+            Divider()
+            HStack {
+                Text("Set aside").fontWeight(.medium)
+                Spacer()
+                Text(AmountFormat.string(totalEarmarked, code: code))
+                    .monospacedDigit()
+            }
+            .scaledFont(.caption)
+            // One funding account (the common case): say what's left free.
+            if goalAccounts.count == 1, let id = goalAccounts.first,
+               let node = model.postableAccounts.first(where: { $0.id == id }) {
+                let free = node.balance - totalEarmarked
+                Text(free >= 0
+                     ? "Leaves \(AmountFormat.string(free, code: node.currencyCode)) unallocated in \(node.name)"
+                     : "Over-allocated by \(AmountFormat.string(-free, code: node.currencyCode)) in \(node.name)")
+                    .scaledFont(.caption)
+                    .foregroundStyle(free >= 0 ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
             }
         }
     }

@@ -1321,8 +1321,15 @@ struct RegisterView: View {
             ContentUnavailableView("Select an account", systemImage: "list.bullet.rectangle",
                                    description: Text("Choose an account to see its transactions."))
         } else if model.registerRows.isEmpty {
-            ContentUnavailableView("No transactions", systemImage: "tray",
-                                   description: Text("This account has no postings yet."))
+            // The empty state points at the entry bar below it — the fastest
+            // way out of "no postings yet" is to add one (RD4).
+            ContentUnavailableView {
+                Label("No transactions", systemImage: "tray")
+            } description: {
+                Text("This account has no postings yet.")
+            } actions: {
+                Button("Add a Transaction (⌘N)") { model.requestQuickEntry() }
+            }
         } else {
             registerTable
         }

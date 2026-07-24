@@ -31,6 +31,9 @@ struct AttachmentsPanel: View {
     @State private var cloudRefresh = 0
     /// Full-window Quick Look (the expand button) — non-nil presents it.
     @State private var previewURL: URL?
+    @Environment(\.openURL) private var openURL
+    /// iPad's stand-in for the macOS file panel (F22).
+    @State private var linkFileImporterShown = false
     @State private var categorising = false
     @State private var categorySuggestion: AppModel.AttachmentCategorySuggestion?
     @State private var categoriseError: String?
@@ -250,9 +253,9 @@ struct AttachmentsPanel: View {
         HStack(spacing: 6) {
             if isWeb {
                 Button {
-                    #if os(macOS)
-                    if let webURL = URL(string: link) { NSWorkspace.shared.open(webURL) }
-                    #endif
+                    // `openURL` works on every platform — NSWorkspace made
+                    // this button a silent no-op on iPad (F22).
+                    if let webURL = URL(string: link) { openURL(webURL) }
                 } label: {
                     Label("Open", systemImage: "safari")
                 }
@@ -292,16 +295,27 @@ struct AttachmentsPanel: View {
     @ViewBuilder
     private func addControls(transactionID: GncGUID, replacing: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            #if os(macOS)
             Button(replacing ? "Replace with File…" : "Link File…",
                    systemImage: "doc.badge.plus") {
+                #if os(macOS)
                 if let url = MacFilePanel.open(types: [.item],
                                                title: "Choose a file to link") {
                     model.linkDocument(at: url, to: transactionID)
                 }
+                #else
+                linkFileImporterShown = true
+                #endif
             }
             .help("Opens a file dialog — the chosen file is linked in place, stored relative to the document folder (Settings ▸ Documents) when inside it")
-            #endif
+            .fileImporter(isPresented: $linkFileImporterShown,
+                          allowedContentTypes: [.item]) { result in
+                // The iPad path (F22): same linking, via the system picker.
+                if case let .success(url) = result {
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    model.linkDocument(at: url, to: transactionID)
+                }
+            }
             // The URL field only appears on demand: a permanently visible blank
             // field read like the replace control.
             if webFieldShown {
@@ -321,6 +335,7 @@ struct AttachmentsPanel: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
+                    .accessibilityLabel("Cancel web link")
                 }
             } else {
                 Button(replacing ? "Replace with Web Link…" : "Add Web Link…",
