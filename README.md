@@ -57,11 +57,11 @@ FinvestLens is not a fork of GnuCash. It is a clean, idiomatic Swift reimplement
 - **MT940 / MT942** (SWIFT) and **CAMT.053** (ISO 20022) statement import, with format auto-detection (extension + content sniffing).
 - A shared **import matcher** for duplicate detection (FITID `online_id` + amount/date with one-to-one claiming), destination-account assignment from payee history, and **cross-account transfer completion** (the second statement of a transfer re-points the first statement's wash leg instead of duplicating it).
 
-**Planning & guidance** (Microsoft Money–inspired — layered on the accounting core; later releases)
+**Planning & guidance** (Microsoft Money–inspired — layered on the accounting core; **all delivered**)
 - Bill reminders + financial calendar; cash-flow forecasting with what-if scenarios.
 - Budgets with rollover/envelope semantics; proactive alerts (bills due, low balance, over budget) via notifications and widgets.
 - Portfolio watch lists, asset allocation, and rate of return.
-- Debt Reduction Planner and long-range Lifetime Planner; a home dashboard with net-worth trend.
+- Debt Reduction Planner and long-range Lifetime Planner; a home dashboard with net-worth trend; tax estimator; spending insights; wellbeing score; financial-summary PDF; emergency records; audit log.
 - See [docs/enhancements-msmoney.md](docs/enhancements-msmoney.md).
 
 **Automation & organization** (Firefly III–inspired)
@@ -120,7 +120,7 @@ Phased delivery (full detail in [docs/plan.md](docs/plan.md)):
 - ✅ **Usability & performance redesign (Jul 2026)** — four audit passes (usability, functionality, performance, session/resilience) executed as four phases: one expandable register, plain language, a viewport-fitting dashboard, reconcile reimagined around auto-clear, one-click price updates, a single status/progress overlay, session restoration, memoised async reports, and an EOFY Financial Year Pack.
 - ✅ **Report-quality redesign (Jul 2026)** — statements at annual-report presentation standard (hierarchical face-and-notes built from the user's own chart of accounts, ASC 274 liquidity/maturity ordering, materiality folding, accounting typography with comparatives — including the Trial Balance), plus two presentation decks: a CFO-style **Financial Review** and a factsheet-style **Investment Review**, each with charts, callouts, and on-device insights that a deterministic validator keeps grounded in the slide's own figures. Plan and research: [report-redesign.md](docs/report-redesign.md).
 - ✅ **P8 Extended import (Jul 2026)** — SWIFT **MT940/MT942** and ISO 20022 **CAMT.053** statement import through the Import Matcher, with format auto-detection (extension + content sniffing); plus an import-matcher hardening pass validated on real bank exports — cross-account **transfer completion**, FITID-mismatch veto, one-to-one duplicate claiming, credit-card funding inference, and an Imbalance fallback feeding the Uncategorised sweep. *(Online bank sync skipped by decision — local-first; see deferred.md.)*
-- ⬜ **P9 Planning & insights** — debt & lifetime planners, tax estimator/TXF, savings goals, wellbeing score.
+- ✅ **P9 Planning & insights (Jul 2026)** — the **Planner** destination: a Debt Reduction Planner (avalanche/snowball, interest saved vs minimums), a transparent **Lifetime Planner** (five book-seeded buckets, editable assumptions, life events, today's-dollars view), and an editable-bracket **tax estimator** (AU FY defaults, franking/withholding recognition, CGT discount) — plus the **Spending Insights** comparison report with plain-language summaries, an explainable **wellbeing score** tile, the one-page **Financial Summary (passport)** PDF, **savings challenges** on goals, a local-auth-gated **Emergency Records** organizer, and a GnuCash-style **audit-log** sidecar. All estimates, clearly labelled — never advice. *(TXF export skipped: US-specific format, meaningless for an AU book.)*
 
 ## Platform requirements
 

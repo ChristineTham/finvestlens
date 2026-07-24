@@ -1,13 +1,12 @@
 # Implemented — history, audits & fixes (P0–P7)
 
-The record of what has been **built and verified**. Phases P0–P8 are complete:
-the engine, native document + NAS locking, GnuCash import/export, core UX,
-everyday finance, investments + multi-currency + quotes, sync/dashboard/alerts,
-Apple Intelligence, small-business features, and extended statement import
-(SWIFT MT + ISO 20022) — plus two **July 2026 redesigns**: usability &
-performance, and report quality. Only **P9** (planning & insights) remains —
-see [plan.md](plan.md); [deferred.md](deferred.md) lists the smaller open
-tails within P0–P8.
+The record of what has been **built and verified**. **Every phase P0–P9 is
+complete**: the engine, native document + NAS locking, GnuCash import/export,
+core UX, everyday finance, investments + multi-currency + quotes,
+sync/dashboard/alerts, Apple Intelligence, small-business features, extended
+statement import (SWIFT MT + ISO 20022), and the planning & insights layer —
+plus two **July 2026 redesigns**: usability & performance, and report
+quality. [deferred.md](deferred.md) lists the smaller open tails.
 
 This file is the narrative: what each audit found, what was fixed, and how it
 was verified (mostly against a real GnuCash book — 46,553 transactions, 559
@@ -19,6 +18,56 @@ Companions: [PRD](prd.md) · [Architecture](architecture.md) · [Plan](plan.md) 
 [Deferred](deferred.md).
 
 ---
+
+## P9 — Planning & insights (24 Jul 2026)
+
+The final phase: Microsoft Money's flagship planning layer plus the
+Frollo-inspired wellness pieces, over the GnuCash-rigour engine. Design and
+models in [planning-design.md](planning-design.md); the governing rules were
+**transparent, adjustable, deterministic, and never advice** — every surface
+carries the estimate disclaimer, every assumption is on screen, and every
+number traces to the book.
+
+- **Calculators** (`FinvestLensReports`, pure and fixture-tested): `DebtPlan`
+  (monthly avalanche/snowball simulation, rolling payments, underwater
+  detection, minimums-only baseline), `LifetimeProjection` (annual five-bucket
+  model — cash/investments/retirement/property/debts — with life events,
+  bracket-estimated tax while working, ordered drawdown in retirement, and a
+  book-seeding walk that classifies accounts by type with retirement detected
+  by name), `TaxEstimate` (progressive brackets as **editable data** seeded
+  with AU resident rates per FY incl. the 2026 cut, flat levy, CGT discount,
+  franking/withholding credits), `SpendingInsights` (period-vs-prior category
+  joins bound to the pie/bar breakdown, deterministic template sentences),
+  `WellbeingScore` (four 0–25 components with exposed arithmetic).
+- **Book layer** (`AppModel+Planning`): five new KVP collections (debt plan,
+  lifetime plan, tax settings, challenges, emergency records) on the standard
+  reload/persist/commit pattern; classification heuristics (retirement roots,
+  franking/PAYG names, mortgage exclusion) kept visible on the screens they
+  feed.
+- **UI**: a **Planner** sidebar destination (Debt Reduction / Lifetime / Tax
+  Estimate segments); **Spending Insights** as a report kind in the gallery,
+  menu, and favourites machinery; a **Wellbeing** dashboard tile with the
+  full working one click away; the **Financial Summary (passport)** as a
+  Present-section card and Reports-menu item (A4 PDF, statement typography);
+  **savings challenges** in the Goals screen (paced ahead/on-track/behind
+  against the straight line, context-menu delete); **Emergency Records** as a
+  Records destination behind an optional local-authentication gate (view
+  gate, honestly labelled); **Audit Log** viewer in the Book menu.
+- **Audit log**: `<book>.audit.log` sidecar written on the same code path as
+  undo registration (all five scoped-`editing` tiers), undo/redo replays
+  labelled, 1 MB rotation, never inside the book file.
+- **Skipped**: TXF export (US-specific; meaningless for an AU book —
+  [deferred.md](deferred.md) §5). The `tax-US` code slot still round-trips.
+
+Verified: 636 tests green across Reports/Interchange/FeatureUI (24 new for
+P9), and the plan's exit criteria on the **real book** (`LivePlanningTests`):
+bucket seeding put the SMSF's $1.89m in retirement with cash/investments/
+property/debts populated, a 51-year lifetime projection ran from seeded
+defaults, the live credit card produced a five-month payoff plan, the tax
+estimate flowed tagged accounts through the FY 2026–27 brackets
+($124.6k taxable → $27,887 base + levy), insights produced grounded
+sentences, wellbeing read 96/100, and the passport assembled a $3.83m net
+worth over six asset classes.
 
 ## P8 — Extended statement import: MT940/MT942 + CAMT.053 (24 Jul 2026)
 

@@ -298,14 +298,14 @@ Features that add consumer-grade **planning and guidance** on top of the account
 | FR-PLAN-07 | **Portfolio enhancements**: **watch lists** (securities not held), **asset-allocation** breakdown, and **rate-of-return / performance** (extends `FR-INV-*`). | Should | P5 |
 | FR-PLAN-08 | **Home dashboard**: an overview surfacing balances, upcoming bills, budget status, **net-worth trend**, and alerts; drives Home-screen widgets. *(Jul 2026 redesign: the dashboard is a **non-scrolling tile board** — it packs prioritised, content-aware cards into the actual window (columns from width, unit rows from height, stretched flush), drops what doesn't fit, and never scrolls; cards with nothing to say yield their tile; panels are user-hideable.)* | Should | P6 |
 | FR-PLAN-09 | **Onboarding / setup assistant**: friendly first-run flow to create accounts and a starter chart of accounts (broadens `FR-COA-03`). | Should | P4 |
-| FR-PLAN-10 | **Debt Reduction Planner**: order liabilities, apply extra payments, and compute payoff date/interest saved (snowball & avalanche strategies). | Could | P9 |
-| FR-PLAN-11 | **Lifetime Planner**: long-range financial/retirement projection from income, expenses, assets, retirement accounts, taxes, inflation, and life events → projected net worth and goal feasibility over a lifetime. | Could | P9 |
-| FR-PLAN-12 | **Tax estimator & tax-line tagging**: estimate liability, project capital gains, tag tax-related categories, track deductions (complements TXF export). | Could | P9 |
-| FR-PLAN-13 | **Insights & comparison reports**: spending-by-category trends and period-vs-period comparisons with plain-language summaries. | Could | P9 |
+| FR-PLAN-10 | **Debt Reduction Planner**: order liabilities, apply extra payments, and compute payoff date/interest saved (snowball & avalanche strategies). | Could | P9 ✅ |
+| FR-PLAN-11 | **Lifetime Planner**: long-range financial/retirement projection from income, expenses, assets, retirement accounts, taxes, inflation, and life events → projected net worth and goal feasibility over a lifetime. | Could | P9 ✅ |
+| FR-PLAN-12 | **Tax estimator & tax-line tagging**: estimate liability, project capital gains, tag tax-related categories, track deductions (complements TXF export). | Could | P9 ✅ |
+| FR-PLAN-13 | **Insights & comparison reports**: spending-by-category trends and period-vs-period comparisons with plain-language summaries. | Could | P9 ✅ |
 | FR-PLAN-14 | **Time & mileage tracking** for small-business use (extends `FR-BUS-*`). | Could | P7 |
-| FR-PLAN-15 | **Emergency Records Organizer**: a secure area to store key records (insurance, accounts, contacts). | Could | P9 |
-| FR-PLAN-16 | **Financial wellbeing score** (Frollo-inspired): an explainable indicator of financial health (savings rate, spending trends, debt ratios, cash buffer) surfaced on the dashboard — transparent, not a black box. | Could | P9 |
-| FR-PLAN-17 | **Financial summary export ("passport")** (Frollo-inspired): a curated, user-initiated PDF snapshot of net worth, income, and expenses for sharing (e.g. loan applications). | Could | P9 |
+| FR-PLAN-15 | **Emergency Records Organizer**: a secure area to store key records (insurance, accounts, contacts). | Could | P9 ✅ |
+| FR-PLAN-16 | **Financial wellbeing score** (Frollo-inspired): an explainable indicator of financial health (savings rate, spending trends, debt ratios, cash buffer) surfaced on the dashboard — transparent, not a black box. | Could | P9 ✅ |
+| FR-PLAN-17 | **Financial summary export ("passport")** (Frollo-inspired): a curated, user-initiated PDF snapshot of net worth, income, and expenses for sharing (e.g. loan applications). | Could | P9 ✅ |
 
 ### 5.17 Automation, tags & goals (Firefly III–inspired)
 
@@ -321,7 +321,7 @@ Automation and organization features that layer onto the engine. See the [enhanc
 | FR-BILL-01 | **Bill matching**: bills carry an **expected amount/range and interval**; transactions auto-match to bills; surface **paid / unpaid / overdue** status. *(Extends `FR-PLAN-01`.)* | Should | P4 |
 | FR-BUD-03 | **Auto-budgets**: budgets that **auto-replenish** each period (fixed or rollover); support a **zero-based** budgeting workflow. *(Extends `FR-BUD-*`, `FR-PLAN-04`.)* | Could | P4 |
 | FR-RULE-03 | **Default category taxonomy + heuristic auto-categorisation** (Frollo-inspired): ship a standard category set and auto-suggest categories/merchant-name cleanup on import, complementing the rules engine and Import Matcher (optional on-device enrichment later). | Should | P4 |
-| FR-GOAL-02 | **Savings challenges** (Frollo-inspired): gamified, time-boxed savings challenges layered on savings goals, with in-app prompts/notifications. | Could | P9 |
+| FR-GOAL-02 | **Savings challenges** (Frollo-inspired): gamified, time-boxed savings challenges layered on savings goals, with in-app prompts/notifications. | Could | P9 ✅ |
 
 ### 5.18 On-device intelligence (Apple Intelligence)
 

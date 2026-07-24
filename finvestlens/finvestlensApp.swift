@@ -223,6 +223,12 @@ struct finvestlensApp: App {
                     .disabled(!model.isOpen)
                 Button("Loan Calculator…") { model.presentedPanel = .loanCalculator }
                     .disabled(!model.isOpen)
+                Button("Planner…") { model.show(.planner) }
+                    .disabled(!model.isOpen)
+                Button("Emergency Records…") { model.show(.emergencyRecords) }
+                    .disabled(!model.isOpen)
+                Button("Audit Log…") { model.presentedPanel = .auditLog }
+                    .disabled(!model.isOpen)
                 Button("Repair Book…") { model.checkAndRepair() }
                     .disabled(!model.isOpen)
                 Button("Close Financial Year…") { model.presentedPanel = .closeBook }
@@ -277,6 +283,8 @@ struct finvestlensApp: App {
                     .disabled(!model.isOpen)
                 Button("Transactions") { model.openReport(.transactions) }
                     .disabled(!model.isOpen)
+                Button("Spending Insights") { model.openReport(.spendingInsights) }
+                    .disabled(!model.isOpen)
                 Divider()
                 Button("Financial Review…") {
                     model.show(.reports)
@@ -291,6 +299,11 @@ struct finvestlensApp: App {
                 Button("Financial Year Pack…") {
                     model.show(.reports)
                     model.financialYearPackRequested = true
+                }
+                    .disabled(!model.isOpen)
+                Button("Financial Summary (Passport)…") {
+                    model.show(.reports)
+                    model.passportRequested = true
                 }
                     .disabled(!model.isOpen)
             }

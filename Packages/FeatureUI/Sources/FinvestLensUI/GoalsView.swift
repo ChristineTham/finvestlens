@@ -22,6 +22,7 @@ struct GoalsView: View {
     @State private var editing: SavingsGoal?
     @State private var creating = false
     @State private var adjusting: SavingsGoal?
+    @State private var addingChallenge = false
 
     private var code: String { model.reportCurrency.mnemonic }
 
@@ -68,6 +69,7 @@ struct GoalsView: View {
                                 }
                             }
                         }
+                        challengesSection
                     }
                 }
             }
@@ -83,12 +85,119 @@ struct GoalsView: View {
                     Button("New Goal", systemImage: "plus") { creating = true }
                         .disabled(model.goalEligibleAccounts.isEmpty)
                 }
+                ToolbarItem {
+                    Button("New Challenge", systemImage: "flag.checkered") { addingChallenge = true }
+                        .disabled(model.savingsGoals.isEmpty)
+                        .help("A time-boxed savings push on one of your goals")
+                }
             }
             .sheet(isPresented: $creating) { GoalEditorSheet(model: model, goal: nil) }
             .sheet(item: $editing) { goal in GoalEditorSheet(model: model, goal: goal) }
             .sheet(item: $adjusting) { goal in GoalAdjustSheet(model: model, goal: goal) }
+            .sheet(isPresented: $addingChallenge) { ChallengeEditorSheet(model: model) }
         }
         .frame(minWidth: embedded ? nil : 460, minHeight: embedded ? nil : 420)
+    }
+
+    /// Savings challenges (FR-GOAL-02): time-boxed pushes on a goal, paced
+    /// against the straight line to the target.
+    @ViewBuilder
+    private var challengesSection: some View {
+        if !model.savingsChallenges.isEmpty {
+            Section("Challenges") {
+                ForEach(model.savingsChallenges) { challenge in
+                    let live = model.challengeStatus(challenge)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(challenge.name).fontWeight(.medium)
+                            statusBadge(live.status)
+                            Spacer()
+                            Text(AmountFormat.string(live.progress, code: code)
+                                 + " / " + AmountFormat.string(challenge.targetAmount, code: code))
+                                .monospacedDigit().foregroundStyle(.secondary)
+                        }
+                        ProgressView(value: min(1, NSDecimalNumber(decimal: live.progress).doubleValue
+                                                / max(1, NSDecimalNumber(decimal: challenge.targetAmount).doubleValue)))
+                            .tint(live.status == .behind || live.status == .lapsed ? .orange : .green)
+                        HStack {
+                            if let goal = model.savingsGoals.first(where: { $0.id == challenge.goalID }) {
+                                Text(goal.name).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("\(dateFormat.long(challenge.startDate)) – \(dateFormat.long(challenge.endDate))")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                    .contextMenu {
+                        Button("Delete", role: .destructive) { model.deleteChallenge(challenge.id) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func statusBadge(_ status: SavingsChallenge.Status) -> some View {
+        let (text, tint): (String, Color) = switch status {
+        case .ahead: ("ahead", .green)
+        case .onTrack: ("on track", .blue)
+        case .behind: ("behind", .orange)
+        case .done: ("done", .green)
+        case .lapsed: ("lapsed", .secondary)
+        }
+        return Text(text).font(.caption2).padding(.horizontal, 6).padding(.vertical, 1)
+            .background(tint.opacity(0.2), in: Capsule())
+    }
+}
+
+/// Creates a challenge on an existing goal.
+private struct ChallengeEditorSheet: View {
+    @Bindable var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var goalID: GncGUID?
+    @State private var name = ""
+    @State private var target = ""
+    @State private var start = Date()
+    @State private var end = Calendar.current.date(byAdding: .month, value: 3, to: Date()) ?? Date()
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Picker("Goal", selection: $goalID) {
+                    Text("Choose a goal…").tag(GncGUID?.none)
+                    ForEach(model.savingsGoals) { goal in
+                        Text(goal.name).tag(GncGUID?.some(goal.id))
+                    }
+                }
+                TextField("Challenge name", text: $name)
+                TextField("Extra amount to save", text: $target)
+                DatePicker("From", selection: $start, displayedComponents: .date)
+                DatePicker("Until", selection: $end, in: start..., displayedComponents: .date)
+            }
+            .formStyle(.grouped)
+            .navigationTitle("New Challenge")
+            .onEscapeCommand { dismiss() }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Start") {
+                        guard let goalID,
+                              let amount = Decimal(string: target.trimmingCharacters(in: .whitespaces)),
+                              amount > 0 else { return }
+                        model.addChallenge(goalID: goalID,
+                                           name: name.trimmingCharacters(in: .whitespaces),
+                                           target: amount, start: start, end: end)
+                        dismiss()
+                    }
+                    .disabled(goalID == nil || name.trimmingCharacters(in: .whitespaces).isEmpty
+                              || Decimal(string: target.trimmingCharacters(in: .whitespaces)) == nil)
+                }
+            }
+        }
+        .frame(minWidth: 400, minHeight: 300)
     }
 }
 

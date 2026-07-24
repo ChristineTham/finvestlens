@@ -126,6 +126,7 @@ public enum RootPanel: String, Identifiable, Sendable {
     case matchAttachments
     case linkedDocuments
     case loanCalculator
+    case auditLog
     case closeBook
     case taxOptions
     case find
@@ -148,6 +149,8 @@ public enum SidebarSelection: Hashable, Sendable {
     case scheduled
     case rules
     case goals
+    case planner
+    case emergencyRecords
     case prices
     case business
     case timeMileage
@@ -569,6 +572,12 @@ public final class AppModel {
     /// Savings goals ("piggy banks") earmarking parts of asset accounts
     /// (`FR-GOAL-01`).
     public internal(set) var savingsGoals: [SavingsGoal] = []
+    /// P9 planning state (docs/planning-design.md), all book-KVP-backed.
+    public internal(set) var debtPlanSettings = DebtPlanSettings()
+    public internal(set) var lifetimePlan = StoredLifetimePlan()
+    public internal(set) var taxSettings: TaxEstimate.Settings?
+    public internal(set) var savingsChallenges: [SavingsChallenge] = []
+    public internal(set) var emergencyRecords: [EmergencyRecord] = []
 
     /// Billable time and mileage awaiting or placed on invoices (`FR-PLAN-14`).
     public internal(set) var billableEntries: [BillableEntry] = []
@@ -635,6 +644,8 @@ public final class AppModel {
 
     /// Set by Reports ▸ Investment Review…; the gallery opens that deck.
     public var investmentReviewRequested = false
+    /// Reports ▸ Financial Summary (the passport) — handled by ReportsHome.
+    public var passportRequested = false
 
     /// Menu-bar jump straight to one report: lands on the Reports destination
     /// with the report already open (6.7).
@@ -808,6 +819,11 @@ public final class AppModel {
         static let companyInfo = "finvestlens/companyInfo"
         static let savingsGoals = "finvestlens/savingsGoals"
         static let billableEntries = "finvestlens/billableEntries"
+        static let debtPlan = "finvestlens/debtPlan"
+        static let lifetimePlan = "finvestlens/lifetimePlan"
+        static let taxSettings = "finvestlens/taxSettings"
+        static let savingsChallenges = "finvestlens/savingsChallenges"
+        static let emergencyRecords = "finvestlens/emergencyRecords"
     }
 
     /// Loads the KVP-backed collections from the current book.
@@ -815,6 +831,8 @@ public final class AppModel {
         guard let book else {
             ruleGroups = []; scheduledTransactions = []; budgets = []; quoteSymbols = [:]
             savingsGoals = []; billableEntries = []
+            debtPlanSettings = DebtPlanSettings(); lifetimePlan = StoredLifetimePlan()
+            taxSettings = nil; savingsChallenges = []; emergencyRecords = []
             return
         }
         ruleGroups = Self.decodeSlot([RuleGroup].self, book.kvp[KvpKey.rules]) ?? []
@@ -830,6 +848,11 @@ public final class AppModel {
         companyInfo = Self.decodeSlot(CompanyInfo.self, book.kvp[KvpKey.companyInfo]) ?? CompanyInfo()
         savingsGoals = Self.decodeSlot([SavingsGoal].self, book.kvp[KvpKey.savingsGoals]) ?? []
         billableEntries = Self.decodeSlot([BillableEntry].self, book.kvp[KvpKey.billableEntries]) ?? []
+        debtPlanSettings = Self.decodeSlot(DebtPlanSettings.self, book.kvp[KvpKey.debtPlan]) ?? DebtPlanSettings()
+        lifetimePlan = Self.decodeSlot(StoredLifetimePlan.self, book.kvp[KvpKey.lifetimePlan]) ?? StoredLifetimePlan()
+        taxSettings = Self.decodeSlot(TaxEstimate.Settings.self, book.kvp[KvpKey.taxSettings])
+        savingsChallenges = Self.decodeSlot([SavingsChallenge].self, book.kvp[KvpKey.savingsChallenges]) ?? []
+        emergencyRecords = Self.decodeSlot([EmergencyRecord].self, book.kvp[KvpKey.emergencyRecords]) ?? []
     }
 
     /// Writes the KVP-backed collections into the current book's slots.
@@ -852,6 +875,13 @@ public final class AppModel {
             companyInfo == CompanyInfo() ? nil : Self.encodeSingle(companyInfo)
         book.kvp[KvpKey.savingsGoals] = Self.encodeSlot(savingsGoals)
         book.kvp[KvpKey.billableEntries] = Self.encodeSlot(billableEntries)
+        book.kvp[KvpKey.debtPlan] =
+            debtPlanSettings == DebtPlanSettings() ? nil : Self.encodeSingle(debtPlanSettings)
+        book.kvp[KvpKey.lifetimePlan] =
+            lifetimePlan == StoredLifetimePlan() ? nil : Self.encodeSingle(lifetimePlan)
+        book.kvp[KvpKey.taxSettings] = taxSettings.map { Self.encodeSingle($0) } ?? nil
+        book.kvp[KvpKey.savingsChallenges] = Self.encodeSlot(savingsChallenges)
+        book.kvp[KvpKey.emergencyRecords] = Self.encodeSlot(emergencyRecords)
     }
 
     /// Persists the collections and refreshes derived UI state, as one undoable
@@ -868,6 +898,7 @@ public final class AppModel {
     /// a large book — where copying the `prices` value array is milliseconds.
     func editingPrices(named: String, _ body: () -> Void) {
         if isReadOnly { return }
+        auditLog(named)
         let before = book?.prices ?? []
         body()
         refreshAfterChange()
@@ -882,6 +913,7 @@ public final class AppModel {
     /// (settings, serialized collections). Same rationale as ``editingPrices``.
     func editingBookKvp(named: String, _ body: () -> Void) {
         if isReadOnly { return }
+        auditLog(named)
         let before = book?.kvp
         body()
         refreshAfterChange()
@@ -1704,6 +1736,7 @@ public final class AppModel {
     /// changes outside those transactions will not be undone.
     func editing(_ ids: [GncGUID], named: String, _ body: () -> Void) {
         if isReadOnly { return }   // read-only session: edits are refused (FR-DAT-06)
+        auditLog(named)
         let before = ids.map {
             TransactionSnapshot(id: $0, state: book?.transaction(with: $0)?.detachedCopy())
         }
@@ -1755,6 +1788,7 @@ public final class AppModel {
     /// captured — transactions and other accounts are not — so an account edit
     /// no longer pays the whole-book serialisation ``editingWholeBook`` costs.
     func editingAccounts(_ ids: [GncGUID], named: String, _ body: () -> Void) {
+        auditLog(named)
         let before = ids.compactMap { accountSnapshot($0) }
         body()
         refreshAfterChange()
@@ -1793,6 +1827,7 @@ public final class AppModel {
     /// ``editingAccounts(_:named:)``) whenever the touched objects can be named.
     func editingWholeBook(named: String, _ body: () -> Void) {
         if isReadOnly { return }   // read-only session: edits are refused (FR-DAT-06)
+        auditLog(named)
         let before = Perf.measure("wholeBookSnapshot") { gnuCashExportData() }
         body()
         refreshAfterChange()

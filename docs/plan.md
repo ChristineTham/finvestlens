@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Document status** | **Phases P0–P8 complete** (v1.0 was P0–P6, 13 July 2026; P7 business features and P8 extended import since), **plus the Jul 2026 usability/performance and report-quality redesigns**. Only P9 remains; online bank sync skipped to [deferred.md](deferred.md). |
+| **Document status** | **All phases P0–P9 complete** (v1.0 was P0–P6, 13 July 2026; P7 business, P8 extended import, and P9 planning & insights since), **plus the Jul 2026 usability/performance and report-quality redesigns**. Online bank sync skipped to [deferred.md](deferred.md). |
 | **Last updated** | 2026-07-24 |
 | **Scope** | The build plan: phases, workstreams, tasks, dependencies, and exit criteria |
 | **Companions** | [PRD](prd.md) · [Architecture](architecture.md) · [Porting Strategy](porting.md) · [Implemented](implemented.md) · [Deferred backlog](deferred.md) · [Money study](enhancements-msmoney.md) · [Firefly study](enhancements-firefly.md) · [Frollo study](enhancements-frollo.md) |
@@ -24,9 +24,9 @@ This is the authoritative **delivery schedule and status record**. It sequences 
 | **Usability & performance redesign** | ✅ Complete (24 Jul 2026) | A post-P7 pass over the P2/P4/P6 surfaces, driven by four audits ([usability-review.md](usability-review.md), [performance-review.md](performance-review.md)): one expandable register, plain language, the non-scrolling tile-board dashboard, auto-clear-first reconcile, one-click prices (⌘⇧U), a single status overlay, session restoration, memoised async reports, and the EOFY Financial Year Pack. Narrative in [implemented.md](implemented.md). |
 | **Report-quality redesign** | ✅ Complete (24 Jul 2026) | Statements at annual-report standard — face-and-notes presentation from the user's own tree, ASC 274 ordering, accounting typography, comparatives, incl. the Trial Balance — plus the Financial Review and Investment Review slide decks with validator-grounded on-device insights. Plan/research: [report-redesign.md](report-redesign.md); design: [architecture.md §5.6a](architecture.md); narrative in [implemented.md](implemented.md). |
 | **P8 — Extended import** | ✅ Complete (24 Jul 2026) | MT940/MT942 + CAMT.053 importers feed the Import Matcher; format auto-detection incl. content sniffing. Online bank sync (FR-XIO-07) **skipped by decision (24 Jul 2026)** — moved to [deferred.md](deferred.md) §5. |
-| **P9 — Planning & insights** | ⬜ Not started | |
+| **P9 — Planning & insights** | ✅ Complete (24 Jul 2026) | Debt & Lifetime planners, tax estimator, Spending Insights, wellbeing score, passport PDF, savings challenges, Emergency Records, audit log — design in [planning-design.md](planning-design.md). |
 
-Phases **P0–P8 are delivered**; a set of low-priority tails deferred *within* those phases is tracked, ranked, in [deferred.md](deferred.md). **P9** is planned but not started (detailed below). The narrative of what was built, with the audits and measurements behind it, is in [implemented.md](implemented.md).
+**Every phase P0–P9 is delivered**; a set of low-priority tails deferred *within* them is tracked, ranked, in [deferred.md](deferred.md). The narrative of what was built, with the audits and measurements behind it, is in [implemented.md](implemented.md).
 
 ---
 
@@ -263,23 +263,23 @@ Dependencies point downward only; `Engine` builds/tests with nothing above it (`
 
 ## 13. Phase P9 — Planning & insights
 
-**Status.** ⬜ Not started. (Tax-line *tagging* exists via Tax Report Options; the estimator, TXF export, planners, and insights do not.)
+**Status.** ✅ **Complete (24 Jul 2026).** Design and models in [planning-design.md](planning-design.md); pure calculators in `FinvestLensReports` (`DebtPlan`, `LifetimeProjection`, `TaxEstimate`, `SpendingInsights`, `WellbeingScore`) with fixture tests, the book-facing layer in `AppModel+Planning`, and the UI as a **Planner** sidebar destination (Debt Reduction / Lifetime / Tax Estimate), a **Spending Insights** report, a **Wellbeing** dashboard tile, the **Financial Summary (passport)** PDF, **savings challenges** on goals, the **Emergency Records** destination (local-authentication gate), and a GnuCash-style **audit-log sidecar** with a Tools viewer. Exit criteria verified on the real book (`LivePlanningTests`): SMSF-seeded lifetime buckets and a 51-year projection, a debt payoff plan over the live credit card, and a bracket-computed tax estimate from tagged accounts. **TXF export was consciously skipped** — a US interchange format with no meaning for an AU book; the `tax-US` code slot still round-trips for GnuCash parity ([deferred.md](deferred.md)).
 
 **Objective.** The flagship planning layer.
 
 **Workstreams & tasks**
-- **Debt Reduction Planner** (snowball/avalanche; payoff date, interest saved). *(FR-PLAN-10)*
-- **Lifetime Planner** (long-range projection: income/expenses/assets/retirement/taxes/inflation/life-events → net worth over time, goal feasibility). *(FR-PLAN-11)*
-- **Tax estimator + tax-line tagging + capital-gains estimator.** *(FR-PLAN-12)*
-- **Insights & comparison reports** (trends, period-vs-period, plain-language). *(FR-PLAN-13)*
-- **Financial wellbeing score** (explainable) and **financial summary "passport"** PDF export. *(FR-PLAN-16/17, Frollo-inspired)*
-- **Savings challenges** (gamified goals). *(FR-GOAL-02, Frollo-inspired)*
-- **Emergency Records Organizer** (secure records). *(FR-PLAN-15)*
-- **Audit logging.**
+- ✅ **Debt Reduction Planner** (snowball/avalanche; payoff date, interest saved). *(FR-PLAN-10)*
+- ✅ **Lifetime Planner** (long-range projection: income/expenses/assets/retirement/taxes/inflation/life-events → net worth over time, goal feasibility). *(FR-PLAN-11)*
+- ✅ **Tax estimator + tax-line tagging + capital-gains estimator.** *(FR-PLAN-12)*
+- ✅ **Insights & comparison reports** (trends, period-vs-period, plain-language). *(FR-PLAN-13)*
+- ✅ **Financial wellbeing score** (explainable) and **financial summary "passport"** PDF export. *(FR-PLAN-16/17, Frollo-inspired)*
+- ✅ **Savings challenges** (gamified goals). *(FR-GOAL-02, Frollo-inspired)*
+- ✅ **Emergency Records Organizer** (secure records). *(FR-PLAN-15)*
+- ✅ **Audit logging.**
 
 **Dependencies.** P5 (investments/tax data), P6 (dashboard surface).
 **Deliverables.** Planners, tax tools, insights.
-**Exit criteria.** Produce a debt-payoff plan and a lifetime projection from real book data; estimate tax from tagged tax lines.
+**Exit criteria.** Produce a debt-payoff plan and a lifetime projection from real book data; estimate tax from tagged tax lines. ✅
 **Risks.** Lifetime Planner is large and assumption-heavy — ship a transparent, adjustable model; label projections clearly (not advice, per NG4).
 
 ---

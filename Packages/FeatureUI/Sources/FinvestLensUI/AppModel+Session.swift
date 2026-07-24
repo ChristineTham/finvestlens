@@ -54,6 +54,8 @@ extension AppModel {
         case .prices: "prices"
         case .business: "business"
         case .timeMileage: "timeMileage"
+        case .planner: "planner"
+        case .emergencyRecords: "emergencyRecords"
         }
     }
 
@@ -68,6 +70,8 @@ extension AppModel {
         case "budgets": return .budgets
         case "scheduled": return .scheduled
         case "rules": return .rules
+        case "planner": return .planner
+        case "emergencyRecords": return .emergencyRecords
         case "goals": return .goals
         case "prices": return .prices
         case "business": return .business

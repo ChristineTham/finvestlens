@@ -275,6 +275,8 @@ public struct FinvestLensRootView: View {
         case .prices: PricesView(model: model)
         case .business: BusinessHub(model: model)
         case .timeMileage: TimeMileageView(model: model)
+        case .planner: PlanningView(model: model)
+        case .emergencyRecords: EmergencyRecordsView(model: model)
         }
     }
 
@@ -399,6 +401,7 @@ public struct FinvestLensRootView: View {
             case .loanCalculator: LoanCalculatorView(model: model)
             case .closeBook: CloseBookView(model: model)
             case .taxOptions: TaxOptionsView(model: model)
+            case .auditLog: AuditLogSheet(model: model)
             case .find: FindSheet(model: model)
             case .findAccount: FindAccountSheet(model: model)
             }
@@ -905,6 +908,7 @@ struct AccountsSidebar: View {
                     Label("All Transactions", systemImage: "text.book.closed").tag(SidebarSelection.generalLedger)
                 }
                 Section("Planning") {
+                    Label("Planner", systemImage: "chart.xyaxis.line").tag(SidebarSelection.planner)
                     Label("Budgets", systemImage: "chart.bar.doc.horizontal").tag(SidebarSelection.budgets)
                     Label("Scheduled", systemImage: "calendar.badge.clock").tag(SidebarSelection.scheduled)
                     Label("Savings Goals", systemImage: "target").tag(SidebarSelection.goals)
@@ -914,6 +918,7 @@ struct AccountsSidebar: View {
                     Label("Prices & Securities", systemImage: "tag").tag(SidebarSelection.prices)
                     Label("Time & Mileage", systemImage: "clock.badge.checkmark").tag(SidebarSelection.timeMileage)
                     Label("Rules", systemImage: "wand.and.stars").tag(SidebarSelection.rules)
+                    Label("Emergency Records", systemImage: "cross.case").tag(SidebarSelection.emergencyRecords)
                 }
             }
             accountsSection

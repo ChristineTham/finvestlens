@@ -1,14 +1,13 @@
-# Deferred backlog — open items within P0–P8
+# Deferred backlog — open items within P0–P9
 
-Work that was **in scope for the delivered phases (P0–P8)** but is still open:
-deferred, partial, or not yet built. It is **ranked** — highest priority /
-readiest to pick up first.
+Work that was **in scope for the delivered phases (all of P0–P9)** but is
+still open: deferred, partial, or not yet built. It is **ranked** — highest
+priority / readiest to pick up first.
 
-Out of scope for this list: the future phase **P9** (planning & insights),
-which is planned, not deferred — see [plan.md](plan.md). (One exception:
-**online bank sync**, removed from P8 by decision — §5 below.) Anything
-already built is in [implemented.md](implemented.md); intentional non-goals
-(e.g. bit-for-bit arithmetic parity with GnuCash) are not tracked anywhere.
+Two items were **skipped from the plan by decision** (online bank sync from
+P8, TXF export from P9) — §5 below. Anything already built is in
+[implemented.md](implemented.md); intentional non-goals (e.g. bit-for-bit
+arithmetic parity with GnuCash) are not tracked anywhere.
 
 Each row cites its PRD `FR-*`/`NFR-*` and the phase it belonged to.
 
@@ -71,6 +70,7 @@ won't-fix. It stays recorded here so the reasoning survives.
 
 | Item | FR | Notes |
 |---|---|---|
+| **TXF export** | FR-PLAN-12 (adjunct) | **Skipped with P9, 24 Jul 2026.** TXF is a US tax-interchange format; the reference book (and the app's AU defaults) has nothing to feed it. The GnuCash `tax-US` code slot still round-trips untouched, so nothing is lost for GnuCash users; build an exporter only if a US user base appears. |
 | **Online bank sync** (SimpleFIN / GoCardless (Nordigen); AU **CDR / Open Banking** via an accredited intermediary such as Basiq) | FR-XIO-07 | **Skipped from P8, 24 Jul 2026.** A cloud-mediated, consent-managed connector sits poorly with the app's offline, local-first core (NFR-03/07); the CDR path in particular carries accreditation/intermediary diligence and ongoing API-maintenance burden out of proportion to a document app whose import story (CSV/QIF/OFX files + AI PDF import + the Import Matcher) already covers the data. Revisit only on strong user demand — the design sketch (aggregator → `StagedTransaction` → Import Matcher, credentials user-entered into Keychain) remains valid in [PRD §5.14](prd.md) and the [Frollo study](enhancements-frollo.md). |
 
 ---

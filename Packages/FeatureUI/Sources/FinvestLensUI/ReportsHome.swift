@@ -36,6 +36,7 @@ public enum ReportKind: String, CaseIterable, Identifiable, Codable {
     case transactions = "Transactions"
     case reconcile = "Reconciliation"
     case forecast = "Forecast"
+    case spendingInsights = "Spending Insights"
     case portfolio = "Portfolio"
     case investmentLots = "Investment Lots"
     case priceScatter = "Price Scatter"
@@ -61,7 +62,7 @@ public enum ReportKind: String, CaseIterable, Identifiable, Codable {
         case .balanceSheet, .incomeStatement, .equityStatement, .trialBalance,
              .accountSummary, .netWorth, .cashFlow, .incomeExpense:
             .statements
-        case .averageBalance, .transactions, .reconcile, .forecast:
+        case .averageBalance, .transactions, .reconcile, .forecast, .spendingInsights:
             .activity
         case .portfolio, .investmentLots, .priceScatter, .capitalGains:
             .investments
@@ -111,6 +112,7 @@ public enum ReportKind: String, CaseIterable, Identifiable, Codable {
         case .transactions: "list.bullet.rectangle"
         case .reconcile: "checkmark.circle"
         case .forecast: "clock.arrow.trianglehead.counterclockwise.rotate.90"
+        case .spendingInsights: "text.magnifyingglass"
         case .portfolio: "chart.pie"
         case .investmentLots: "shippingbox"
         case .priceScatter: "chart.dots.scatter"
@@ -138,6 +140,7 @@ public enum ReportKind: String, CaseIterable, Identifiable, Codable {
         case .transactions: "An account's postings over a period"
         case .reconcile: "Reconciled, cleared, and outstanding"
         case .forecast: "Projected balances from scheduled transactions"
+        case .spendingInsights: "This period against the last, in plain language"
         case .portfolio: "Holdings, allocation, and value"
         case .investmentLots: "Purchase lots and cost basis"
         case .priceScatter: "Price history for a security"
@@ -225,6 +228,7 @@ struct ReportGallery: View {
     @State private var settingsShown = false
     @State private var packShown = false
     @State private var reviewShown = false
+    @State private var passportShown = false
     @State private var investmentReviewShown = false
 
     private let columns = [GridItem(.adaptive(minimum: 210), spacing: 12)]
@@ -272,6 +276,21 @@ struct ReportGallery: View {
                         Label("Financial Review", systemImage: "play.rectangle.fill")
                             .scaledFont(.headline)
                         Text("The period as a results deck — one message per slide, charts, callouts, on-device insights")
+                            .scaledFont(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: 440, alignment: .leading)
+                    .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                Button {
+                    passportShown = true
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Financial Summary", systemImage: "doc.text.image")
+                            .scaledFont(.headline)
+                        Text("A one-page snapshot for sharing — net worth, trend, assets, income, savings rate (FR-PLAN-17)")
                             .scaledFont(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -328,6 +347,7 @@ struct ReportGallery: View {
         .sheet(isPresented: $packShown) { FinancialYearPackSheet(model: model) }
         .sheet(isPresented: $reviewShown) { FinancialReviewSheet(model: model, kind: .financial) }
         .sheet(isPresented: $investmentReviewShown) { FinancialReviewSheet(model: model, kind: .investment) }
+        .sheet(isPresented: $passportShown) { PassportSheet(model: model) }
         .onAppear {
             if model.financialYearPackRequested {
                 model.financialYearPackRequested = false
@@ -340,6 +360,16 @@ struct ReportGallery: View {
             if model.investmentReviewRequested {
                 model.investmentReviewRequested = false
                 investmentReviewShown = true
+            }
+            if model.passportRequested {
+                model.passportRequested = false
+                passportShown = true
+            }
+        }
+        .onChange(of: model.passportRequested) {
+            if model.passportRequested {
+                model.passportRequested = false
+                passportShown = true
             }
         }
         .onChange(of: model.investmentReviewRequested) {
@@ -645,6 +675,7 @@ struct ReportScreen: View {
         case .transactions: TransactionReportView(model: model)
         case .reconcile: ReconcileReportView(model: model)
         case .forecast: CashFlowView(model: model)
+        case .spendingInsights: SpendingInsightsView(model: model)
         case .portfolio: PortfolioView(model: model)
         case .investmentLots: InvestmentLotsView(model: model)
         case .priceScatter: PriceScatterView(model: model)

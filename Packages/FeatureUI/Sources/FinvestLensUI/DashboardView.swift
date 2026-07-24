@@ -141,11 +141,11 @@ struct DashboardView: View {
         case upNext
         case netWorth, income, expenses, cashflow, savingsRate, allocation, performance
         case spendingTrend, topMovers, goals, recentActivity, composition
-        case alerts, bills, accounts
+        case alerts, bills, accounts, wellbeing
 
         var minColumns: Int {
             switch self {
-            case .upNext, .netWorth, .income, .expenses, .cashflow, .savingsRate, .alerts: 1
+            case .upNext, .netWorth, .income, .expenses, .cashflow, .savingsRate, .alerts, .wellbeing: 1
             case .allocation, .performance, .spendingTrend, .topMovers, .goals, .recentActivity, .bills: 2
             case .composition, .accounts: 3
             }
@@ -179,10 +179,12 @@ struct DashboardView: View {
             case .alerts: "Alerts"
             case .bills: "Upcoming Bills"
             case .accounts: "Accounts"
+            case .wellbeing: "Wellbeing"
             }
         }
     }
 
+    @State private var showingWellbeing = false
     /// Panels the user has switched off (F10). Desk state in UserDefaults.
     @AppStorage("dashboard.hiddenPanels") private var hiddenPanelsRaw = ""
     private var hiddenPanels: Set<String> {
@@ -264,8 +266,8 @@ struct DashboardView: View {
     }
 
     private func panels(columns: Int, range: (from: Date, to: Date), portfolio: Portfolio?) -> [Panel] {
-        let all: [Panel] = [.upNext, .netWorth, .income, .expenses, .cashflow, .savingsRate,
-                            .allocation, .performance, .spendingTrend, .topMovers,
+        let all: [Panel] = [.upNext, .netWorth, .wellbeing, .income, .expenses, .cashflow,
+                            .savingsRate, .allocation, .performance, .spendingTrend, .topMovers,
                             .goals, .recentActivity, .composition, .alerts, .bills, .accounts]
         return all.filter { panel in
             guard !hiddenPanels.contains(panel.rawValue) else { return false }
@@ -314,6 +316,9 @@ struct DashboardView: View {
             return model.billReminders().contains { $0.status != .paid }
         case .accounts:
             return !model.accountTree.isEmpty
+        case .wellbeing:
+            // Meaningful once the book has recent income to measure against.
+            return model.wellbeingScore() != nil && !model.accountTree.isEmpty
         }
     }
 
@@ -382,7 +387,52 @@ struct DashboardView: View {
         case .alerts: alertsCard
         case .bills: billsCard
         case .accounts: accountsCard
+        case .wellbeing: wellbeingCard
         }
+    }
+
+    // MARK: Wellbeing (FR-PLAN-16)
+
+    /// The explainable score: the number, its four component bars, and the
+    /// full arithmetic one click away.
+    private var wellbeingCard: some View {
+        Card("Wellbeing", systemImage: "heart.text.square") {
+            if let score = model.wellbeingScore() {
+                Button {
+                    showingWellbeing = true
+                } label: {
+                    HStack(spacing: 14) {
+                        Text("\(score.total)")
+                            .scaledFont(.largeTitle, weight: .bold)
+                            .monospacedDigit()
+                            .foregroundStyle(wellbeingTint(score.total))
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(score.components) { component in
+                                HStack(spacing: 6) {
+                                    Text(component.component.title)
+                                        .scaledFont(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 92, alignment: .leading)
+                                        .lineLimit(1)
+                                    ProgressView(value: NSDecimalNumber(decimal: component.points).doubleValue,
+                                                 total: 25)
+                                        .tint(wellbeingTint(Int(truncating: component.points * 4 as NSNumber)))
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("How the score is computed, in full")
+            }
+        }
+        .sheet(isPresented: $showingWellbeing) { WellbeingSheet(model: model) }
+    }
+
+    private func wellbeingTint(_ score: Int) -> Color {
+        score >= 70 ? .green : (score >= 40 ? .orange : .red)
     }
 
     // MARK: Up next
